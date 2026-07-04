@@ -6,6 +6,7 @@ import { getLandmarker, drawPose } from './pose.js';
 import * as FC from './formcheck.js';
 import { t as T, setLang, LANGS, plural as PL, dateNames } from './i18n.js';
 import * as FX from './fx.js';
+import * as BE from './backend.js';
 
 // мова інтерфейсу — із налаштувань (до першого рендеру)
 setLang(S.getSettings().lang);
@@ -53,6 +54,7 @@ const routes = [
   { re: /^#\/body$/, render: renderBody },
   { re: /^#\/history(?:\/(.+))?$/, render: renderHistory },
   { re: /^#\/settings$/, render: renderSettings },
+  { re: /^#\/coach$/, render: renderCoach },
   { re: /^#\/today$/, render: renderToday },
 ];
 
@@ -1644,6 +1646,11 @@ function renderSettings() {
     </section>
 
     <section class="card">
+      <div class="card-label">🧑‍🏫 Кабінет тренера <span class="muted">(бета)</span></div>
+      <button class="btn ghost" id="coachBtn">Відкрити кабінет</button>
+    </section>
+
+    <section class="card">
       <div class="card-label">${T('Дані')}</div>
       <button class="btn ghost" id="exportBtn">⬇️ ${T('Експорт (резервна копія)')}</button>
       <button class="btn ghost" id="importBtn">⬆️ ${T('Імпорт з файлу')}</button>
@@ -1654,6 +1661,7 @@ function renderSettings() {
     <p class="muted center">КАЧАЛКА · ${T('щоденник тренувань · усі дані лише на цьому пристрої')}</p>
   `;
   screenEl.querySelector('#backBtn').onclick = () => history.back();
+  screenEl.querySelector('#coachBtn').onclick = () => go('#/coach');
 
   // мова — застосовується одразу
   screenEl.querySelector('#langSel').onchange = (e) => {
@@ -1773,6 +1781,138 @@ function renderSettings() {
     if (confirm(T('Стерти всі тренування та повернути стандартні вправи?'))) {
       S.wipeAll(); go('#/today');
     }
+  };
+}
+
+// =====================================================================
+//  ЕКРАН: КАБІНЕТ ТРЕНЕРА (бета) — акаунт на сервері
+// =====================================================================
+function coachShell(inner) {
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backBtn">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">🧑‍🏫 Кабінет тренера</div>
+        <div class="appbar-title">КАЧАЛКА</div></div>
+    </header>
+    <div id="coachBody">${inner}</div>`;
+  screenEl.querySelector('#backBtn').onclick = () => go('#/settings');
+}
+
+async function renderCoach() {
+  if (!BE.configured) {
+    coachShell(`
+      <section class="card">
+        <div class="card-label">Сервер ще не підключено</div>
+        <p class="muted">Кабінет тренера — це записи клієнтів, призначення тренувань і
+        контроль прогресу. Для цього потрібен безкоштовний сервер.</p>
+        <p class="muted">Власнику: створи проєкт за інструкцією
+        <b>backend/SUPABASE_SETUP.md</b> (на ПК) і надішли Claude два рядки —
+        Project URL і anon-ключ. Після цього тут з'явиться вхід.</p>
+      </section>`);
+    return;
+  }
+
+  coachShell('<section class="card"><p class="muted">Завантаження…</p></section>');
+  let session = null;
+  try {
+    session = await BE.getSession();
+  } catch (e) {
+    /* показуємо форму входу */
+  }
+  if (location.hash !== '#/coach') return; // користувач уже пішов з екрана
+
+  if (!session) {
+    coachShell(`
+      <section class="card">
+        <div class="card-label">Вхід або реєстрація</div>
+        <div class="field"><label>Ім'я (для нових)</label><input type="text" id="cName" placeholder="Як тебе звати"/></div>
+        <div class="field"><label>Пошта</label><input type="email" id="cEmail" inputmode="email" autocomplete="email"/></div>
+        <div class="field"><label>Пароль (від 6 символів)</label><input type="password" id="cPass" autocomplete="current-password"/></div>
+        <div class="btn-row">
+          <button class="btn primary" id="loginBtn">Увійти</button>
+          <button class="btn ghost" id="signupBtn">Зареєструватися</button>
+        </div>
+        <p class="muted" id="authMsg"></p>
+      </section>`);
+    const msg = (t2) => { const el = screenEl.querySelector('#authMsg'); if (el) el.textContent = t2; };
+    const getCreds = () => ({
+      name: screenEl.querySelector('#cName').value.trim(),
+      email: screenEl.querySelector('#cEmail').value.trim(),
+      pass: screenEl.querySelector('#cPass').value,
+    });
+    screenEl.querySelector('#loginBtn').onclick = async () => {
+      const { email, pass } = getCreds();
+      if (!email || !pass) return msg('Вкажи пошту і пароль');
+      msg('Входжу…');
+      try {
+        await BE.signIn(email, pass);
+        renderCoach();
+      } catch (e) { msg('⚠️ ' + e.message); }
+    };
+    screenEl.querySelector('#signupBtn').onclick = async () => {
+      const { name, email, pass } = getCreds();
+      if (!email || !pass) return msg('Вкажи пошту і пароль');
+      msg('Реєструю…');
+      try {
+        const data = await BE.signUp(email, pass, name);
+        if (data.session) renderCoach();
+        else msg('📧 Перевір пошту й підтверди реєстрацію, потім натисни «Увійти».');
+      } catch (e) { msg('⚠️ ' + e.message); }
+    };
+    return;
+  }
+
+  // --- увійшли: профіль ---
+  let prof = null;
+  try {
+    prof = await BE.getMyProfile();
+  } catch (e) {
+    coachShell(`<section class="card"><p class="muted">⚠️ ${esc(e.message)}</p></section>`);
+    return;
+  }
+  if (location.hash !== '#/coach') return;
+  coachShell(`
+    <section class="card">
+      <div class="card-label">Мій профіль <span class="muted">· ${esc(session.user.email || '')}</span></div>
+      <div class="field"><label>Роль</label>
+        <div class="type-chips" style="margin-top:6px">
+          <button class="tchip ${prof.role === 'trainer' ? 'on' : ''}" data-role="trainer">🧑‍🏫 Тренер</button>
+          <button class="tchip ${prof.role === 'client' ? 'on' : ''}" data-role="client">🏋️ Клієнт</button>
+        </div>
+      </div>
+      <div class="field"><label>Ім'я</label><input type="text" id="pName" value="${esc(prof.name || '')}"/></div>
+      <div class="field"><label>Місто</label><input type="text" id="pCity" value="${esc(prof.city || '')}"/></div>
+      <div class="field"><label>Про себе</label><input type="text" id="pBio" value="${esc(prof.bio || '')}" placeholder="Досвід, спеціалізація…"/></div>
+      <div class="field"><label>Контакт (телефон/Telegram)</label><input type="text" id="pContact" value="${esc(prof.contact || '')}"/></div>
+      <button class="btn primary" id="saveProf">Зберегти профіль</button>
+      <button class="btn ghost" id="logoutBtn">Вийти з акаунта</button>
+    </section>
+    <section class="card">
+      <div class="card-label">Далі в розробці</div>
+      <p class="muted">📅 Календар слотів і запис клієнтів · 🏋️ призначення тренувань клієнтам · 📈 перегляд їхнього прогресу · 💬 чат.</p>
+    </section>`);
+  let role = prof.role || 'client';
+  screenEl.querySelectorAll('.tchip[data-role]').forEach((b) =>
+    b.addEventListener('click', () => {
+      role = b.dataset.role;
+      screenEl.querySelectorAll('.tchip[data-role]').forEach((c) => c.classList.toggle('on', c === b));
+    })
+  );
+  screenEl.querySelector('#saveProf').onclick = async () => {
+    try {
+      await BE.saveMyProfile({
+        role,
+        name: screenEl.querySelector('#pName').value.trim(),
+        city: screenEl.querySelector('#pCity').value.trim(),
+        bio: screenEl.querySelector('#pBio').value.trim(),
+        contact: screenEl.querySelector('#pContact').value.trim(),
+      });
+      toast(T('Збережено'));
+    } catch (e) { alert('⚠️ ' + e.message); }
+  };
+  screenEl.querySelector('#logoutBtn').onclick = async () => {
+    await BE.signOut();
+    renderCoach();
   };
 }
 
