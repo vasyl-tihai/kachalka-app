@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="32%" r="75%">
+      <stop offset="0%" stop-color="#15161d"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </radialGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8fb8ff"/>
+      <stop offset="100%" stop-color="#3b7af0"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#36d77a" stroke-width="14" opacity=".9"
+          stroke-linecap="round" stroke-dasharray="700 942" transform="rotate(-90 256 256)"/>
+  <g filter="url(#glow)" fill="url(#bar)">
+    <!-- гантель -->
+    <rect x="150" y="238" width="212" height="36" rx="18"/>
+    <rect x="120" y="206" width="42" height="100" rx="18"/>
+    <rect x="350" y="206" width="42" height="100" rx="18"/>
+    <rect x="96" y="224" width="34" height="64" rx="15"/>
+    <rect x="382" y="224" width="34" height="64" rx="15"/>
+  </g>
+</svg>
