@@ -1825,6 +1825,8 @@ async function renderCoach() {
     coachShell(`
       <section class="card">
         <div class="card-label">Вхід або реєстрація</div>
+        <button class="btn google" id="googleBtn"><span class="g-badge">G</span> Увійти через Google</button>
+        <div class="or-line"><span>або через пошту</span></div>
         <div class="field"><label>Ім'я (для нових)</label><input type="text" id="cName" placeholder="Як тебе звати"/></div>
         <div class="field"><label>Пошта</label><input type="email" id="cEmail" inputmode="email" autocomplete="email"/></div>
         <div class="field"><label>Пароль (від 6 символів)</label><input type="password" id="cPass" autocomplete="current-password"/></div>
@@ -1835,6 +1837,12 @@ async function renderCoach() {
         <p class="muted" id="authMsg"></p>
       </section>`);
     const msg = (t2) => { const el = screenEl.querySelector('#authMsg'); if (el) el.textContent = t2; };
+    screenEl.querySelector('#googleBtn').onclick = async () => {
+      msg('Відкриваю Google…');
+      try {
+        await BE.signInWithGoogle(); // перенаправить на сторінку Google
+      } catch (e) { msg('⚠️ ' + e.message); }
+    };
     const getCreds = () => ({
       name: screenEl.querySelector('#cName').value.trim(),
       email: screenEl.querySelector('#cEmail').value.trim(),
@@ -1880,7 +1888,7 @@ async function renderCoach() {
           <button class="tchip ${prof.role === 'client' ? 'on' : ''}" data-role="client">🏋️ Клієнт</button>
         </div>
       </div>
-      <div class="field"><label>Ім'я</label><input type="text" id="pName" value="${esc(prof.name || '')}"/></div>
+      <div class="field"><label>Ім'я</label><input type="text" id="pName" value="${esc(prof.name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || '')}"/></div>
       <div class="field"><label>Місто</label><input type="text" id="pCity" value="${esc(prof.city || '')}"/></div>
       <div class="field"><label>Про себе</label><input type="text" id="pBio" value="${esc(prof.bio || '')}" placeholder="Досвід, спеціалізація…"/></div>
       <div class="field"><label>Контакт (телефон/Telegram)</label><input type="text" id="pContact" value="${esc(prof.contact || '')}"/></div>
@@ -1978,6 +1986,15 @@ function flashAlarm(color) {
 FX.initFx(S.getCustomSound); // аудіо розблоковується першим дотиком
 renderTabbar();
 router();
+
+// повернення після входу через Google: в URL є ?code=... — обміняти на сесію
+if (BE.configured && (location.search.includes('code=') || location.search.includes('error_description='))) {
+  BE.handleOAuthReturn().finally(() => {
+    // прибрати службові параметри з адреси й показати кабінет
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    go('#/coach');
+  });
+}
 
 // реєстрація service worker (офлайн)
 if ('serviceWorker' in navigator) {

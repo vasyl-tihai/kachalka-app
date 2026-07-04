@@ -433,6 +433,23 @@ input, select { font-family: inherit; }
 }
 .tpl:active { transform: scale(.96); border-color: var(--blue); }
 
+/* ---------- вхід через Google ---------- */
+.btn.google {
+  background: #fff; color: #1f1f1f; border-color: #fff; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+}
+.btn.google:active { transform: scale(.98); }
+.g-badge {
+  width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 900; font-size: .95rem; color: #fff;
+  background: conic-gradient(from -45deg, #ea4335 0 25%, #fbbc05 0 50%, #34a853 0 75%, #4285f4 0 100%);
+}
+.or-line {
+  display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .82rem;
+  margin: 12px 0;
+}
+.or-line::before, .or-line::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
 /* ---------- налаштування: свотчі кольору, ряд кнопок, селект ---------- */
 .sel {
   width: 100%; background: var(--bg-card2); border: 1px solid var(--line); color: var(--txt);
