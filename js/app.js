@@ -1601,6 +1601,10 @@ function renderSettings() {
     (sn) => `<button class="tchip ${s.soundId === sn.id ? 'on' : ''}" data-snd="${sn.id}">${T(sn.label)}</button>`
   ).join('');
   const hasCustom = !!S.getCustomSound();
+  const vibSel = s.vibratePattern || 'pulse';
+  const vibeChips = FX.VIBES.map(
+    (v) => `<button class="tchip ${vibSel === v.id ? 'on' : ''}" data-vib="${v.id}">${T(v.label)}</button>`
+  ).join('');
   const swatches = FLASH_COLORS.map(
     (c) => `<button class="swatch ${s.flashColor === c ? 'on' : ''}" data-c="${c}" style="background:${c}"></button>`
   ).join('');
@@ -1642,10 +1646,14 @@ function renderSettings() {
       </div>
       <div class="btn-row">
         <button class="btn ghost" id="previewSnd">▶ ${T('Прослухати')}</button>
-        <button class="btn ghost" id="pickSnd">🎵 ${T('Обрати файл')}</button>
+        <button class="btn ghost" id="pickSnd">📱 ${T('Додати з телефона')}</button>
         ${hasCustom ? `<button class="btn ghost" id="delSnd">✕ ${T('Прибрати')}</button>` : ''}
       </div>
       <input type="file" id="sndFile" accept="audio/*" hidden/>
+      <div class="card-div"></div>
+      <div class="field"><label>${T('Тип вібрації')}</label>
+        <div class="type-chips">${vibeChips}</div>
+      </div>
       <div class="card-div"></div>
       <div class="field"><label>${T('Колір спалаху')}</label>
         <div class="swatches">${swatches}
@@ -1706,6 +1714,14 @@ function renderSettings() {
       FX.playSound(S.getSettings(), b.dataset.snd); // одразу почути вибір
     })
   );
+  screenEl.querySelectorAll('.tchip[data-vib]').forEach((b) =>
+    b.addEventListener('click', () => {
+      S.updateSettings({ vibratePattern: b.dataset.vib });
+      screenEl.querySelectorAll('.tchip[data-vib]').forEach((c) => c.classList.toggle('on', c === b));
+      FX.vibrateFinish(S.getSettings(), b.dataset.vib); // одразу відчути вибір
+    })
+  );
+
   screenEl.querySelector('#previewSnd').onclick = () => {
     const st = S.getSettings();
     FX.playSound(st, st.soundId || 'triple');

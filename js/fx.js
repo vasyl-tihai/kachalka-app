@@ -127,8 +127,18 @@ export function playSound(settings, idOverride) {
   }
 }
 
-/** Коротка вібрація «час працювати». */
-export function vibrateFinish(settings) {
-  if (settings.vibrateOn === false) return;
-  if (navigator.vibrate) navigator.vibrate([120, 80, 120, 80, 200]);
+/** Типи вібрації в кінці відпочинку (label — ключ i18n). */
+export const VIBES = [
+  { id: 'short', label: 'Коротка', pattern: [200] },
+  { id: 'double', label: 'Подвійна', pattern: [150, 90, 150] },
+  { id: 'long', label: 'Довга', pattern: [700] },
+  { id: 'pulse', label: 'Пульс', pattern: [120, 80, 120, 80, 200] },
+];
+
+/** Вібрація «час працювати»; idOverride — для прев'ю вибору в налаштуваннях. */
+export function vibrateFinish(settings, idOverride) {
+  if (!idOverride && settings.vibrateOn === false) return;
+  const id = idOverride || settings.vibratePattern || 'pulse'; // pulse = як було раніше
+  const v = VIBES.find((x) => x.id === id) || VIBES[VIBES.length - 1];
+  if (navigator.vibrate) navigator.vibrate(v.pattern);
 }
