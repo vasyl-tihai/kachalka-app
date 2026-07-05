@@ -26,7 +26,7 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 /* атрибут hidden має ховати навіть елементи з display:flex/grid (інакше клас перемагає) */
 [hidden] { display: none !important; }
-html, body { margin: 0; padding: 0; background: var(--bg); color: var(--txt); }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--txt); width: 100%; overflow-x: hidden; }
 body {
   font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   overscroll-behavior-y: contain;
@@ -36,11 +36,13 @@ input, select { font-family: inherit; }
 
 #app {
   max-width: 480px;
+  width: 100%;
   margin: 0 auto;
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
   background: radial-gradient(120% 60% at 50% 0%, #0e0e14 0%, #000 60%);
 }
 #screen {
@@ -351,7 +353,9 @@ input, select { font-family: inherit; }
    НИЖНЯ НАВІГАЦІЯ
 =================================================================== */
 #tabbar {
-  position: sticky; bottom: 0; height: calc(var(--tabbar-h) + var(--safe-b));
+  position: fixed; bottom: 0; left: 0; right: 0; margin: 0 auto;
+  width: 100%; max-width: 480px; z-index: 40;
+  height: calc(var(--tabbar-h) + var(--safe-b));
   padding-bottom: var(--safe-b);
   display: flex; background: rgba(10,10,14,.92); backdrop-filter: blur(12px);
   border-top: 1px solid var(--line);
@@ -432,6 +436,62 @@ input, select { font-family: inherit; }
   border-radius: 13px; padding: 10px 13px; font-weight: 700; font-size: .92rem;
 }
 .tpl:active { transform: scale(.96); border-color: var(--blue); }
+
+/* ---------- профіль (перегляд «як у соцмережі») ---------- */
+.avatar {
+  width: 48px; height: 48px; border-radius: 50%; flex: 0 0 auto;
+  background: linear-gradient(180deg, #4f93ff, #3b7af0); background-size: cover; background-position: center;
+  display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 1.3rem;
+}
+.avatar-lg { width: 72px; height: 72px; font-size: 1.9rem; }
+.profile-card { }
+.profile-head { display: flex; align-items: center; gap: 14px; }
+.profile-name { font-size: 1.35rem; font-weight: 800; }
+.profile-role { color: var(--blue-soft); font-weight: 600; font-size: .92rem; margin-top: 2px; }
+.profile-bio { margin: 12px 0 4px; }
+.profile-contact { margin: 4px 0; color: var(--txt); }
+.profile-meta { font-size: .82rem; margin: 6px 0 14px; }
+.avatar-edit { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+.avatar-edit .btn { width: auto; padding: 10px 14px; }
+
+/* ---------- денна стрічка + погодинна сітка ---------- */
+.day-strip { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 6px; scrollbar-width: none; margin-top: 10px; }
+.day-strip::-webkit-scrollbar { display: none; }
+.day-chip {
+  flex: 0 0 auto; width: 52px; background: var(--bg-card2); border: 1px solid var(--line);
+  border-radius: 13px; padding: 8px 0; display: flex; flex-direction: column; align-items: center; gap: 2px; position: relative;
+}
+.day-chip.on { border-color: var(--blue); background: rgba(91, 155, 255, .14); }
+.dc-dow { font-size: .72rem; color: var(--muted); }
+.dc-num { font-size: 1.15rem; font-weight: 800; }
+.dc-dot { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; border-radius: 9px;
+  background: var(--green); color: #06210f; font-size: .72rem; font-weight: 800; display: grid; place-items: center; padding: 0 4px; }
+.hour-grid { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.hour-row {
+  display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--bg-card2); font-size: .95rem;
+}
+.hour-row.empty { border-style: dashed; }
+.hour-row.open { border-color: var(--green); background: rgba(54, 215, 122, .1); }
+.hour-row.booked { border-color: var(--orange); background: rgba(255, 138, 61, .1); }
+.hr-time { font-weight: 800; min-width: 52px; }
+.hr-info { flex: 1; }
+.hr-x { color: var(--danger); font-weight: 700; }
+
+/* ---------- чат ---------- */
+.chat-log { display: flex; flex-direction: column; gap: 8px; padding: 6px 2px 12px; min-height: 40vh; }
+.bubble { max-width: 78%; padding: 9px 13px; border-radius: 16px; font-size: .95rem; line-height: 1.35; word-break: break-word; }
+.bubble.mine { align-self: flex-end; background: linear-gradient(180deg, #4f93ff, #3b7af0); color: #fff; border-bottom-right-radius: 5px; }
+.bubble.their { align-self: flex-start; background: var(--bg-card2); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
+.chat-input {
+  position: sticky; bottom: calc(var(--tabbar-h) + var(--safe-b) + 8px); display: flex; gap: 8px;
+  background: var(--bg); padding: 8px 0;
+}
+.chat-input input {
+  flex: 1; min-width: 0; background: var(--bg-card2); border: 1px solid var(--line); color: var(--txt);
+  border-radius: 14px; padding: 12px 14px; font-size: 1rem;
+}
+.chat-input .btn { width: auto; padding: 12px 18px; }
 
 /* ---------- слоти й заявки (кабінет) ---------- */
 .slot-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }

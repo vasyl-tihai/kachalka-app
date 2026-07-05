@@ -208,6 +208,53 @@ export async function bookingsAsClient() {
   return data || [];
 }
 
+// ---- аватар (Supabase Storage) ----
+export async function uploadAvatar(file) {
+  const sb = await client();
+  const s = await getSession();
+  if (!s) throw new Error('Немає сесії');
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+  const path = `${s.user.id}/avatar.${ext}`;
+  const { error } = await sb.storage
+    .from('avatars')
+    .upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' });
+  if (error) throw new Error(error.message);
+  const { data } = sb.storage.from('avatars').getPublicUrl(path);
+  const url = `${data.publicUrl}?t=${Date.now()}`; // антикеш
+  await sb.from('profiles').update({ avatar_url: url }).eq('id', s.user.id);
+  return url;
+}
+
+// ---- чат ----
+export async function myId() {
+  const s = await getSession();
+  return s ? s.user.id : null;
+}
+export async function listMessages(otherId) {
+  const sb = await client();
+  const s = await getSession();
+  const me = s.user.id;
+  const { data, error } = await sb
+    .from('messages')
+    .select('*')
+    .or(`and(from_id.eq.${me},to_id.eq.${otherId}),and(from_id.eq.${otherId},to_id.eq.${me})`)
+    .order('created_at');
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+export async function sendMessage(toId, text) {
+  const sb = await client();
+  const s = await getSession();
+  const { error } = await sb.from('messages').insert({ from_id: s.user.id, to_id: toId, text });
+  if (error) throw new Error(error.message);
+}
+export async function getProfile(id) {
+  const sb = await client();
+  const { data, error } = await sb.from('profiles').select('name,contact,avatar_url,role').eq('id', id).single();
+  if (error) return { name: '', contact: '' };
+  return data;
+}
+
 // ---- зрозумілі повідомлення про помилки ----
 function uaAuthError(error) {
   const m = String(error.message || '');

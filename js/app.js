@@ -25,6 +25,8 @@ let calNeedsSync = true;
 
 // режим редагування на екрані тренування (за замовч. лише перегляд)
 let workoutEditMode = false;
+// режим редагування профілю в кабінеті (за замовч. — перегляд)
+let coachEdit = false;
 // id тренування, яке треба відкрити одразу в редагуванні (переживає одну навігацію)
 let pendingWorkoutEdit = null;
 // чи розгорнутий селектор «Тренування дня» на головному екрані
@@ -55,6 +57,7 @@ const routes = [
   { re: /^#\/history(?:\/(.+))?$/, render: renderHistory },
   { re: /^#\/settings$/, render: renderSettings },
   { re: /^#\/coach$/, render: renderCoach },
+  { re: /^#\/chat\/(.+)$/, render: renderChat },
   { re: /^#\/today$/, render: renderToday },
 ];
 
@@ -62,6 +65,7 @@ function router() {
   clearLive();
   calNeedsSync = true; // нова навігація → календар синхронізує місяць із вибраною датою
   workoutEditMode = false; // тренування завжди відкривається в режимі перегляду
+  coachEdit = false; // кабінет відкривається в режимі перегляду профілю
   bodyDate = null; // екран замірів щоразу відкривається на сьогодні (вибір дати живе лише в межах екрана)
   const hash = location.hash || '#/today';
   for (const r of routes) {
@@ -1879,51 +1883,106 @@ async function renderCoach() {
     return;
   }
   if (location.hash !== '#/coach') return;
+  // якщо профіль порожній (щойно зареєструвався) — одразу форма
+  if (!prof.name) coachEdit = true;
+  if (coachEdit) renderProfileEdit(prof, session);
+  else renderProfileView(prof, session);
+}
+
+// кружечок аватарки: фото або ініціал
+function avatarHtml(prof, big) {
+  const cls = big ? 'avatar avatar-lg' : 'avatar';
+  if (prof.avatar_url) return `<span class="${cls}" style="background-image:url('${esc(prof.avatar_url)}')"></span>`;
+  const ini = (prof.name || '?').trim().charAt(0).toUpperCase();
+  return `<span class="${cls}">${esc(ini)}</span>`;
+}
+
+// профіль — режим ПЕРЕГЛЯДУ (як у соцмережі)
+function renderProfileView(prof, session) {
+  const roleLabel = prof.role === 'trainer' ? '🧑‍🏫 Тренер' : '🏋️ Клієнт';
   coachShell(`
-    <section class="card">
-      <div class="card-label">Мій профіль <span class="muted">· ${esc(session.user.email || '')}</span></div>
-      <div class="field"><label>Роль</label>
-        <div class="type-chips" style="margin-top:6px">
-          <button class="tchip ${prof.role === 'trainer' ? 'on' : ''}" data-role="trainer">🧑‍🏫 Тренер</button>
-          <button class="tchip ${prof.role === 'client' ? 'on' : ''}" data-role="client">🏋️ Клієнт</button>
+    <section class="card profile-card">
+      <div class="profile-head">
+        ${avatarHtml(prof, true)}
+        <div class="profile-id">
+          <div class="profile-name">${esc(prof.name || 'Без імені')}</div>
+          <div class="profile-role">${roleLabel}${prof.city ? ' · 📍 ' + esc(prof.city) : ''}</div>
         </div>
       </div>
-      <div class="field"><label>Ім'я</label><input type="text" id="pName" value="${esc(prof.name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || '')}"/></div>
-      <div class="field"><label>Місто</label><input type="text" id="pCity" value="${esc(prof.city || '')}"/></div>
-      <div class="field"><label>Про себе</label><input type="text" id="pBio" value="${esc(prof.bio || '')}" placeholder="Досвід, спеціалізація…"/></div>
-      <div class="field"><label>Контакт (телефон/Telegram)</label><input type="text" id="pContact" value="${esc(prof.contact || '')}"/></div>
-      <button class="btn primary" id="saveProf">Зберегти профіль</button>
+      ${prof.bio ? `<p class="profile-bio">${esc(prof.bio)}</p>` : ''}
+      ${prof.contact ? `<p class="profile-contact">📞 ${esc(prof.contact)}</p>` : ''}
+      <div class="profile-meta muted">${esc(session.user.email || '')}</div>
+      <button class="btn primary" id="editProf">✏️ Редагувати профіль</button>
       <button class="btn ghost" id="logoutBtn">Вийти з акаунта</button>
     </section>
     <div id="roleArea"></div>`);
-  let role = prof.role || 'client';
+  screenEl.querySelector('#editProf').onclick = () => { coachEdit = true; renderCoach(); };
+  screenEl.querySelector('#logoutBtn').onclick = async () => { await BE.signOut(); renderCoach(); };
   renderCoachRole(prof);
+}
+
+// профіль — режим РЕДАГУВАННЯ (форма)
+function renderProfileEdit(prof, session) {
+  const nameVal = prof.name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
+  coachShell(`
+    <section class="card">
+      <div class="card-label">Редагування профілю <span class="muted">· ${esc(session.user.email || '')}</span></div>
+      <div class="avatar-edit">
+        <span id="avatarPreview">${avatarHtml({ ...prof, name: nameVal }, true)}</span>
+        <button class="btn ghost" id="pickAvatar">📷 Фото</button>
+        <input type="file" id="avatarFile" accept="image/*" hidden/>
+      </div>
+      <div class="field"><label>Роль</label>
+        <div class="type-chips" style="margin-top:6px">
+          <button class="tchip ${prof.role === 'trainer' ? 'on' : ''}" data-role="trainer">🧑‍🏫 Тренер</button>
+          <button class="tchip ${prof.role !== 'trainer' ? 'on' : ''}" data-role="client">🏋️ Клієнт</button>
+        </div>
+      </div>
+      <div class="field"><label>Ім'я</label><input type="text" id="pName" value="${esc(nameVal)}"/></div>
+      <div class="field"><label>Місто</label><input type="text" id="pCity" value="${esc(prof.city || '')}"/></div>
+      <div class="field"><label>Про себе</label><input type="text" id="pBio" value="${esc(prof.bio || '')}" placeholder="Досвід, спеціалізація…"/></div>
+      <div class="field"><label>Контакт (телефон/Telegram)</label><input type="text" id="pContact" value="${esc(prof.contact || '')}"/></div>
+      <button class="btn primary" id="saveProf">Зберегти</button>
+      ${prof.name ? '<button class="btn ghost" id="cancelEdit">Скасувати</button>' : ''}
+    </section>`);
+  let role = prof.role || 'client';
   screenEl.querySelectorAll('.tchip[data-role]').forEach((b) =>
     b.addEventListener('click', () => {
       role = b.dataset.role;
       screenEl.querySelectorAll('.tchip[data-role]').forEach((c) => c.classList.toggle('on', c === b));
     })
   );
+  const fileInput = screenEl.querySelector('#avatarFile');
+  screenEl.querySelector('#pickAvatar').onclick = () => fileInput.click();
+  fileInput.onchange = async () => {
+    const f = fileInput.files[0];
+    if (!f) return;
+    if (f.size > 3 * 1024 * 1024) return alert('Фото завелике (макс. 3 МБ)');
+    toast('Завантаження фото…');
+    try {
+      const url = await BE.uploadAvatar(f);
+      prof.avatar_url = url;
+      screenEl.querySelector('#avatarPreview').innerHTML = avatarHtml(prof, true);
+      toast('Фото оновлено');
+    } catch (e) { alert('⚠️ ' + e.message); }
+  };
   screenEl.querySelector('#saveProf').onclick = async () => {
     try {
-      await BE.saveMyProfile({
+      const patch = {
         role,
         name: screenEl.querySelector('#pName').value.trim(),
         city: screenEl.querySelector('#pCity').value.trim(),
         bio: screenEl.querySelector('#pBio').value.trim(),
         contact: screenEl.querySelector('#pContact').value.trim(),
-      });
+      };
+      await BE.saveMyProfile(patch);
+      Object.assign(prof, patch);
       toast(T('Збережено'));
-      prof.role = role;
-      prof.name = screenEl.querySelector('#pName').value.trim();
-      prof.contact = screenEl.querySelector('#pContact').value.trim();
-      renderCoachRole(prof); // показати секції відповідної ролі
+      coachEdit = false;
+      renderCoach();
     } catch (e) { alert('⚠️ ' + e.message); }
   };
-  screenEl.querySelector('#logoutBtn').onclick = async () => {
-    await BE.signOut();
-    renderCoach();
-  };
+  screenEl.querySelector('#cancelEdit')?.addEventListener('click', () => { coachEdit = false; renderCoach(); });
 }
 
 // дата+час у людський вигляд «Пн, 7 лип · 18:30»
@@ -1948,13 +2007,15 @@ async function renderCoachRole(prof) {
   if (!area()) return;
   if (prof.role === 'trainer') {
     area().innerHTML = `
-      <section class="card"><div class="card-label">📅 Мої вільні слоти</div>
-        <div class="field-row">
-          <div class="field"><label>Дата й час</label><input type="datetime-local" id="slotAt"/></div>
-          <div class="field"><label>Хв</label><input type="number" id="slotDur" value="60" min="15" step="15"/></div>
+      <section class="card"><div class="card-label">📅 Мій розклад</div>
+        <div class="field"><label>Тривалість заняття (яку задаю я)</label>
+          <div class="type-chips" id="durChips" style="margin-top:6px">
+            ${[15, 30, 60, 90, 120].map((m) => `<button class="tchip ${m === 60 ? 'on' : ''}" data-dur="${m}">${durLabel(m)}</button>`).join('')}
+          </div>
         </div>
-        <button class="btn primary" id="addSlot">Додати слот</button>
-        <div id="slotList" class="slot-list"><p class="muted">Завантаження…</p></div>
+        <div class="day-strip" id="dayStrip"></div>
+        <p class="muted side" style="margin:8px 4px">Обери день → торкайся вільних годин, щоб відкрити запис. Клієнт зможе записатися лише на позначені години й саме на цю тривалість.</p>
+        <div id="hourGrid" class="hour-grid"><p class="muted">Завантаження…</p></div>
       </section>
       <section class="card"><div class="card-label">🔔 Заявки на тренування</div>
         <div id="reqList"><p class="muted">Завантаження…</p></div>
@@ -1974,44 +2035,97 @@ async function renderCoachRole(prof) {
   }
 }
 
+// підпис тривалості: 15→«15 хв», 60→«1 год», 90→«1,5 год», 120→«2 год»
+function durLabel(m) {
+  if (m < 60) return `${m} хв`;
+  if (m % 60 === 0) return `${m / 60} год`;
+  return `${(m / 60).toFixed(1).replace('.', ',')} год`;
+}
+const SLOT_HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
+function localISO(dayISO, hour) {
+  const [y, m, d] = dayISO.split('-').map(Number);
+  return new Date(y, m - 1, d, hour, 0, 0, 0).toISOString();
+}
+
 async function wireTrainerSlots(prof) {
-  const list = screenEl.querySelector('#slotList');
-  const reload = async () => {
-    try {
-      const slots = await BE.listSlots(prof.id, new Date().toISOString());
-      if (!screenEl.querySelector('#slotList')) return;
-      screenEl.querySelector('#slotList').innerHTML = slots.length
-        ? slots
-            .map(
-              (s) => `<div class="slot-row ${s.status}">
-                <span>${prettyDateTime(s.starts_at)} · ${s.duration_min} хв</span>
-                <span class="slot-tag">${s.status === 'free' ? 'вільний' : s.status === 'booked' ? 'зайнятий' : 'закритий'}</span>
-                ${s.status === 'free' ? `<button class="mini danger" data-del="${s.id}">✕</button>` : ''}
-              </div>`
-            )
-            .join('')
-        : '<p class="muted">Ще немає слотів. Додай перший — і клієнти зможуть записатися.</p>';
-      screenEl.querySelectorAll('#slotList [data-del]').forEach((b) =>
-        b.addEventListener('click', async () => {
-          try { await BE.deleteSlot(+b.dataset.del); reload(); } catch (e) { alert('⚠️ ' + e.message); }
-        })
-      );
-    } catch (e) {
-      if (screenEl.querySelector('#slotList')) screenEl.querySelector('#slotList').innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`;
+  let selDur = 60;
+  let selDay = S.todayISO();
+  let all = [];
+
+  const load = async () => {
+    try { all = await BE.listSlots(prof.id, S.isoToDate(S.todayISO()).toISOString()); }
+    catch (e) { all = []; }
+  };
+
+  const renderDayStrip = () => {
+    const strip = screenEl.querySelector('#dayStrip');
+    if (!strip) return;
+    const names = dateNames();
+    let html = '';
+    for (let i = 0; i < 14; i++) {
+      const d = S.isoToDate(S.todayISO());
+      d.setDate(d.getDate() + i);
+      const iso = S.dateToISO(d);
+      const cnt = all.filter((s) => s.starts_at.slice(0, 10) === iso).length; // приблизно (UTC-зсув невеликий)
+      html += `<button class="day-chip ${iso === selDay ? 'on' : ''}" data-d="${iso}">
+        <span class="dc-dow">${names.dows[d.getDay()]}</span><span class="dc-num">${d.getDate()}</span>
+        ${cnt ? `<span class="dc-dot">${cnt}</span>` : ''}</button>`;
     }
+    strip.innerHTML = html;
+    strip.querySelectorAll('.day-chip').forEach((b) =>
+      b.addEventListener('click', () => { selDay = b.dataset.d; renderDayStrip(); renderHours(); })
+    );
   };
-  screenEl.querySelector('#addSlot').onclick = async () => {
-    const at = screenEl.querySelector('#slotAt').value;
-    const dur = screenEl.querySelector('#slotDur').value;
-    if (!at) return toast('Вкажи дату й час');
-    try {
-      await BE.addSlot(new Date(at).toISOString(), dur);
-      screenEl.querySelector('#slotAt').value = '';
-      toast(T('Збережено'));
-      reload();
-    } catch (e) { alert('⚠️ ' + e.message); }
+
+  const renderHours = () => {
+    const grid = screenEl.querySelector('#hourGrid');
+    if (!grid) return;
+    grid.innerHTML = SLOT_HOURS.map((h) => {
+      // слот, що починається в цю годину цього дня
+      const slot = all.find((s) => {
+        const t = new Date(s.starts_at);
+        return S.dateToISO(t) === selDay && t.getHours() === h;
+      });
+      const hh = String(h).padStart(2, '0') + ':00';
+      if (slot) {
+        const booked = slot.status === 'booked';
+        return `<div class="hour-row ${booked ? 'booked' : 'open'}" data-id="${slot.id}" data-free="${!booked}">
+          <span class="hr-time">${hh}</span>
+          <span class="hr-info">${booked ? '🔒 зайнято' : '🟢 відкрито'} · ${durLabel(slot.duration_min)}</span>
+          ${booked ? '' : '<span class="hr-x">✕</span>'}
+        </div>`;
+      }
+      return `<div class="hour-row empty" data-h="${h}"><span class="hr-time">${hh}</span><span class="hr-info muted">+ відкрити (${durLabel(selDur)})</span></div>`;
+    }).join('');
+    grid.querySelectorAll('.hour-row').forEach((row) => {
+      row.addEventListener('click', async () => {
+        try {
+          if (row.classList.contains('empty')) {
+            await BE.addSlot(localISO(selDay, +row.dataset.h), selDur);
+          } else if (row.dataset.free === 'true') {
+            await BE.deleteSlot(+row.dataset.id);
+          } else {
+            return; // зайнятий — не чіпаємо
+          }
+          await load();
+          renderDayStrip();
+          renderHours();
+        } catch (e) { alert('⚠️ ' + e.message); }
+      });
+    });
   };
-  reload();
+
+  screenEl.querySelectorAll('#durChips [data-dur]').forEach((b) =>
+    b.addEventListener('click', () => {
+      selDur = +b.dataset.dur;
+      screenEl.querySelectorAll('#durChips [data-dur]').forEach((c) => c.classList.toggle('on', c === b));
+      renderHours();
+    })
+  );
+
+  await load();
+  renderDayStrip();
+  renderHours();
 }
 
 async function wireTrainerRequests(prof) {
@@ -2026,11 +2140,14 @@ async function wireTrainerRequests(prof) {
               <div><b>${esc(b.client?.name || 'Клієнт')}</b> — ${b.slot ? prettyDateTime(b.slot.starts_at) : ''}
                 <div class="muted">${BK_STATUS[b.status] || b.status}${b.client?.contact ? ' · ' + esc(b.client.contact) : ''}</div>
                 ${b.note ? `<div class="muted">«${esc(b.note)}»</div>` : ''}</div>
-              ${b.status === 'requested'
-                ? `<div class="req-actions"><button class="mini ok" data-ok="${b.id}">✓</button><button class="mini danger" data-no="${b.id}">✕</button></div>`
-                : b.status === 'confirmed'
-                ? `<button class="mini" data-done="${b.id}">🏁</button>`
-                : ''}
+              <div class="req-actions">
+                <button class="mini" data-msg="${b.client_id}" title="Написати">💬</button>
+                ${b.status === 'requested'
+                  ? `<button class="mini ok" data-ok="${b.id}">✓</button><button class="mini danger" data-no="${b.id}">✕</button>`
+                  : b.status === 'confirmed'
+                  ? `<button class="mini" data-done="${b.id}">🏁</button>`
+                  : ''}
+              </div>
             </div>`
           )
           .join('')
@@ -2039,6 +2156,7 @@ async function wireTrainerRequests(prof) {
     el.querySelectorAll('[data-ok]').forEach((b) => b.addEventListener('click', () => act(+b.dataset.ok, 'confirmed')));
     el.querySelectorAll('[data-no]').forEach((b) => b.addEventListener('click', () => act(+b.dataset.no, 'declined')));
     el.querySelectorAll('[data-done]').forEach((b) => b.addEventListener('click', () => act(+b.dataset.done, 'done')));
+    el.querySelectorAll('[data-msg]').forEach((b) => b.addEventListener('click', () => go('#/chat/' + b.dataset.msg)));
   } catch (e) {
     if (screenEl.querySelector('#reqList')) screenEl.querySelector('#reqList').innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`;
   }
@@ -2102,7 +2220,10 @@ async function wireClientBookings() {
             (b) => `<div class="req-row">
               <div><b>${esc(b.trainer?.name || 'Тренер')}</b> — ${b.slot ? prettyDateTime(b.slot.starts_at) : ''}
                 <div class="muted">${BK_STATUS[b.status] || b.status}${b.status === 'confirmed' && b.trainer?.contact ? ' · ' + esc(b.trainer.contact) : ''}</div></div>
-              ${b.status === 'requested' || b.status === 'confirmed' ? `<button class="mini danger" data-cancel="${b.id}">Скасувати</button>` : ''}
+              <div class="req-actions">
+                <button class="mini" data-msg="${b.trainer_id}" title="Написати">💬</button>
+                ${b.status === 'requested' || b.status === 'confirmed' ? `<button class="mini danger" data-cancel="${b.id}">Скасувати</button>` : ''}
+              </div>
             </div>`
           )
           .join('')
@@ -2110,9 +2231,72 @@ async function wireClientBookings() {
     el.querySelectorAll('[data-cancel]').forEach((b) =>
       b.addEventListener('click', async () => { try { await BE.setBookingStatus(+b.dataset.cancel, 'cancelled'); wireClientBookings(); } catch (e) { alert('⚠️ ' + e.message); } })
     );
+    el.querySelectorAll('[data-msg]').forEach((b) => b.addEventListener('click', () => go('#/chat/' + b.dataset.msg)));
   } catch (e) {
     if (screenEl.querySelector('#myBookings')) screenEl.querySelector('#myBookings').innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`;
   }
+}
+
+// =====================================================================
+//  ЕКРАН: ЧАТ
+// =====================================================================
+async function renderChat(otherId) {
+  if (!BE.configured) return go('#/coach');
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backChat">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">Повідомлення</div>
+        <div class="appbar-title" id="chatName">…</div></div>
+      <button class="icon-btn" id="refreshChat" title="Оновити">↻</button>
+    </header>
+    <div class="chat-log" id="chatLog"><p class="muted center">Завантаження…</p></div>
+    <div class="chat-input">
+      <input type="text" id="chatText" placeholder="Напиши повідомлення…" autocomplete="off"/>
+      <button class="btn primary" id="chatSend">▶</button>
+    </div>`;
+  screenEl.querySelector('#backChat').onclick = () => history.back();
+
+  let me = null;
+  try { me = await BE.myId(); } catch (e) {}
+  if (!me) return go('#/coach');
+
+  try {
+    const p = await BE.getProfile(otherId);
+    const nm = screenEl.querySelector('#chatName');
+    if (nm) nm.textContent = p.name || 'Співрозмовник';
+  } catch (e) {}
+
+  const load = async () => {
+    try {
+      const msgs = await BE.listMessages(otherId);
+      const log = screenEl.querySelector('#chatLog');
+      if (!log) return;
+      log.innerHTML = msgs.length
+        ? msgs
+            .map((m) => `<div class="bubble ${m.from_id === me ? 'mine' : 'their'}">${esc(m.text)}</div>`)
+            .join('')
+        : '<p class="muted center">Повідомлень ще немає. Напиши першим 👋</p>';
+      log.scrollTop = log.scrollHeight;
+    } catch (e) {
+      const log = screenEl.querySelector('#chatLog');
+      if (log) log.innerHTML = `<p class="muted center">⚠️ ${esc(e.message)}</p>`;
+    }
+  };
+
+  const send = async () => {
+    const inp = screenEl.querySelector('#chatText');
+    const text = inp.value.trim();
+    if (!text) return;
+    inp.value = '';
+    try { await BE.sendMessage(otherId, text); await load(); }
+    catch (e) { alert('⚠️ ' + e.message); }
+  };
+  screenEl.querySelector('#chatSend').onclick = send;
+  screenEl.querySelector('#chatText').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); send(); }
+  });
+  screenEl.querySelector('#refreshChat').onclick = load;
+  await load();
 }
 
 // =====================================================================
