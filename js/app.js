@@ -2066,7 +2066,7 @@ async function wireTrainerSlots(prof) {
       const d = S.isoToDate(S.todayISO());
       d.setDate(d.getDate() + i);
       const iso = S.dateToISO(d);
-      const cnt = all.filter((s) => s.starts_at.slice(0, 10) === iso).length; // приблизно (UTC-зсув невеликий)
+      const cnt = all.filter((s) => S.dateToISO(new Date(s.starts_at)) === iso).length; // за локальною датою (як і сітка)
       html += `<button class="day-chip ${iso === selDay ? 'on' : ''}" data-d="${iso}">
         <span class="dc-dow">${names.dows[d.getDay()]}</span><span class="dc-num">${d.getDate()}</span>
         ${cnt ? `<span class="dc-dot">${cnt}</span>` : ''}</button>`;
