@@ -37,12 +37,13 @@ let bodyMetric = 'bodyWeight';
 let bodyDate = null;
 
 // активні «живі» компоненти, які треба знищувати при зміні екрана
-let live = { timer: null, wheel: null, camera: null };
+let live = { timer: null, wheel: null, camera: null, chat: null };
 function clearLive() {
   if (live.timer) live.timer.destroy();
   if (live.wheel && live.wheel.destroy) live.wheel.destroy();
   if (live.camera && live.camera.destroy) live.camera.destroy();
-  live = { timer: null, wheel: null, camera: null };
+  if (live.chat && live.chat.destroy) live.chat.destroy();
+  live = { timer: null, wheel: null, camera: null, chat: null };
 }
 
 // ---------- маршрутизація ----------
@@ -2489,6 +2490,21 @@ async function renderChat(otherId) {
   });
   screenEl.querySelector('#refreshChat').onclick = load;
   await load();
+
+  // realtime: нові повідомлення від співрозмовника з'являються самі
+  const sub = await BE.subscribeMessages(otherId, (m) => {
+    const log = screenEl.querySelector('#chatLog');
+    if (!log) return;
+    if (log.querySelector('.muted')) { load(); return; } // прибрати «Повідомлень ще немає»
+    const d = document.createElement('div');
+    d.className = 'bubble their';
+    d.textContent = m.text;
+    log.appendChild(d);
+    log.scrollTop = log.scrollHeight;
+  });
+  // якщо за час підключення користувач уже пішов з чату — одразу відписатися
+  if (location.hash === '#/chat/' + otherId) live.chat = sub;
+  else sub.destroy();
 }
 
 // =====================================================================

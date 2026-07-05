@@ -248,6 +248,35 @@ export async function sendMessage(toId, text) {
   const { error } = await sb.from('messages').insert({ from_id: s.user.id, to_id: toId, text });
   if (error) throw new Error(error.message);
 }
+// realtime-підписка на нові повідомлення в розмові з otherId.
+// onNew(msg) викликається для кожного вхідного повідомлення від співрозмовника.
+// Повертає { destroy } — відписатися при виході з екрана чату.
+export async function subscribeMessages(otherId, onNew) {
+  const sb = await client();
+  const s = await getSession();
+  if (!sb || !s) return { destroy() {} };
+  const me = s.user.id;
+  // Realtime фільтрує рядки за RLS-правилами токена — передати токен явно,
+  // щоб не залежати від того, чи встиг спрацювати авто-setAuth клієнта
+  sb.realtime.setAuth(s.access_token);
+  const ch = sb
+    // унікальний суфікс: повторний вхід у чат не конфліктує зі старим каналом,
+    // який ще не встиг закритися
+    .channel(`chat-${[me, otherId].sort().join('-')}-${Date.now()}`)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `to_id=eq.${me}` },
+      (p) => {
+        if (p.new && p.new.from_id === otherId) onNew(p.new);
+      }
+    )
+    .subscribe();
+  return {
+    destroy() {
+      try { sb.removeChannel(ch); } catch {}
+    },
+  };
+}
 export async function getProfile(id) {
   const sb = await client();
   const { data, error } = await sb.from('profiles').select('name,contact,avatar_url,role').eq('id', id).single();
