@@ -105,6 +105,109 @@ export async function saveMyProfile(patch) {
   if (error) throw new Error(error.message);
 }
 
+// ---- послуги тренера ----
+export async function listServices(trainerId) {
+  const sb = await client();
+  const { data, error } = await sb
+    .from('trainer_services')
+    .select('*')
+    .eq('trainer_id', trainerId)
+    .eq('is_active', true)
+    .order('id');
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+export async function addService({ title, price, duration_min }) {
+  const sb = await client();
+  const s = await getSession();
+  const { error } = await sb.from('trainer_services').insert({
+    trainer_id: s.user.id,
+    title,
+    price: Number(price) || 0,
+    duration_min: Number(duration_min) || 60,
+  });
+  if (error) throw new Error(error.message);
+}
+export async function deleteService(id) {
+  const sb = await client();
+  const { error } = await sb.from('trainer_services').update({ is_active: false }).eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+// ---- слоти тренера ----
+export async function listSlots(trainerId, fromISO) {
+  const sb = await client();
+  let q = sb.from('trainer_slots').select('*').eq('trainer_id', trainerId).order('starts_at');
+  if (fromISO) q = q.gte('starts_at', fromISO);
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+export async function addSlot(startsAtISO, durationMin) {
+  const sb = await client();
+  const s = await getSession();
+  const { error } = await sb.from('trainer_slots').insert({
+    trainer_id: s.user.id,
+    starts_at: startsAtISO,
+    duration_min: Number(durationMin) || 60,
+  });
+  if (error) throw new Error(error.code === '23505' ? 'Слот на цей час уже є' : error.message);
+}
+export async function deleteSlot(id) {
+  const sb = await client();
+  const { error } = await sb.from('trainer_slots').delete().eq('id', id).eq('status', 'free');
+  if (error) throw new Error(error.message);
+}
+
+// ---- тренери (каталог) ----
+export async function listTrainers() {
+  const sb = await client();
+  const { data, error } = await sb
+    .from('profiles')
+    .select('id,name,city,bio,contact,avatar_url')
+    .eq('role', 'trainer')
+    .order('name');
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
+// ---- бронювання ----
+export async function bookSlot(slotId, note) {
+  const sb = await client();
+  const { data, error } = await sb.rpc('book_slot', { p_slot: slotId, p_note: note || '' });
+  if (error) throw new Error(uaAuthError(error));
+  return data;
+}
+export async function setBookingStatus(bookingId, status) {
+  const sb = await client();
+  const { error } = await sb.rpc('set_booking_status', { p_booking: bookingId, p_status: status });
+  if (error) throw new Error(uaAuthError(error));
+}
+// записи, де я тренер (з ім'ям клієнта і часом слота)
+export async function bookingsAsTrainer() {
+  const sb = await client();
+  const s = await getSession();
+  const { data, error } = await sb
+    .from('bookings')
+    .select('*, client:client_id(name,contact), slot:slot_id(starts_at,duration_min)')
+    .eq('trainer_id', s.user.id)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+// мої записи як клієнта (з ім'ям тренера)
+export async function bookingsAsClient() {
+  const sb = await client();
+  const s = await getSession();
+  const { data, error } = await sb
+    .from('bookings')
+    .select('*, trainer:trainer_id(name,contact), slot:slot_id(starts_at,duration_min)')
+    .eq('client_id', s.user.id)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
 // ---- зрозумілі повідомлення про помилки ----
 function uaAuthError(error) {
   const m = String(error.message || '');

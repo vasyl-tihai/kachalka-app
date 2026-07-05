@@ -1895,11 +1895,9 @@ async function renderCoach() {
       <button class="btn primary" id="saveProf">Зберегти профіль</button>
       <button class="btn ghost" id="logoutBtn">Вийти з акаунта</button>
     </section>
-    <section class="card">
-      <div class="card-label">Далі в розробці</div>
-      <p class="muted">📅 Календар слотів і запис клієнтів · 🏋️ призначення тренувань клієнтам · 📈 перегляд їхнього прогресу · 💬 чат.</p>
-    </section>`);
+    <div id="roleArea"></div>`);
   let role = prof.role || 'client';
+  renderCoachRole(prof);
   screenEl.querySelectorAll('.tchip[data-role]').forEach((b) =>
     b.addEventListener('click', () => {
       role = b.dataset.role;
@@ -1916,12 +1914,205 @@ async function renderCoach() {
         contact: screenEl.querySelector('#pContact').value.trim(),
       });
       toast(T('Збережено'));
+      prof.role = role;
+      prof.name = screenEl.querySelector('#pName').value.trim();
+      prof.contact = screenEl.querySelector('#pContact').value.trim();
+      renderCoachRole(prof); // показати секції відповідної ролі
     } catch (e) { alert('⚠️ ' + e.message); }
   };
   screenEl.querySelector('#logoutBtn').onclick = async () => {
     await BE.signOut();
     renderCoach();
   };
+}
+
+// дата+час у людський вигляд «Пн, 7 лип · 18:30»
+function prettyDateTime(iso) {
+  const d = new Date(iso);
+  const names = dateNames();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${names.dows[d.getDay()]}, ${d.getDate()} ${names.monthsShort[d.getMonth()]} · ${hh}:${mm}`;
+}
+const BK_STATUS = {
+  requested: '⏳ очікує',
+  confirmed: '✅ підтверджено',
+  declined: '✕ відхилено',
+  cancelled: '✕ скасовано',
+  done: '🏁 завершено',
+};
+
+// секції кабінету залежно від ролі
+async function renderCoachRole(prof) {
+  const area = () => screenEl.querySelector('#roleArea');
+  if (!area()) return;
+  if (prof.role === 'trainer') {
+    area().innerHTML = `
+      <section class="card"><div class="card-label">📅 Мої вільні слоти</div>
+        <div class="field-row">
+          <div class="field"><label>Дата й час</label><input type="datetime-local" id="slotAt"/></div>
+          <div class="field"><label>Хв</label><input type="number" id="slotDur" value="60" min="15" step="15"/></div>
+        </div>
+        <button class="btn primary" id="addSlot">Додати слот</button>
+        <div id="slotList" class="slot-list"><p class="muted">Завантаження…</p></div>
+      </section>
+      <section class="card"><div class="card-label">🔔 Заявки на тренування</div>
+        <div id="reqList"><p class="muted">Завантаження…</p></div>
+      </section>`;
+    wireTrainerSlots(prof);
+    wireTrainerRequests(prof);
+  } else {
+    area().innerHTML = `
+      <section class="card"><div class="card-label">🧑‍🏫 Знайти тренера й записатися</div>
+        <div id="trainerList"><p class="muted">Завантаження…</p></div>
+      </section>
+      <section class="card"><div class="card-label">📋 Мої записи</div>
+        <div id="myBookings"><p class="muted">Завантаження…</p></div>
+      </section>`;
+    wireClientTrainers();
+    wireClientBookings();
+  }
+}
+
+async function wireTrainerSlots(prof) {
+  const list = screenEl.querySelector('#slotList');
+  const reload = async () => {
+    try {
+      const slots = await BE.listSlots(prof.id, new Date().toISOString());
+      if (!screenEl.querySelector('#slotList')) return;
+      screenEl.querySelector('#slotList').innerHTML = slots.length
+        ? slots
+            .map(
+              (s) => `<div class="slot-row ${s.status}">
+                <span>${prettyDateTime(s.starts_at)} · ${s.duration_min} хв</span>
+                <span class="slot-tag">${s.status === 'free' ? 'вільний' : s.status === 'booked' ? 'зайнятий' : 'закритий'}</span>
+                ${s.status === 'free' ? `<button class="mini danger" data-del="${s.id}">✕</button>` : ''}
+              </div>`
+            )
+            .join('')
+        : '<p class="muted">Ще немає слотів. Додай перший — і клієнти зможуть записатися.</p>';
+      screenEl.querySelectorAll('#slotList [data-del]').forEach((b) =>
+        b.addEventListener('click', async () => {
+          try { await BE.deleteSlot(+b.dataset.del); reload(); } catch (e) { alert('⚠️ ' + e.message); }
+        })
+      );
+    } catch (e) {
+      if (screenEl.querySelector('#slotList')) screenEl.querySelector('#slotList').innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`;
+    }
+  };
+  screenEl.querySelector('#addSlot').onclick = async () => {
+    const at = screenEl.querySelector('#slotAt').value;
+    const dur = screenEl.querySelector('#slotDur').value;
+    if (!at) return toast('Вкажи дату й час');
+    try {
+      await BE.addSlot(new Date(at).toISOString(), dur);
+      screenEl.querySelector('#slotAt').value = '';
+      toast(T('Збережено'));
+      reload();
+    } catch (e) { alert('⚠️ ' + e.message); }
+  };
+  reload();
+}
+
+async function wireTrainerRequests(prof) {
+  try {
+    const rows = await BE.bookingsAsTrainer();
+    const el = screenEl.querySelector('#reqList');
+    if (!el) return;
+    el.innerHTML = rows.length
+      ? rows
+          .map(
+            (b) => `<div class="req-row">
+              <div><b>${esc(b.client?.name || 'Клієнт')}</b> — ${b.slot ? prettyDateTime(b.slot.starts_at) : ''}
+                <div class="muted">${BK_STATUS[b.status] || b.status}${b.client?.contact ? ' · ' + esc(b.client.contact) : ''}</div>
+                ${b.note ? `<div class="muted">«${esc(b.note)}»</div>` : ''}</div>
+              ${b.status === 'requested'
+                ? `<div class="req-actions"><button class="mini ok" data-ok="${b.id}">✓</button><button class="mini danger" data-no="${b.id}">✕</button></div>`
+                : b.status === 'confirmed'
+                ? `<button class="mini" data-done="${b.id}">🏁</button>`
+                : ''}
+            </div>`
+          )
+          .join('')
+      : '<p class="muted">Заявок поки немає.</p>';
+    const act = async (id, st) => { try { await BE.setBookingStatus(id, st); wireTrainerRequests(prof); } catch (e) { alert('⚠️ ' + e.message); } };
+    el.querySelectorAll('[data-ok]').forEach((b) => b.addEventListener('click', () => act(+b.dataset.ok, 'confirmed')));
+    el.querySelectorAll('[data-no]').forEach((b) => b.addEventListener('click', () => act(+b.dataset.no, 'declined')));
+    el.querySelectorAll('[data-done]').forEach((b) => b.addEventListener('click', () => act(+b.dataset.done, 'done')));
+  } catch (e) {
+    if (screenEl.querySelector('#reqList')) screenEl.querySelector('#reqList').innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`;
+  }
+}
+
+async function wireClientTrainers() {
+  try {
+    const trainers = await BE.listTrainers();
+    const el = screenEl.querySelector('#trainerList');
+    if (!el) return;
+    el.innerHTML = trainers.length
+      ? trainers
+          .map(
+            (tr) => `<button class="ex-card" data-tr="${tr.id}">
+              <span class="ex-ico"><span class="glyph">🧑‍🏫</span></span>
+              <span class="ex-main"><span class="ex-name">${esc(tr.name || 'Тренер')}</span>
+                <span class="ex-sub">${esc(tr.city || '')}${tr.bio ? ' · ' + esc(tr.bio) : ''}</span></span>
+              <span class="chev">›</span></button>`
+          )
+          .join('')
+      : '<p class="muted">Поки немає тренерів у каталозі.</p>';
+    el.querySelectorAll('[data-tr]').forEach((b) => b.addEventListener('click', () => openTrainerBooking(b.dataset.tr)));
+  } catch (e) {
+    if (screenEl.querySelector('#trainerList')) screenEl.querySelector('#trainerList').innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`;
+  }
+}
+
+async function openTrainerBooking(trainerId) {
+  let slots = [];
+  try {
+    slots = (await BE.listSlots(trainerId, new Date().toISOString())).filter((s) => s.status === 'free');
+  } catch (e) { return alert('⚠️ ' + e.message); }
+  const body = slots.length
+    ? `<p class="muted">Обери вільний час:</p><div class="slot-list">${slots
+        .map((s) => `<label class="pick-row"><input type="radio" name="slot" value="${s.id}"/><span class="pick-name">${prettyDateTime(s.starts_at)} · ${s.duration_min} хв</span></label>`)
+        .join('')}</div>
+      <div class="field" style="margin-top:10px"><label>Коментар (необов'язково)</label><input type="text" id="bkNote" placeholder="Напр. перше тренування"/></div>`
+    : '<p class="muted">У цього тренера поки немає вільних слотів.</p>';
+  openModal('Запис на тренування', body, slots.length ? [
+    { label: 'Записатися', class: 'primary', onClick: async (root) => {
+      const sel = root.querySelector('input[name="slot"]:checked');
+      if (!sel) return;
+      try {
+        await BE.bookSlot(+sel.value, root.querySelector('#bkNote').value.trim());
+        closeModal();
+        toast('Заявку надіслано ✅');
+        wireClientBookings();
+      } catch (e) { alert('⚠️ ' + e.message); }
+    } },
+  ] : []);
+}
+
+async function wireClientBookings() {
+  try {
+    const rows = await BE.bookingsAsClient();
+    const el = screenEl.querySelector('#myBookings');
+    if (!el) return;
+    el.innerHTML = rows.length
+      ? rows
+          .map(
+            (b) => `<div class="req-row">
+              <div><b>${esc(b.trainer?.name || 'Тренер')}</b> — ${b.slot ? prettyDateTime(b.slot.starts_at) : ''}
+                <div class="muted">${BK_STATUS[b.status] || b.status}${b.status === 'confirmed' && b.trainer?.contact ? ' · ' + esc(b.trainer.contact) : ''}</div></div>
+              ${b.status === 'requested' || b.status === 'confirmed' ? `<button class="mini danger" data-cancel="${b.id}">Скасувати</button>` : ''}
+            </div>`
+          )
+          .join('')
+      : '<p class="muted">Ти ще нікуди не записаний.</p>';
+    el.querySelectorAll('[data-cancel]').forEach((b) =>
+      b.addEventListener('click', async () => { try { await BE.setBookingStatus(+b.dataset.cancel, 'cancelled'); wireClientBookings(); } catch (e) { alert('⚠️ ' + e.message); } })
+    );
+  } catch (e) {
+    if (screenEl.querySelector('#myBookings')) screenEl.querySelector('#myBookings').innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`;
+  }
 }
 
 // =====================================================================

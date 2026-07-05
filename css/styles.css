@@ -433,6 +433,18 @@ input, select { font-family: inherit; }
 }
 .tpl:active { transform: scale(.96); border-color: var(--blue); }
 
+/* ---------- слоти й заявки (кабінет) ---------- */
+.slot-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.slot-row, .req-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--bg-card2); border: 1px solid var(--line); border-radius: 13px; padding: 10px 12px; font-size: .92rem;
+}
+.slot-row.booked { border-color: rgba(255, 138, 61, .4); }
+.slot-tag { color: var(--muted); font-size: .82rem; }
+.req-actions { display: flex; gap: 6px; }
+.mini.ok { color: var(--green); border-color: rgba(54, 215, 122, .4); }
+#roleArea .ex-card { margin-bottom: 8px; }
+
 /* ---------- вхід через Google ---------- */
 .btn.google {
   background: #fff; color: #1f1f1f; border-color: #fff; font-weight: 800;
