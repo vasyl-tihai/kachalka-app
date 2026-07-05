@@ -1624,14 +1624,18 @@ function renderSettings() {
         <div class="field"><label>${T('Відпочинок (сек)')}</label><input type="number" id="rest" value="${s.restSeconds}" min="5" step="5"/></div>
         <div class="field"><label>${T('Крок ± (сек)')}</label><input type="number" id="step" value="${s.restStep}" min="5" step="5"/></div>
       </div>
-      <button class="btn primary" id="saveSet">${T('Зберегти')}</button>
     </section>
 
     <section class="card">
       <div class="card-label">${T('Сигнал у кінці відпочинку')}</div>
-      <label class="pick-row"><input type="checkbox" id="soundOn" ${s.soundOn ? 'checked' : ''}/><span class="pick-ico">🔊</span><span class="pick-name">${T('Звук')}</span></label>
-      <div class="field" style="margin-top:10px"><label>${T('Мелодія')}</label>
-        <div class="type-chips" style="margin-top:6px">
+      <div class="pick-list">
+        <label class="pick-row"><input type="checkbox" id="soundOn" ${s.soundOn ? 'checked' : ''}/><span class="pick-ico">🔊</span><span class="pick-name">${T('Звук')}</span></label>
+        <label class="pick-row"><input type="checkbox" id="vibrOn" ${s.vibrateOn ? 'checked' : ''}/><span class="pick-ico">📳</span><span class="pick-name">${T('Вібрація')}</span></label>
+        <label class="pick-row"><input type="checkbox" id="flashOn" ${s.flashOn ? 'checked' : ''}/><span class="pick-ico">🟥</span><span class="pick-name">${T('Спалах екрана')}</span></label>
+      </div>
+      <div class="card-div"></div>
+      <div class="field"><label>${T('Мелодія')}</label>
+        <div class="type-chips">
           ${soundChips}
           <button class="tchip ${s.soundId === 'custom' ? 'on' : ''}" data-snd="custom" ${hasCustom ? '' : 'disabled'}>🎵 ${T('Свій звук')}${s.customSoundName ? ` (${esc(s.customSoundName)})` : ''}</button>
         </div>
@@ -1642,9 +1646,8 @@ function renderSettings() {
         ${hasCustom ? `<button class="btn ghost" id="delSnd">✕ ${T('Прибрати')}</button>` : ''}
       </div>
       <input type="file" id="sndFile" accept="audio/*" hidden/>
-      <label class="pick-row" style="margin-top:10px"><input type="checkbox" id="vibrOn" ${s.vibrateOn ? 'checked' : ''}/><span class="pick-ico">📳</span><span class="pick-name">${T('Вібрація')}</span></label>
-      <label class="pick-row"><input type="checkbox" id="flashOn" ${s.flashOn ? 'checked' : ''}/><span class="pick-ico">🟥</span><span class="pick-name">${T('Спалах екрана')}</span></label>
-      <div class="field" style="margin-top:10px"><label>${T('Колір спалаху')}</label>
+      <div class="card-div"></div>
+      <div class="field"><label>${T('Колір спалаху')}</label>
         <div class="swatches">${swatches}
           <input type="color" id="flashColor" value="${s.flashColor || '#ff2f2f'}" title="${T('Колір спалаху')}"/>
         </div>
@@ -1658,11 +1661,13 @@ function renderSettings() {
 
     <section class="card">
       <div class="card-label">${T('Дані')}</div>
-      <button class="btn ghost" id="exportBtn">⬇️ ${T('Експорт (резервна копія)')}</button>
-      <button class="btn ghost" id="importBtn">⬆️ ${T('Імпорт з файлу')}</button>
+      <div class="btn-col">
+        <button class="btn ghost" id="exportBtn">⬇️ ${T('Експорт (резервна копія)')}</button>
+        <button class="btn ghost" id="importBtn">⬆️ ${T('Імпорт з файлу')}</button>
+        ${S.hasBackup() ? `<button class="btn ghost" id="undoBtn">↩️ ${T('Відмінити останній імпорт')}</button>` : ''}
+        <button class="btn danger" id="wipeBtn">🗑️ ${T('Стерти всі дані')}</button>
+      </div>
       <input type="file" id="importFile" accept="application/json,.json" hidden/>
-      ${S.hasBackup() ? `<button class="btn ghost" id="undoBtn">↩️ ${T('Відмінити останній імпорт')}</button>` : ''}
-      <button class="btn danger" id="wipeBtn">🗑️ ${T('Стерти всі дані')}</button>
     </section>
     <p class="muted center">КАЧАЛКА · ${T('щоденник тренувань · усі дані лише на цьому пристрої')}</p>
   `;
@@ -1677,13 +1682,16 @@ function renderSettings() {
     renderSettings();
   };
 
-  screenEl.querySelector('#saveSet').onclick = () => {
+  // таймер зберігається одразу при зміні — як і решта налаштувань
+  const saveTimer = () => {
     S.updateSettings({
       restSeconds: parseInt(screenEl.querySelector('#rest').value, 10) || 60,
       restStep: parseInt(screenEl.querySelector('#step').value, 10) || 30,
     });
     toast(T('Збережено'));
   };
+  screenEl.querySelector('#rest').onchange = saveTimer;
+  screenEl.querySelector('#step').onchange = saveTimer;
 
   // --- сигнал: звук/мелодія/свій файл/вібрація/спалах ---
   screenEl.querySelector('#soundOn').onchange = (e) => S.updateSettings({ soundOn: e.target.checked });

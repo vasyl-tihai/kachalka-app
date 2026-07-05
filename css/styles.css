@@ -306,12 +306,15 @@ input, select { font-family: inherit; }
 =================================================================== */
 .cal-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
 .cal-stat { font-weight: 700; color: var(--blue-soft); }
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+/* minmax(0,1fr): мінімум звичайного 1fr — auto, і квадратні клітинки
+   (aspect-ratio:1) не давали трекам стискатись — сітка вилазила за екран */
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
 .cal-grid.head { margin-bottom: 6px; }
 .cal-dow { text-align: center; color: var(--muted); font-size: .8rem; font-weight: 600; padding: 4px 0; }
 .cal-cell {
   aspect-ratio: 1; border-radius: 14px; border: 1px solid var(--line); background: var(--bg-card);
   display: grid; place-items: center; position: relative; font-weight: 700; font-size: 1rem;
+  min-width: 0;
 }
 .cal-cell.empty { background: transparent; border: none; }
 .cal-cell.trained { background: rgba(54,215,122,.14); border-color: rgba(54,215,122,.5); color: #b7f5d2; }
@@ -523,6 +526,10 @@ input, select { font-family: inherit; }
 .or-line::before, .or-line::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 
 /* ---------- налаштування: свотчі кольору, ряд кнопок, селект ---------- */
+#screen > .card { margin-bottom: 12px; }
+.btn-col { display: flex; flex-direction: column; gap: 8px; }
+.card-div { height: 1px; background: var(--line); margin: 14px 0; }
+.field .type-chips { margin-top: 2px; }
 .sel {
   width: 100%; background: var(--bg-card2); border: 1px solid var(--line); color: var(--txt);
   border-radius: 13px; padding: 12px; font-size: 1rem;
@@ -535,10 +542,13 @@ input, select { font-family: inherit; }
   box-shadow: inset 0 0 0 2px rgba(0, 0, 0, .35);
 }
 .swatch.on { border-color: #fff; transform: scale(1.12); }
+/* власний колір — кругла «крапля», як решта кольорів */
 .swatches input[type="color"] {
-  width: 44px; height: 38px; border: 1px solid var(--line); border-radius: 10px;
-  background: var(--bg-card2); padding: 2px;
+  width: 38px; height: 38px; border: 1px dashed var(--muted); border-radius: 50%;
+  background: transparent; padding: 0; cursor: pointer;
 }
+.swatches input[type="color"]::-webkit-color-swatch-wrapper { padding: 4px; }
+.swatches input[type="color"]::-webkit-color-swatch { border-radius: 50%; border: none; }
 .tchip:disabled { opacity: .4; }
 
 /* світлова сигналізація в кінці відпочинку (2.6с) */
