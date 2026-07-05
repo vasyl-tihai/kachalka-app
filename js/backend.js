@@ -255,6 +255,87 @@ export async function getProfile(id) {
   return data;
 }
 
+// ---- клієнти тренера (з тих, хто записувався) ----
+export async function myClients() {
+  const rows = await bookingsAsTrainer();
+  const seen = new Map();
+  for (const b of rows) if (b.client_id && !seen.has(b.client_id)) seen.set(b.client_id, b.client?.name || 'Клієнт');
+  return [...seen].map(([id, name]) => ({ id, name }));
+}
+
+// ---- призначені тренування (програми) ----
+export async function assignWorkout({ clientId, title, workoutJson, weekdays }) {
+  const sb = await client();
+  const s = await getSession();
+  const { error } = await sb.from('assignments').insert({
+    trainer_id: s.user.id,
+    client_id: clientId,
+    title: title || 'Програма',
+    workout_json: workoutJson,
+    weekdays: weekdays || [],
+  });
+  if (error) throw new Error(error.message);
+}
+export async function assignmentsForClient(clientId) {
+  const sb = await client();
+  const s = await getSession();
+  const { data, error } = await sb
+    .from('assignments')
+    .select('*')
+    .eq('trainer_id', s.user.id)
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+export async function myAssignments() {
+  const sb = await client();
+  const s = await getSession();
+  const { data, error } = await sb
+    .from('assignments')
+    .select('*, trainer:trainer_id(name)')
+    .eq('client_id', s.user.id)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+export async function deleteAssignment(id) {
+  const sb = await client();
+  const { error } = await sb.from('assignments').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+// ---- прогрес клієнта (звіти по днях) ----
+// клієнт відправляє свої логи; trainerId — кому показувати
+export async function pushLogs(daysMap, trainerId) {
+  const sb = await client();
+  const s = await getSession();
+  const rows = Object.keys(daysMap).map((iso) => ({
+    client_id: s.user.id,
+    trainer_id: trainerId,
+    day_iso: iso,
+    log_json: daysMap[iso],
+  }));
+  if (!rows.length) return 0;
+  const { error } = await sb.from('workout_logs').upsert(rows, { onConflict: 'client_id,day_iso' });
+  if (error) throw new Error(error.message);
+  return rows.length;
+}
+export async function clientLogs(clientId) {
+  const sb = await client();
+  const s = await getSession();
+  const { data, error } = await sb
+    .from('workout_logs')
+    .select('day_iso, log_json')
+    .eq('client_id', clientId)
+    .eq('trainer_id', s.user.id)
+    .order('day_iso', { ascending: false })
+    .limit(30);
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
 // ---- зрозумілі повідомлення про помилки ----
 function uaAuthError(error) {
   const m = String(error.message || '');

@@ -57,6 +57,7 @@ const routes = [
   { re: /^#\/history(?:\/(.+))?$/, render: renderHistory },
   { re: /^#\/settings$/, render: renderSettings },
   { re: /^#\/coach$/, render: renderCoach },
+  { re: /^#\/client\/(.+)$/, render: renderClientManage },
   { re: /^#\/chat\/(.+)$/, render: renderChat },
   { re: /^#\/today$/, render: renderToday },
 ];
@@ -1993,6 +1994,15 @@ function prettyDateTime(iso) {
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${names.dows[d.getDay()]}, ${d.getDate()} ${names.monthsShort[d.getMonth()]} · ${hh}:${mm}`;
 }
+// дні тижня для програм (JS getDay: 0=Нд); порядок Пн→Нд
+const WEEKDAYS = [
+  { d: 1, label: 'Пн' }, { d: 2, label: 'Вт' }, { d: 3, label: 'Ср' },
+  { d: 4, label: 'Чт' }, { d: 5, label: 'Пт' }, { d: 6, label: 'Сб' }, { d: 0, label: 'Нд' },
+];
+function weekdaysLabel(arr) {
+  if (!arr || !arr.length) return 'будь-коли';
+  return WEEKDAYS.filter((w) => arr.includes(w.d)).map((w) => w.label).join(', ');
+}
 const BK_STATUS = {
   requested: '⏳ очікує',
   confirmed: '✅ підтверджено',
@@ -2019,9 +2029,13 @@ async function renderCoachRole(prof) {
       </section>
       <section class="card"><div class="card-label">🔔 Заявки на тренування</div>
         <div id="reqList"><p class="muted">Завантаження…</p></div>
+      </section>
+      <section class="card"><div class="card-label">👥 Мої клієнти</div>
+        <div id="clientList"><p class="muted">Завантаження…</p></div>
       </section>`;
     wireTrainerSlots(prof);
     wireTrainerRequests(prof);
+    wireTrainerClients();
   } else {
     area().innerHTML = `
       <section class="card"><div class="card-label">🧑‍🏫 Знайти тренера й записатися</div>
@@ -2029,9 +2043,14 @@ async function renderCoachRole(prof) {
       </section>
       <section class="card"><div class="card-label">📋 Мої записи</div>
         <div id="myBookings"><p class="muted">Завантаження…</p></div>
+      </section>
+      <section class="card"><div class="card-label">🏋️ Програми від тренера</div>
+        <div id="myPrograms"><p class="muted">Завантаження…</p></div>
+        <button class="btn ghost" id="shareProgress" style="margin-top:10px">📤 Поділитися прогресом із тренером</button>
       </section>`;
     wireClientTrainers();
     wireClientBookings();
+    wireClientPrograms();
   }
 }
 
@@ -2235,6 +2254,179 @@ async function wireClientBookings() {
   } catch (e) {
     if (screenEl.querySelector('#myBookings')) screenEl.querySelector('#myBookings').innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`;
   }
+}
+
+// список клієнтів тренера
+async function wireTrainerClients() {
+  try {
+    const clients = await BE.myClients();
+    const el = screenEl.querySelector('#clientList');
+    if (!el) return;
+    el.innerHTML = clients.length
+      ? clients
+          .map(
+            (c) => `<button class="ex-card" data-c="${c.id}">
+              <span class="ex-ico"><span class="glyph">🏋️</span></span>
+              <span class="ex-main"><span class="ex-name">${esc(c.name)}</span>
+                <span class="ex-sub">програми · прогрес · чат</span></span>
+              <span class="chev">›</span></button>`
+          )
+          .join('')
+      : '<p class="muted">Клієнти зʼявляться тут після їхніх записів до тебе.</p>';
+    el.querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', () => go('#/client/' + b.dataset.c)));
+  } catch (e) {
+    if (screenEl.querySelector('#clientList')) screenEl.querySelector('#clientList').innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`;
+  }
+}
+
+// програми клієнта від тренера + поділитися прогресом
+async function wireClientPrograms() {
+  let rows = [];
+  try {
+    rows = await BE.myAssignments();
+    const el = screenEl.querySelector('#myPrograms');
+    if (el)
+      el.innerHTML = rows.length
+        ? rows
+            .map((a) => {
+              const n = (a.workout_json || []).length;
+              return `<div class="req-row">
+                <div><b>${esc(a.title)}</b> <span class="muted">· ${esc(a.trainer?.name || 'тренер')}</span>
+                  <div class="muted">📅 ${weekdaysLabel(a.weekdays)} · ${n} ${plural(n, 'вправа', 'вправи', 'вправ')}</div></div>
+                <button class="mini ok" data-imp="${a.id}" title="Додати в щоденник">＋</button>
+              </div>`;
+            })
+            .join('')
+        : '<p class="muted">Тренер ще не призначив програму.</p>';
+    el?.querySelectorAll('[data-imp]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const a = rows.find((x) => String(x.id) === b.dataset.imp);
+        if (!a) return;
+        S.importWorkoutFromPlan(a.title, a.workout_json);
+        toast('Додано в щоденник ✅');
+      })
+    );
+  } catch (e) {
+    if (screenEl.querySelector('#myPrograms')) screenEl.querySelector('#myPrograms').innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`;
+  }
+  screenEl.querySelector('#shareProgress')?.addEventListener('click', async () => {
+    try {
+      if (!rows.length) rows = await BE.myAssignments();
+      const trainerId = rows[0]?.trainer_id;
+      if (!trainerId) return toast('Спершу тренер має призначити програму');
+      const logs = S.exportRecentLogs(21);
+      const n = await BE.pushLogs(logs, trainerId);
+      toast(n ? `Надіслано днів: ${n} ✅` : 'Немає записів за останні 3 тижні');
+    } catch (e) { alert('⚠️ ' + e.message); }
+  });
+}
+
+// =====================================================================
+//  ЕКРАН: КЕРУВАННЯ КЛІЄНТОМ (тренер призначає програму й бачить прогрес)
+// =====================================================================
+async function renderClientManage(clientId) {
+  if (!BE.configured) return go('#/coach');
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backC">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">Клієнт</div><div class="appbar-title" id="cName">…</div></div>
+      <button class="icon-btn" id="msgC" title="Написати">💬</button>
+    </header>
+    <section class="card"><div class="card-label">➕ Призначити програму</div>
+      <div class="field"><label>Тренування (з моїх)</label><select id="asgW" class="sel"></select></div>
+      <div class="field"><label>Назва програми</label><input type="text" id="asgTitle" placeholder="Напр. Важкий день"/></div>
+      <div class="field"><label>Дні тижня</label>
+        <div class="type-chips" id="asgDays" style="margin-top:6px">
+          ${WEEKDAYS.map((w) => `<button class="tchip" data-wd="${w.d}">${w.label}</button>`).join('')}
+        </div></div>
+      <button class="btn primary" id="asgBtn">Призначити</button>
+    </section>
+    <section class="card"><div class="card-label">Призначені програми</div><div id="asgList"><p class="muted">…</p></div></section>
+    <section class="card"><div class="card-label">📈 Прогрес клієнта</div><div id="logList"><p class="muted">…</p></div></section>`;
+  screenEl.querySelector('#backC').onclick = () => go('#/coach');
+  screenEl.querySelector('#msgC').onclick = () => go('#/chat/' + clientId);
+  try {
+    const p = await BE.getProfile(clientId);
+    const nm = screenEl.querySelector('#cName');
+    if (nm) nm.textContent = p.name || 'Клієнт';
+  } catch (e) {}
+
+  const myW = S.getWorkouts();
+  const sel = screenEl.querySelector('#asgW');
+  sel.innerHTML = myW.length
+    ? myW.map((w) => `<option value="${w.id}">${esc(w.name)} (${w.items.length})</option>`).join('')
+    : '<option value="">— спершу створи тренування —</option>';
+  const titleInp = screenEl.querySelector('#asgTitle');
+  if (myW[0]) titleInp.value = myW[0].name;
+  sel.onchange = () => { titleInp.value = S.getWorkout(sel.value)?.name || ''; };
+  const days = new Set();
+  screenEl.querySelectorAll('#asgDays [data-wd]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const d = +b.dataset.wd;
+      if (days.has(d)) { days.delete(d); b.classList.remove('on'); }
+      else { days.add(d); b.classList.add('on'); }
+    })
+  );
+  screenEl.querySelector('#asgBtn').onclick = async () => {
+    const w = S.getWorkout(sel.value);
+    if (!w) return toast('Немає тренування — створи у вкладці «Тренування»');
+    const exList = w.items
+      .map((id) => S.getExercise(id))
+      .filter(Boolean)
+      .map((e) => ({ name: e.name, icon: e.icon, weightType: e.weightType, weight: e.weight, targetSets: e.targetSets, targetReps: e.targetReps, muscle: e.muscle }));
+    try {
+      await BE.assignWorkout({ clientId, title: titleInp.value.trim() || w.name, workoutJson: exList, weekdays: [...days] });
+      toast('Програму призначено ✅');
+      loadAsg();
+    } catch (e) { alert('⚠️ ' + e.message); }
+  };
+
+  const loadAsg = async () => {
+    try {
+      const rows = await BE.assignmentsForClient(clientId);
+      const el = screenEl.querySelector('#asgList');
+      if (!el) return;
+      el.innerHTML = rows.length
+        ? rows
+            .map((a) => `<div class="req-row"><div><b>${esc(a.title)}</b>
+              <div class="muted">📅 ${weekdaysLabel(a.weekdays)} · ${(a.workout_json || []).length} вправ</div></div>
+              <button class="mini danger" data-del="${a.id}">✕</button></div>`)
+            .join('')
+        : '<p class="muted">Ще нічого не призначено.</p>';
+      el.querySelectorAll('[data-del]').forEach((b) =>
+        b.addEventListener('click', async () => { try { await BE.deleteAssignment(+b.dataset.del); loadAsg(); } catch (e) { alert('⚠️ ' + e.message); } })
+      );
+    } catch (e) {
+      const el = screenEl.querySelector('#asgList');
+      if (el) el.innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`;
+    }
+  };
+  const loadLogs = async () => {
+    try {
+      const rows = await BE.clientLogs(clientId);
+      const el = screenEl.querySelector('#logList');
+      if (!el) return;
+      el.innerHTML = rows.length
+        ? rows
+            .map((r) => {
+              const items = (r.log_json || [])
+                .map((it) => {
+                  const reps = (it.sets || []).map((s) => s.reps).join('/');
+                  const w = it.weightType !== 'bodyweight' && it.sets && it.sets.length ? ' · ' + Math.max(...it.sets.map((s) => s.weight || 0)) + 'кг' : '';
+                  return `${esc(it.name)}: ${reps}${w}`;
+                })
+                .join('<br>');
+              return `<div class="req-row"><div><b>${S.prettyDate(r.day_iso)}</b><div class="muted">${items}</div></div></div>`;
+            })
+            .join('')
+        : '<p class="muted">Клієнт ще не поділився прогресом (він тисне «📤 Поділитися прогресом» у себе).</p>';
+    } catch (e) {
+      const el = screenEl.querySelector('#logList');
+      if (el) el.innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`;
+    }
+  };
+  loadAsg();
+  loadLogs();
 }
 
 // =====================================================================

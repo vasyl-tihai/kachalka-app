@@ -785,6 +785,49 @@ export function latestMeasurement(metricId) {
   return { value: last.value, iso: last.iso, delta: rows.length > 1 ? Math.round((last.value - first.value) * 10) / 10 : 0, count: rows.length };
 }
 
+// --- для кабінету тренера: логи для надсилання + імпорт програми ---
+// { 'YYYY-MM-DD': [{ name, weightType, sets:[{reps,weight}] }] } за останні days днів
+export function exportRecentLogs(days = 14) {
+  const out = {};
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  for (const [iso, byEx] of Object.entries(state.entries)) {
+    if (isoToDate(iso) < cutoff) continue;
+    const items = [];
+    for (const [exId, en] of Object.entries(byEx)) {
+      if (!en.sets || !en.sets.length) continue;
+      const ex = getExercise(exId);
+      items.push({
+        name: ex ? ex.name : 'Вправа',
+        weightType: en.weightType,
+        sets: en.sets.map((s) => ({ reps: s.reps, weight: s.weight })),
+      });
+    }
+    if (items.length) out[iso] = items;
+  }
+  return out;
+}
+// створити локальне тренування з призначеної тренером програми
+export function importWorkoutFromPlan(title, exList) {
+  const ids = [];
+  for (const e of exList || []) {
+    const ex = addExercise({
+      name: e.name || 'Вправа',
+      icon: e.icon || '💪',
+      weightType: e.weightType || 'dumbbell',
+      weight: Number(e.weight) || 0,
+      targetSets: Number(e.targetSets) || 4,
+      targetReps: Number(e.targetReps) || 10,
+      muscle: e.muscle || 'other',
+    });
+    ids.push(ex.id);
+  }
+  const w = addWorkout(title || 'Програма від тренера');
+  setWorkoutItems(w.id, ids);
+  saveNow();
+  return w;
+}
+
 // --- експорт / імпорт усіх даних ---
 export function exportData() {
   return JSON.stringify(state, null, 2);
