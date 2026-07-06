@@ -2642,18 +2642,19 @@ function renderCalories() {
       <button class="icon-btn" id="backKcal">‹</button>
       <div class="appbar-titles"><div class="appbar-kicker">🍎 ${T('Калорії по фото')}</div>
         <div class="appbar-title">${S.prettyDate(iso)}</div></div>
-      <button class="icon-btn" id="keyBtn" title="${T('Ключ API Gemini')}">🔑</button>
+      <button class="icon-btn" id="keyBtn" title="${T('Ключ API (ChatGPT або Gemini)')}">🔑</button>
     </header>
 
     ${showKeyForm
       ? `<section class="card">
-          <div class="card-label">🔑 ${T('Ключ API Gemini')}</div>
-          <p class="muted hint">${T('Безкоштовний ключ: відкрий aistudio.google.com/apikey, увійди в Google, натисни «Create API key» і встав ключ сюди. Ключ зберігається лише на цьому пристрої.')}</p>
+          <div class="card-label">🔑 ${T('Ключ API (ChatGPT або Gemini)')}</div>
+          <p class="muted hint">${T('Встав ключ OpenAI (ChatGPT) з platform.openai.com/api-keys — потрібен невеликий баланс на API, фото коштує копійки. Або безкоштовний ключ Google Gemini з aistudio.google.com/apikey. Застосунок сам розпізнає, який це ключ; зберігається він лише на цьому пристрої.')}</p>
           <div class="btn-col" style="margin-top:12px">
-            <a class="btn ghost" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">🌐 aistudio.google.com/apikey</a>
+            <a class="btn ghost" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">🤖 OpenAI (ChatGPT): platform.openai.com/api-keys</a>
+            <a class="btn ghost" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">🌐 Gemini (${T('безкоштовно')}): aistudio.google.com/apikey</a>
           </div>
           <div class="field" style="margin-top:10px">
-            <input type="password" id="gemKey" value="${esc(key)}" placeholder="AIza…" autocomplete="off"/>
+            <input type="password" id="gemKey" value="${esc(key)}" placeholder="sk-… / AIza…" autocomplete="off"/>
           </div>
           <div class="btn-col" style="margin-top:10px">
             <button class="btn primary" id="saveKey">${T('Зберегти ключ')}</button>
