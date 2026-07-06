@@ -927,8 +927,11 @@ function renderCalendar() {
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
   const todayIso = S.todayISO();
 
-  // план: дні тижня з налаштувань → зробив/пропустив/заплановано
+  // план: дні тижня з налаштувань + дні з тижневого плану тренувань
+  // (де на день тижня призначено тренування) → зробив/пропустив/заплановано
   const plan = new Set(S.getSettings().trainDays || []);
+  const sched = S.getSchedule();
+  for (const dow of Object.keys(sched)) if ((sched[dow] || []).length) plan.add(Number(dow));
   let cells = '';
   for (let i = 0; i < startDow; i++) cells += `<div class="cal-cell empty"></div>`;
   for (let d = 1; d <= daysInMonth; d++) {
@@ -1663,7 +1666,8 @@ function renderSettings() {
     <section class="card">
       <div class="card-label">📅 ${T('Дні тренувань')}</div>
       <div class="type-chips">${dayChips}</div>
-      <p class="muted hint">${T('Обери дні тижня, коли плануєш тренуватися — календар підсвітить зроблені, пропущені й заплановані')}</p>
+      <p class="muted hint">${T('Обери дні тижня, коли плануєш тренуватися — календар підсвітить зроблені, пропущені й заплановані')}
+        ${T('Дні з тижневого плану у вкладці «Тренування» враховуються автоматично.')}</p>
     </section>
 
     <section class="card">
