@@ -7,6 +7,7 @@ import * as FC from './formcheck.js';
 import { t as T, setLang, LANGS, plural as PL, dateNames } from './i18n.js';
 import * as FX from './fx.js';
 import * as BE from './backend.js';
+import { APP_VERSION } from './version.js';
 
 // мова інтерфейсу — із налаштувань (до першого рендеру)
 setLang(S.getSettings().lang);
@@ -1677,7 +1678,8 @@ function renderSettings() {
       </div>
       <input type="file" id="importFile" accept="application/json,.json" hidden/>
     </section>
-    <p class="muted center">КАЧАЛКА · ${T('щоденник тренувань · усі дані лише на цьому пристрої')}</p>
+    <p class="muted center">КАЧАЛКА · ${T('щоденник тренувань · усі дані лише на цьому пристрої')}<br/>
+      <small>${T('версія')}: ${esc(APP_VERSION)}</small></p>
   `;
   screenEl.querySelector('#backBtn').onclick = () => history.back();
   screenEl.querySelector('#coachBtn').onclick = () => go('#/coach');

@@ -3,12 +3,13 @@
 //   • код застосунку (навігація, *.js, *.css) — network-first: свіжа версія підтягується
 //     при кожному онлайн-запуску, а офлайн працює з кешу;
 //   • іконки/шрифти/маніфест — cache-first (рідко змінюються), із докешуванням у рантаймі.
-const CACHE = 'kachalka-v13';
+const CACHE = 'kachalka-v14';
 const ASSETS = [
   './',
   './index.html',
   './css/styles.css',
   './js/app.js',
+  './js/version.js',
   './js/store.js',
   './js/timer.js',
   './js/picker.js',
@@ -62,7 +63,9 @@ self.addEventListener('activate', (e) => {
 async function networkFirst(req) {
   const cache = await caches.open(CACHE);
   try {
-    const res = await fetch(req);
+    // no-cache: повз HTTP-кеш браузера (GitHub Pages віддає max-age=600 —
+    // без цього телефон міг до 10 хв «оновлюватись» у стару версію)
+    const res = await fetch(req, { cache: 'no-cache' });
     if (res && res.ok) cache.put(req, res.clone());
     return res;
   } catch (e) {
