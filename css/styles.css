@@ -26,7 +26,10 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 /* атрибут hidden має ховати навіть елементи з display:flex/grid (інакше клас перемагає) */
 [hidden] { display: none !important; }
-html, body { margin: 0; padding: 0; background: var(--bg); color: var(--txt); width: 100%; overflow-x: hidden; }
+/* overflow-x: clip (НЕ hidden!) — обрізає горизонтальне вилазіння, але не
+   робить елемент скрол-контейнером: hidden на html/body ламав тач-скрол
+   на телефоні (три вкладені скролери html/body/#app) */
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--txt); width: 100%; overflow-x: clip; }
 body {
   font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   overscroll-behavior-y: contain;
@@ -42,7 +45,7 @@ input, select { font-family: inherit; }
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  overflow-x: hidden;
+  overflow-x: clip;
   background: radial-gradient(120% 60% at 50% 0%, #0e0e14 0%, #000 60%);
 }
 #screen {
