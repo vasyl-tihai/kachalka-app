@@ -732,6 +732,7 @@ function renderCamera(exerciseId) {
           <div class="set-name">${esc(ex.name)}</div>
           <div class="set-date">Камера-тренер · на пристрої</div>
         </div>
+        <button class="icon-btn" id="flipCam" title="${T('Перемкнути камеру')}">🤳</button>
       </header>
       <div class="cam-stage">
         <video id="camVideo" playsinline muted></video>
@@ -758,6 +759,31 @@ function renderCamera(exerciseId) {
 
   let stream = null, landmarker = null, rafId = null, running = true, lastTs = -1;
   let curSide = null, failCount = 0;
+  // якість картинки: детекція не частіше ~30/с (на 90/120 Гц екранах щокадру —
+  // конвеєр захлинається), скелет згладжується, коротка втрата пози не блимає
+  let lastDetect = 0, lastGood = 0, smooth = null;
+  const DETECT_MS = 33, GRACE_MS = 700;
+  // фронтальна («селфі») чи задня камера; вибір запамʼятовується
+  let facing = S.getSettings().camFacing || 'environment';
+
+  const applyMirror = () => {
+    // селфі-режим показуємо дзеркально (як звикли у фронталці) —
+    // і відео, і канвас зі скелетом однаково
+    const m = facing === 'user';
+    video.classList.toggle('mirrored', m);
+    canvas.classList.toggle('mirrored', m);
+  };
+  const startStream = async () => {
+    if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+    stream = await navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false })
+      .catch(() => navigator.mediaDevices.getUserMedia({ video: true, audio: false }));
+    video.srcObject = stream;
+    try { await video.play(); } catch (e) { /* деякі пристрої відхиляють play — не критично */ }
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    applyMirror();
+  };
 
   const stop = () => {
     running = false;
@@ -769,6 +795,18 @@ function renderCamera(exerciseId) {
 
   // назад — туди, звідки прийшли (екран підходу або вкладка «Аналіз»)
   screenEl.querySelector('#backBtn').onclick = () => { stop(); history.back(); };
+  screenEl.querySelector('#flipCam').onclick = async () => {
+    facing = facing === 'user' ? 'environment' : 'user';
+    S.updateSettings({ camFacing: facing });
+    smooth = null;
+    try {
+      await startStream();
+    } catch (e) {
+      statusEl.textContent = T('Не вдалося перемкнути камеру');
+      statusEl.classList.remove('hide');
+      statusEl.classList.add('err');
+    }
+  };
   screenEl.querySelector('#camReset').onclick = () => {
     counter.reset();
     curSide = null;
@@ -809,9 +847,7 @@ function renderCamera(exerciseId) {
     }
     // 1) камера
     try {
-      stream = await navigator.mediaDevices
-        .getUserMedia({ video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false })
-        .catch(() => navigator.mediaDevices.getUserMedia({ video: true, audio: false }));
+      await startStream();
     } catch (err) {
       statusEl.textContent = err && err.name === 'NotAllowedError'
         ? 'Доступ до камери заборонено. Дозволь камеру у браузері та онови сторінку.'
@@ -820,13 +856,7 @@ function renderCamera(exerciseId) {
       return;
     }
     // встигли піти з екрана, поки висів дозвіл → не лишати камеру ввімкненою
-    if (!running) { stream.getTracks().forEach((t) => t.stop()); stream = null; return; }
-    try {
-      video.srcObject = stream;
-      await video.play();
-    } catch (e) { /* play може відхилитись на деяких пристроях — не критично */ }
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
+    if (!running) { if (stream) stream.getTracks().forEach((t) => t.stop()); stream = null; return; }
     // 2) модель
     statusEl.textContent = 'Завантаження AI-моделі…';
     try {
@@ -844,16 +874,35 @@ function renderCamera(exerciseId) {
     loop();
   })();
 
+  // згладжений скелет: EMA прибирає тремтіння точок між кадрами
+  function smoothNorm(norm) {
+    if (!smooth || smooth.length !== norm.length) {
+      smooth = norm.map((p) => ({ x: p.x, y: p.y, z: p.z, visibility: p.visibility }));
+    } else {
+      const k = 0.55;
+      for (let i = 0; i < norm.length; i++) {
+        const s = smooth[i], p = norm[i];
+        s.x += (p.x - s.x) * k;
+        s.y += (p.y - s.y) * k;
+        s.z += (p.z - s.z) * k;
+        s.visibility = p.visibility;
+      }
+    }
+    return smooth;
+  }
+
   function loop() {
     if (!running || !landmarker) return;
     rafId = requestAnimationFrame(loop);
     if (video.readyState < 2) return;
-    const ts = performance.now();
-    if (ts <= lastTs) return; // timestamp має строго зростати
-    lastTs = ts;
+    const now = performance.now();
+    if (now - lastDetect < DETECT_MS) return; // ~30 детекцій/с достатньо
+    lastDetect = now;
+    if (now <= lastTs) return; // timestamp має строго зростати
+    lastTs = now;
     let res;
     try {
-      res = landmarker.detectForVideo(video, ts);
+      res = landmarker.detectForVideo(video, now);
       failCount = 0;
     } catch (e) {
       // не крутити вічно мертвий конвеєр (втрата GPU-контексту тощо)
@@ -865,16 +914,23 @@ function renderCamera(exerciseId) {
       }
       return;
     }
-    cctx.clearRect(0, 0, canvas.width, canvas.height);
     const poses = res && res.landmarks;
     if (!poses || !poses.length) {
-      statusEl.textContent = 'Не бачу людину в кадрі';
-      statusEl.classList.remove('hide');
-      angleEl.textContent = '';
+      // коротку втрату пози (1-2 кадри) пережити мовчки з останнім скелетом —
+      // інакше картинка «блимає»
+      if (now - lastGood > GRACE_MS) {
+        cctx.clearRect(0, 0, canvas.width, canvas.height);
+        smooth = null;
+        statusEl.textContent = 'Не бачу людину в кадрі';
+        statusEl.classList.remove('hide');
+        angleEl.textContent = '';
+      }
       return;
     }
-    const norm = poses[0];
+    lastGood = now;
+    const norm = smoothNorm(poses[0]);
     const world = res.worldLandmarks && res.worldLandmarks[0];
+    cctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!world) {
       drawPose(cctx, norm);
       statusEl.textContent = 'Не вдається оцінити кут';

@@ -51,8 +51,11 @@ export async function getLandmarker(runningMode = 'VIDEO') {
 }
 
 // малювання скелета поверх відео на canvas
+// DrawingUtils кешується на контекст — створення щокадру дає зайві алокації
+const _duCache = new WeakMap();
 export function drawPose(ctx, landmarks, { highlight } = {}) {
-  const du = new DrawingUtils(ctx);
+  let du = _duCache.get(ctx);
+  if (!du) { du = new DrawingUtils(ctx); _duCache.set(ctx, du); }
   du.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, { color: '#5B9BFF', lineWidth: 3 });
   du.drawLandmarks(landmarks, { color: '#36D77A', radius: 3, lineWidth: 1 });
   // підсвітити трійку точок поточного суглоба
