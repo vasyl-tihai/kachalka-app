@@ -2593,14 +2593,26 @@ function renderFormcheck() {
         <span class="fc-pat">${p.icon} ${T(p.label)}</span></button>`;
     })
     .join('');
+  const kcalToday = S.calorieDayTotal(S.todayISO()).kcal;
   screenEl.innerHTML = `
     <header class="appbar">
-      <div class="appbar-titles"><div class="appbar-kicker">📷 ${T('Аналіз техніки')}</div>
+      <div class="appbar-titles"><div class="appbar-kicker">📷 ${T('Аналіз')}</div>
         <div class="appbar-title">КАЧАЛКА</div></div>
     </header>
-    <p class="muted side">${T('Обери вправу — камера стежитиме за технікою, підкаже глибину і порахує повторення')}</p>
+
+    <p class="muted side">🍎 ${T('Їжа')}</p>
+    <div class="pick-list" style="margin-bottom:16px">
+      <button class="pick-row fc-row" id="fcCalories">
+        <span class="pick-ico">🍎</span>
+        <span class="pick-name">${T('Калорії по фото')}</span>
+        <span class="fc-pat">${kcalToday} ${T('ккал')} ›</span>
+      </button>
+    </div>
+
+    <p class="muted side">🏋️ ${T('Аналіз техніки')} — ${T('Обери вправу — камера стежитиме за технікою, підкаже глибину і порахує повторення')}</p>
     <div class="pick-list">${rows || `<p class="muted center">${T('Немає тренувань — додай у вкладці «Тренування»')}</p>`}</div>`;
-  screenEl.querySelectorAll('.fc-row').forEach((b) =>
+  screenEl.querySelector('#fcCalories').onclick = () => go('#/calories');
+  screenEl.querySelectorAll('.fc-row[data-id]').forEach((b) =>
     b.addEventListener('click', () => go('#/camera/' + b.dataset.id))
   );
 }
