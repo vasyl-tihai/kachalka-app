@@ -2621,13 +2621,17 @@ function renderFormcheck() {
 //  ЕКРАН: КАЛОРІЇ ПО ФОТО
 // =====================================================================
 let kcalKeyEdit = false;
-function renderCalories() {
+async function renderCalories() {
   const iso = selectedISO;
   const st = S.getSettings();
   const key = (st.geminiKey || '').trim();
   const list = S.caloriesForDay(iso);
   const tot = S.calorieDayTotal(iso);
-  const showKeyForm = !key || kcalKeyEdit;
+  // сервер власника (ключ-секрет на Supabase) — тоді користувачу ключ не потрібен
+  const proxyOk = key ? false : await CAL.proxyAvailable();
+  if (location.hash !== '#/calories') return; // за час перевірки пішли з екрана
+  const canAnalyze = !!key || proxyOk;
+  const showKeyForm = kcalKeyEdit || !canAnalyze;
 
   const rows = list
     .map(
@@ -2662,7 +2666,7 @@ function renderCalories() {
         </section>`
       : ''}
 
-    ${key && !showKeyForm
+    ${canAnalyze && !showKeyForm
       ? `<section class="card">
           <div class="card-label">📷 ${T('Нова страва')}</div>
           <p class="muted hint">${T('Сфотографуй страву — ШІ оцінить калорійність і БЖВ')}</p>

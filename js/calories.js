@@ -1,12 +1,54 @@
 // calories.js — визначення калорійності страви за фото.
-// Працює з ключем користувача (зберігається лише на пристрої,
-// settings.geminiKey): OpenAI (ChatGPT, ключ sk-…, платний API) або
-// Google Gemini (ключ AIza…, безкоштовний tier). Провайдер визначається
-// автоматично за форматом ключа.
+// Порядок: якщо на пристрої є ключ користувача (settings.geminiKey) —
+// прямий запит (sk-… → OpenAI, AIza… → Gemini). Якщо ключа немає —
+// серверна функція-посередник (Supabase Edge Function «calories»),
+// де ключ OpenAI власника лежить секретом і в браузер не потрапляє.
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './backend-config.js';
+
+const PROXY_URL = SUPABASE_URL ? SUPABASE_URL + '/functions/v1/calories' : '';
 
 // моделі в порядку спроб (404 = модель недоступна — пробуємо наступну)
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 const OPENAI_MODELS = ['gpt-5-mini', 'gpt-4o-mini'];
+
+// чи розгорнута серверна функція (перевіряємо раз за сесію)
+let _proxyOk = null;
+export async function proxyAvailable() {
+  if (!PROXY_URL) return false;
+  if (_proxyOk !== null) return _proxyOk;
+  try {
+    const res = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+      body: '{}',
+    });
+    // 400 (no-image) = функція жива; 404 = ще не розгорнута
+    _proxyOk = res.status !== 404;
+  } catch {
+    _proxyOk = false;
+  }
+  return _proxyOk;
+}
+
+async function analyzeProxy(b64, lang) {
+  let res;
+  try {
+    res = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+      body: JSON.stringify({ image: b64, lang }),
+    });
+  } catch (e) {
+    throw new Error('offline');
+  }
+  if (res.ok) {
+    const d = await res.json();
+    return parseResult(d.result);
+  }
+  if (res.status === 404) throw new Error('no-proxy');
+  if (res.status === 429) throw new Error('quota');
+  throw new Error('api-' + res.status);
+}
 
 /** Стиснути фото до JPEG ≤ maxSide px і повернути чистий base64 (без префікса). */
 async function toBase64Jpeg(file, maxSide = 768) {
@@ -136,13 +178,17 @@ async function analyzeOpenAI(b64, apiKey, lang) {
  * Кидає Error зі зрозумілим (укр.) повідомленням.
  */
 export async function analyzeFoodPhoto(file, apiKey, lang) {
-  if (!apiKey) throw new Error('no-key');
+  const b64 = await toBase64Jpeg(file);
+  const l = lang || 'uk';
+  if (!apiKey) {
+    // без власного ключа — через сервер власника застосунку
+    if (PROXY_URL) return analyzeProxy(b64, l);
+    throw new Error('no-key');
+  }
   // розпізнаємо провайдера за форматом; незнайомий формат — чесно кажемо одразу
   const isOpenAI = apiKey.startsWith('sk-');
   const isGemini = apiKey.startsWith('AIza');
   if (!isOpenAI && !isGemini) throw new Error('bad-format');
-  const b64 = await toBase64Jpeg(file);
-  const l = lang || 'uk';
   return isOpenAI ? analyzeOpenAI(b64, apiKey, l) : analyzeGemini(b64, apiKey, l);
 }
 
@@ -150,6 +196,7 @@ export async function analyzeFoodPhoto(file, apiKey, lang) {
 export function errorMessage(e) {
   const m = String((e && e.message) || '');
   if (m === 'no-key') return 'Спершу додай ключ API';
+  if (m === 'no-proxy') return 'Сервер аналізу ще не налаштований — додай свій ключ через 🔑';
   if (m === 'bad-format') return 'Це не схоже на ключ OpenAI (sk-…) чи Gemini (AIza…) — перевір, звідки ти його скопіював';
   if (m === 'bad-key') return 'Невірний ключ API — перевір його';
   if (m === 'quota') return 'Ліміт запитів вичерпано — спробуй за хвилину';
