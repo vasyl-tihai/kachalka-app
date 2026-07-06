@@ -52,6 +52,7 @@ function clearLive() {
 const routes = [
   { re: /^#\/set\/(.+)$/, render: renderSet },
   { re: /^#\/camera\/(.+)$/, render: renderCamera },
+  { re: /^#\/formcheck$/, render: renderFormcheck },
   { re: /^#\/calendar$/, render: renderCalendar },
   { re: /^#\/workouts$/, render: renderWorkouts },
   { re: /^#\/workout\/(.+)$/, render: renderWorkoutDetail },
@@ -96,6 +97,7 @@ const TABS = [
   { hash: '#/today', icon: '🏋️', label: 'Сьогодні' },
   { hash: '#/calendar', icon: '📅', label: 'Календар' },
   { hash: '#/workouts', icon: '📋', label: 'Тренування' },
+  { hash: '#/formcheck', icon: '📷', label: 'Аналіз' },
   { hash: '#/progress', icon: '📈', label: 'Прогрес' },
 ];
 function renderTabbar() {
@@ -765,7 +767,8 @@ function renderCamera(exerciseId) {
   };
   live.camera = { destroy: stop };
 
-  screenEl.querySelector('#backBtn').onclick = () => { stop(); go('#/set/' + exerciseId); };
+  // назад — туди, звідки прийшли (екран підходу або вкладка «Аналіз»)
+  screenEl.querySelector('#backBtn').onclick = () => { stop(); history.back(); };
   screenEl.querySelector('#camReset').onclick = () => {
     counter.reset();
     curSide = null;
@@ -2574,6 +2577,32 @@ async function renderChat(otherId) {
   // якщо за час підключення користувач уже пішов з чату — одразу відписатися
   if (location.hash === '#/chat/' + otherId) live.chat = sub;
   else sub.destroy();
+}
+
+// =====================================================================
+//  ЕКРАН: АНАЛІЗ ТЕХНІКИ (вибір вправи для камери)
+// =====================================================================
+function renderFormcheck() {
+  const exs = S.getExercises();
+  const rows = exs
+    .map((e) => {
+      const p = FC.patternById(FC.guessPattern(e));
+      return `<button class="pick-row fc-row" data-id="${e.id}">
+        <span class="pick-ico">${e.icon}</span>
+        <span class="pick-name">${esc(e.name)}</span>
+        <span class="fc-pat">${p.icon} ${T(p.label)}</span></button>`;
+    })
+    .join('');
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <div class="appbar-titles"><div class="appbar-kicker">📷 ${T('Аналіз техніки')}</div>
+        <div class="appbar-title">КАЧАЛКА</div></div>
+    </header>
+    <p class="muted side">${T('Обери вправу — камера стежитиме за технікою, підкаже глибину і порахує повторення')}</p>
+    <div class="pick-list">${rows || `<p class="muted center">${T('Немає тренувань — додай у вкладці «Тренування»')}</p>`}</div>`;
+  screenEl.querySelectorAll('.fc-row').forEach((b) =>
+    b.addEventListener('click', () => go('#/camera/' + b.dataset.id))
+  );
 }
 
 // =====================================================================

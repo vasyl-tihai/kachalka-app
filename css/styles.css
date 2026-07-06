@@ -563,6 +563,11 @@ input, select { font-family: inherit; }
 .swatches input[type="color"]::-webkit-color-swatch { border-radius: 50%; border: none; }
 .tchip:disabled { opacity: .4; }
 
+/* ---------- аналіз техніки: вибір вправи ---------- */
+.fc-row { width: 100%; text-align: left; font: inherit; }
+.fc-row .pick-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fc-pat { flex: 0 0 auto; color: var(--muted); font-size: .8rem; font-weight: 600; }
+
 /* ---------- калорії по фото ---------- */
 a.btn { display: block; text-align: center; text-decoration: none; box-sizing: border-box; }
 .food-prev { width: 100%; max-height: 220px; object-fit: cover; border-radius: 14px; margin-top: 12px; }
