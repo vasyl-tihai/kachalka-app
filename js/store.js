@@ -106,6 +106,7 @@ function defaultState() {
     dayStacks: {}, // { 'YYYY-MM-DD': [workoutId] } — тренування, призначені на конкретну дату
     schedule: {}, // { '0'..'6' (день тижня, 0=Нд): [workoutId] } — тижневий план
     measurements: {}, // { 'YYYY-MM-DD': { metricId: число } } — заміри тіла
+    calories: {}, // { 'YYYY-MM-DD': [ {id, name, kcal, prot, fat, carb} ] } — журнал їжі за фото
     settings: {
       restSeconds: 60,
       restStep: 30,
@@ -239,6 +240,27 @@ function normalizeState(raw) {
   }
   s.measurements = meas;
 
+  // журнал калорій (нове поле — старі копії його не мають)
+  const cal = {};
+  const rawCal =
+    raw.calories && typeof raw.calories === 'object' && !Array.isArray(raw.calories) ? raw.calories : {};
+  for (const iso of Object.keys(rawCal)) {
+    const list = rawCal[iso];
+    if (!Array.isArray(list)) continue;
+    const clean = list
+      .filter((e) => e && typeof e === 'object')
+      .map((e) => ({
+        id: e.id ? String(e.id) : uid(),
+        name: String(e.name || '').slice(0, 120),
+        kcal: Number(e.kcal) || 0,
+        prot: Number(e.prot) || 0,
+        fat: Number(e.fat) || 0,
+        carb: Number(e.carb) || 0,
+      }));
+    if (clean.length) cal[iso] = clean;
+  }
+  s.calories = cal;
+
   // одноразова міграція: раніше кількість підходів помилково дорівнювала кільк. повторень
   // (напр. 12). Реальні підходи — це 3–5, тож завищені значення (>6) знижуємо до 4.
   if (!s.settings.migratedSets) {
@@ -302,6 +324,37 @@ export function getSettings() {
 export function updateSettings(patch) {
   state.settings = { ...state.settings, ...patch };
   save();
+}
+
+// ----- калорії (журнал їжі за фото) -----
+export function caloriesForDay(iso) {
+  return state.calories[iso] || [];
+}
+export function addCalorieEntry(iso, entry) {
+  const list = state.calories[iso] || (state.calories[iso] = []);
+  list.push({
+    id: uid(),
+    name: String(entry.name || '').slice(0, 120),
+    kcal: Math.max(0, Math.round(Number(entry.kcal) || 0)),
+    prot: Math.max(0, Math.round(Number(entry.prot) || 0)),
+    fat: Math.max(0, Math.round(Number(entry.fat) || 0)),
+    carb: Math.max(0, Math.round(Number(entry.carb) || 0)),
+  });
+  save();
+}
+export function deleteCalorieEntry(iso, id) {
+  const list = state.calories[iso];
+  if (!list) return;
+  state.calories[iso] = list.filter((e) => e.id !== id);
+  if (!state.calories[iso].length) delete state.calories[iso];
+  save();
+}
+export function calorieDayTotal(iso) {
+  const t = { kcal: 0, prot: 0, fat: 0, carb: 0 };
+  for (const e of state.calories[iso] || []) {
+    t.kcal += e.kcal; t.prot += e.prot; t.fat += e.fat; t.carb += e.carb;
+  }
+  return t;
 }
 
 // --- свій звук сигналу (dataURL; окремий ключ, щоб не роздувати основні дані) ---

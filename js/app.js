@@ -8,6 +8,7 @@ import { t as T, setLang, LANGS, plural as PL, dateNames } from './i18n.js';
 import * as FX from './fx.js';
 import * as BE from './backend.js';
 import { APP_VERSION } from './version.js';
+import * as CAL from './calories.js';
 
 // мова інтерфейсу — із налаштувань (до першого рендеру)
 setLang(S.getSettings().lang);
@@ -61,6 +62,7 @@ const routes = [
   { re: /^#\/coach$/, render: renderCoach },
   { re: /^#\/client\/(.+)$/, render: renderClientManage },
   { re: /^#\/chat\/(.+)$/, render: renderChat },
+  { re: /^#\/calories$/, render: renderCalories },
   { re: /^#\/today$/, render: renderToday },
 ];
 
@@ -69,6 +71,7 @@ function router() {
   calNeedsSync = true; // нова навігація → календар синхронізує місяць із вибраною датою
   workoutEditMode = false; // тренування завжди відкривається в режимі перегляду
   coachEdit = false; // кабінет відкривається в режимі перегляду профілю
+  kcalKeyEdit = false; // екран калорій — без форми ключа
   bodyDate = null; // екран замірів щоразу відкривається на сьогодні (вибір дати живе лише в межах екрана)
   const hash = location.hash || '#/today';
   for (const r of routes) {
@@ -108,7 +111,7 @@ function updateTabbar(hash) {
   tabbarEl.querySelectorAll('.tab').forEach((b) => {
     const active =
       hash.startsWith(b.dataset.hash) ||
-      (b.dataset.hash === '#/today' && hash === '#/') ||
+      (b.dataset.hash === '#/today' && (hash === '#/' || hash === '#/calories')) ||
       (b.dataset.hash === '#/workouts' && hash.startsWith('#/workout')) ||
       (b.dataset.hash === '#/progress' && (hash.startsWith('#/history') || hash.startsWith('#/body')));
     b.classList.toggle('active', active);
@@ -309,6 +312,7 @@ function renderToday() {
     <div class="list">${listHtml}</div>
     <div class="day-actions">
       <button class="btn ghost" id="manageW">${single ? '✏️ ' + T('Редагувати це тренування') : '🏋️ ' + T('Керувати тренуваннями')}</button>
+      <button class="btn ghost" id="kcalBtn">🍎 ${T('Калорії')}: ${S.calorieDayTotal(iso).kcal} ${T('ккал')} ›</button>
     </div>
   `;
 
@@ -343,6 +347,7 @@ function renderToday() {
   };
   screenEl.querySelector('#dateBtn').onclick = () => dp.showPicker?.() || dp.focus();
   screenEl.querySelector('#manageW').onclick = () => go(single ? '#/workout/' + single : '#/workouts');
+  screenEl.querySelector('#kcalBtn').onclick = () => go('#/calories');
 }
 
 function emptyToday() {
@@ -2569,6 +2574,130 @@ async function renderChat(otherId) {
   // якщо за час підключення користувач уже пішов з чату — одразу відписатися
   if (location.hash === '#/chat/' + otherId) live.chat = sub;
   else sub.destroy();
+}
+
+// =====================================================================
+//  ЕКРАН: КАЛОРІЇ ПО ФОТО
+// =====================================================================
+let kcalKeyEdit = false;
+function renderCalories() {
+  const iso = selectedISO;
+  const st = S.getSettings();
+  const key = (st.geminiKey || '').trim();
+  const list = S.caloriesForDay(iso);
+  const tot = S.calorieDayTotal(iso);
+  const showKeyForm = !key || kcalKeyEdit;
+
+  const rows = list
+    .map(
+      (e) => `<div class="kcal-row"><span class="kcal-nm">${esc(e.name)}</span>
+        <b>${e.kcal} ${T('ккал')}</b>
+        <button class="icon-btn kcal-del" data-id="${e.id}">✕</button></div>`
+    )
+    .join('');
+
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backKcal">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">🍎 ${T('Калорії по фото')}</div>
+        <div class="appbar-title">${S.prettyDate(iso)}</div></div>
+      <button class="icon-btn" id="keyBtn" title="${T('Ключ API Gemini')}">🔑</button>
+    </header>
+
+    ${showKeyForm
+      ? `<section class="card">
+          <div class="card-label">🔑 ${T('Ключ API Gemini')}</div>
+          <p class="muted hint">${T('Безкоштовний ключ: відкрий aistudio.google.com/apikey, увійди в Google, натисни «Create API key» і встав ключ сюди. Ключ зберігається лише на цьому пристрої.')}</p>
+          <div class="btn-col" style="margin-top:12px">
+            <a class="btn ghost" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">🌐 aistudio.google.com/apikey</a>
+          </div>
+          <div class="field" style="margin-top:10px">
+            <input type="password" id="gemKey" value="${esc(key)}" placeholder="AIza…" autocomplete="off"/>
+          </div>
+          <div class="btn-col" style="margin-top:10px">
+            <button class="btn primary" id="saveKey">${T('Зберегти ключ')}</button>
+          </div>
+        </section>`
+      : ''}
+
+    ${key && !showKeyForm
+      ? `<section class="card">
+          <div class="card-label">📷 ${T('Нова страва')}</div>
+          <p class="muted hint">${T('Сфотографуй страву — ШІ оцінить калорійність і БЖВ')}</p>
+          <div class="btn-row">
+            <button class="btn ghost" id="snapBtn">📷 ${T('Сфотографувати страву')}</button>
+            <button class="btn ghost" id="galBtn">🖼 ${T('З галереї')}</button>
+          </div>
+          <input type="file" id="foodCam" accept="image/*" capture="environment" hidden/>
+          <input type="file" id="foodGal" accept="image/*" hidden/>
+          <div id="analyzeBox"></div>
+        </section>`
+      : ''}
+
+    <section class="card">
+      <div class="card-label">${T('Зʼїдено за день')}</div>
+      ${list.length ? rows : `<p class="muted">${T('Записів ще немає')}</p>`}
+      <div class="card-div"></div>
+      <div class="kcal-total"><b>${T('Разом')}: ${tot.kcal} ${T('ккал')}</b>
+        <span class="muted">${T('Б')} ${tot.prot} · ${T('Ж')} ${tot.fat} · ${T('В')} ${tot.carb} г</span></div>
+    </section>`;
+
+  screenEl.querySelector('#backKcal').onclick = () => history.back();
+  screenEl.querySelector('#keyBtn').onclick = () => { kcalKeyEdit = !kcalKeyEdit; renderCalories(); };
+
+  const saveKeyBtn = screenEl.querySelector('#saveKey');
+  if (saveKeyBtn)
+    saveKeyBtn.onclick = () => {
+      S.updateSettings({ geminiKey: screenEl.querySelector('#gemKey').value.trim() });
+      kcalKeyEdit = false;
+      toast(T('Збережено'));
+      renderCalories();
+    };
+
+  screenEl.querySelectorAll('.kcal-del').forEach((b) =>
+    b.addEventListener('click', () => { S.deleteCalorieEntry(iso, b.dataset.id); renderCalories(); })
+  );
+
+  const box = () => screenEl.querySelector('#analyzeBox');
+  const analyze = async (file) => {
+    if (!file || !box()) return;
+    const url = URL.createObjectURL(file);
+    box().innerHTML = `<img class="food-prev" src="${url}" alt=""/><p class="muted center">🔎 ${T('Аналізую…')}</p>`;
+    try {
+      const r = await CAL.analyzeFoodPhoto(file, key, S.getSettings().lang);
+      if (!box()) return; // користувач уже пішов з екрана
+      if (!r.isFood) {
+        box().innerHTML = `<img class="food-prev" src="${url}" alt=""/>
+          <p class="muted center">${T('Не схоже на їжу — спробуй інше фото')}</p>`;
+        return;
+      }
+      box().innerHTML = `
+        <img class="food-prev" src="${url}" alt=""/>
+        <div class="kcal-res">
+          <div class="kcal-name">${esc(r.name)}${r.portion ? ` <span class="muted">· ${T('порція')} ~${r.portion} г</span>` : ''}</div>
+          <div class="kcal-big">${r.kcal} ${T('ккал')}</div>
+          <div class="muted">${T('Б')} ${r.prot} г · ${T('Ж')} ${r.fat} г · ${T('В')} ${r.carb} г</div>
+        </div>
+        <div class="btn-col" style="margin-top:10px">
+          <button class="btn primary" id="addKcal">➕ ${T('Додати в день')}</button>
+        </div>`;
+      box().querySelector('#addKcal').onclick = () => {
+        S.addCalorieEntry(iso, r);
+        toast(T('Збережено'));
+        renderCalories();
+      };
+    } catch (e) {
+      if (box()) box().innerHTML = `<p class="muted center">⚠️ ${esc(T(CAL.errorMessage(e)))}</p>`;
+    }
+  };
+  const cam = screenEl.querySelector('#foodCam');
+  const gal = screenEl.querySelector('#foodGal');
+  if (cam) {
+    screenEl.querySelector('#snapBtn').onclick = () => cam.click();
+    screenEl.querySelector('#galBtn').onclick = () => gal.click();
+    cam.onchange = () => analyze(cam.files[0]);
+    gal.onchange = () => analyze(gal.files[0]);
+  }
 }
 
 // =====================================================================

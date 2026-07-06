@@ -563,6 +563,18 @@ input, select { font-family: inherit; }
 .swatches input[type="color"]::-webkit-color-swatch { border-radius: 50%; border: none; }
 .tchip:disabled { opacity: .4; }
 
+/* ---------- калорії по фото ---------- */
+a.btn { display: block; text-align: center; text-decoration: none; box-sizing: border-box; }
+.food-prev { width: 100%; max-height: 220px; object-fit: cover; border-radius: 14px; margin-top: 12px; }
+.kcal-res { margin-top: 10px; }
+.kcal-name { font-weight: 700; }
+.kcal-big { font-size: 1.6rem; font-weight: 800; color: var(--gold); }
+.kcal-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.kcal-row:last-of-type { border-bottom: none; }
+.kcal-nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kcal-del { color: var(--muted); }
+.kcal-total { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+
 /* світлова сигналізація в кінці відпочинку (2.6с) */
 #alarmFlash { position: fixed; inset: 0; z-index: 80; pointer-events: none; opacity: 0; background: #ff2f2f; }
 #alarmFlash.show { animation: alarmPulse 2.6s ease-out forwards; }
