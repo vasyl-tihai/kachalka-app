@@ -1229,7 +1229,10 @@ function renderWorkoutDetail(workoutId) {
           <button class="btn ghost" id="dupWorkout">⧉ ${T('Дублювати')}</button>
           <button class="btn danger" id="delWorkout">🗑 ${T('Видалити тренування')}</button>
         </div>`
-      : `<div class="day-actions"><button class="btn primary" id="editBtn">✏️ ${T('Редагувати')}</button></div>`}
+      : `<div class="day-actions">
+          <button class="btn primary" id="editBtn">✏️ ${T('Редагувати')}</button>
+          <button class="btn danger" id="delWorkoutView">🗑 ${T('Видалити тренування')}</button>
+        </div>`}
   `;
 
   const saveName = () => {
@@ -1245,6 +1248,14 @@ function renderWorkoutDetail(workoutId) {
   const exitEdit = () => { saveName(); workoutEditMode = false; renderWorkoutDetail(workoutId); };
   screenEl.querySelector('#toggleEdit').onclick = () => (edit ? exitEdit() : enterEdit());
   screenEl.querySelector('#editBtn')?.addEventListener('click', enterEdit);
+  // видалення доступне і з перегляду (не треба заходити в редагування)
+  screenEl.querySelector('#delWorkoutView')?.addEventListener('click', () => {
+    if (confirm(T('Видалити тренування «{name}»? Вправи в бібліотеці залишаться.', { name: w.name }))) {
+      S.deleteWorkout(workoutId);
+      workoutEditMode = false;
+      go('#/workouts');
+    }
+  });
 
   if (edit) {
     const nameInp = screenEl.querySelector('#wNameEdit');
