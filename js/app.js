@@ -919,13 +919,21 @@ function renderCalendar() {
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
   const todayIso = S.todayISO();
 
+  // план: дні тижня з налаштувань → зробив/пропустив/заплановано
+  const plan = new Set(S.getSettings().trainDays || []);
   let cells = '';
   for (let i = 0; i < startDow; i++) cells += `<div class="cal-cell empty"></div>`;
   for (let d = 1; d <= daysInMonth; d++) {
-    const iso = S.dateToISO(new Date(calYear, calMonth, d));
+    const dt = new Date(calYear, calMonth, d);
+    const iso = S.dateToISO(dt);
     const t = trained.has(iso);
+    const planned = plan.has(dt.getDay());
     const isToday = iso === todayIso;
-    cells += `<button class="cal-cell ${t ? 'trained' : ''} ${isToday ? 'today' : ''}" data-iso="${iso}">
+    let cls = '';
+    if (t) cls = 'trained';
+    else if (planned && iso < todayIso) cls = 'missed'; // день минув без тренування
+    else if (planned) cls = 'planned'; // сьогодні (ще попереду) або майбутнє
+    cells += `<button class="cal-cell ${cls} ${isToday ? 'today' : ''}" data-iso="${iso}">
       <span>${d}</span>${t ? '<i class="cal-dot"></i>' : ''}</button>`;
   }
 
@@ -955,6 +963,13 @@ function renderCalendar() {
       ${dateNames().dowsMon.map((d) => `<div class="cal-dow">${d}</div>`).join('')}
     </div>
     <div class="cal-grid">${cells}</div>
+    ${plan.size
+      ? `<div class="cal-legend">
+          <span><i class="lg done"></i>${T('зробив')}</span>
+          <span><i class="lg miss"></i>${T('пропустив')}</span>
+          <span><i class="lg plan"></i>${T('заплановано')}</span>
+        </div>`
+      : ''}
     <p class="muted center">${T('Натисни на день, щоб переглянути або записати тренування.')}</p>
   `;
   screenEl.querySelector('#prevM').onclick = () => { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); };
@@ -1602,6 +1617,12 @@ function renderSettings() {
     (sn) => `<button class="tchip ${s.soundId === sn.id ? 'on' : ''}" data-snd="${sn.id}">${T(sn.label)}</button>`
   ).join('');
   const hasCustom = !!S.getCustomSound();
+  // дні тижня, коли планую тренуватися (значення getDay(): 0=Нд … 6=Сб)
+  const tdays = new Set(s.trainDays || []);
+  const DOW_VALS = [1, 2, 3, 4, 5, 6, 0]; // порядок Пн..Нд
+  const dayChips = dateNames()
+    .dowsMon.map((label, i) => `<button class="tchip ${tdays.has(DOW_VALS[i]) ? 'on' : ''}" data-day="${DOW_VALS[i]}">${label}</button>`)
+    .join('');
   const vibSel = s.vibratePattern || 'pulse';
   const vibeChips = FX.VIBES.map(
     (v) => `<button class="tchip ${vibSel === v.id ? 'on' : ''}" data-vib="${v.id}">${T(v.label)}</button>`
@@ -1629,6 +1650,12 @@ function renderSettings() {
         <div class="field"><label>${T('Відпочинок (сек)')}</label><input type="number" id="rest" value="${s.restSeconds}" min="5" step="5"/></div>
         <div class="field"><label>${T('Крок ± (сек)')}</label><input type="number" id="step" value="${s.restStep}" min="5" step="5"/></div>
       </div>
+    </section>
+
+    <section class="card">
+      <div class="card-label">📅 ${T('Дні тренувань')}</div>
+      <div class="type-chips">${dayChips}</div>
+      <p class="muted hint">${T('Обери дні тижня, коли плануєш тренуватися — календар підсвітить зроблені, пропущені й заплановані')}</p>
     </section>
 
     <section class="card">
@@ -1716,6 +1743,17 @@ function renderSettings() {
       FX.playSound(S.getSettings(), b.dataset.snd); // одразу почути вибір
     })
   );
+  screenEl.querySelectorAll('.tchip[data-day]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const cur = new Set(S.getSettings().trainDays || []);
+      const v = Number(b.dataset.day);
+      if (cur.has(v)) cur.delete(v);
+      else cur.add(v);
+      S.updateSettings({ trainDays: [...cur] });
+      b.classList.toggle('on');
+    })
+  );
+
   screenEl.querySelectorAll('.tchip[data-vib]').forEach((b) =>
     b.addEventListener('click', () => {
       S.updateSettings({ vibratePattern: b.dataset.vib });

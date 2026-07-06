@@ -321,8 +321,16 @@ input, select { font-family: inherit; }
 }
 .cal-cell.empty { background: transparent; border: none; }
 .cal-cell.trained { background: rgba(54,215,122,.14); border-color: rgba(54,215,122,.5); color: #b7f5d2; }
+/* план тренувань: пропущений день / запланований (сьогодні чи майбутній) */
+.cal-cell.missed { background: rgba(255,91,91,.12); border-color: rgba(255,91,91,.45); color: #ffb3b3; }
+.cal-cell.planned { background: rgba(91,155,255,.08); border-color: rgba(91,155,255,.5); color: var(--blue-soft); }
 .cal-cell.today { outline: 2px solid var(--blue); }
 .cal-dot { position: absolute; bottom: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green-glow); }
+.cal-legend { display: flex; gap: 14px; justify-content: center; margin-top: 12px; color: var(--muted); font-size: .82rem; }
+.cal-legend .lg { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; }
+.cal-legend .lg.done { background: var(--green); }
+.cal-legend .lg.miss { background: var(--danger); }
+.cal-legend .lg.plan { background: var(--blue); }
 
 /* ===================================================================
    ВПРАВИ
@@ -530,6 +538,7 @@ input, select { font-family: inherit; }
 
 /* ---------- налаштування: свотчі кольору, ряд кнопок, селект ---------- */
 #screen > .card { margin-bottom: 12px; }
+.card .hint { margin: 10px 0 0; font-size: .82rem; }
 .btn-col { display: flex; flex-direction: column; gap: 8px; }
 .card-div { height: 1px; background: var(--line); margin: 14px 0; }
 .field .type-chips { margin-top: 2px; }
