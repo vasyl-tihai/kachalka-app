@@ -137,15 +137,20 @@ async function analyzeOpenAI(b64, apiKey, lang) {
  */
 export async function analyzeFoodPhoto(file, apiKey, lang) {
   if (!apiKey) throw new Error('no-key');
+  // розпізнаємо провайдера за форматом; незнайомий формат — чесно кажемо одразу
+  const isOpenAI = apiKey.startsWith('sk-');
+  const isGemini = apiKey.startsWith('AIza');
+  if (!isOpenAI && !isGemini) throw new Error('bad-format');
   const b64 = await toBase64Jpeg(file);
   const l = lang || 'uk';
-  return apiKey.startsWith('sk-') ? analyzeOpenAI(b64, apiKey, l) : analyzeGemini(b64, apiKey, l);
+  return isOpenAI ? analyzeOpenAI(b64, apiKey, l) : analyzeGemini(b64, apiKey, l);
 }
 
 /** Людське повідомлення про помилку (ключі i18n — укр. рядки). */
 export function errorMessage(e) {
   const m = String((e && e.message) || '');
   if (m === 'no-key') return 'Спершу додай ключ API';
+  if (m === 'bad-format') return 'Це не схоже на ключ OpenAI (sk-…) чи Gemini (AIza…) — перевір, звідки ти його скопіював';
   if (m === 'bad-key') return 'Невірний ключ API — перевір його';
   if (m === 'quota') return 'Ліміт запитів вичерпано — спробуй за хвилину';
   if (m === 'offline') return 'Немає з’єднання з інтернетом';
