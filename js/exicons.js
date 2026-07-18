@@ -21,6 +21,10 @@ const C = (x, y, r, cls = 'bf') => `<circle class="${cls}" cx="${x}" cy="${y}" r
 const APL = (a, b, cls, dur) => `<polyline class="${cls}" points="${a}">${animAttr('points', a, b, dur)}</polyline>`;
 const AC = (ax, ay, bx, by, r, cls, dur) =>
   `<circle class="${cls}" cx="${ax}" cy="${ay}" r="${r}">${animAttr('cx', ax, bx, dur)}${animAttr('cy', ay, by, dur)}</circle>`;
+// обертання групи навколо точки (для суглобів: морфінг точок «складає» кінцівку,
+// а поворот дає справжню дугу — напр., передпліччя навколо ліктя)
+const ROT = (inner, ang, cx, cy, dur) =>
+  `<g>${inner}<animateTransform attributeName="transform" type="rotate" values="0 ${cx} ${cy};${ang} ${cx} ${cy};${ang} ${cx} ${cy};0 ${cx} ${cy}" dur="${dur}" repeatCount="indefinite" ${EASE}/></g>`;
 
 // --- набір іконок: dur — тривалість «повторення», parts — збірка сцени ---
 const ICONS = {
@@ -65,14 +69,15 @@ const ICONS = {
       APL('18,36 34,36', '19,29 35,29', 'w', d) +
       AC(18, 36, 19, 29, 2.6, 'wf', d) + AC(34, 36, 35, 29, 2.6, 'wf', d),
   },
-  // згинання на біцепс (вид збоку): передпліччя з гантелею вгору-вниз
+  // згинання на біцепс (вид збоку): передпліччя з гантелею обертається
+  // навколо ліктя справжньою дугою
   curl: {
     dur: '1.3s',
     parts: (d) =>
-      PL('22,39 22,28') + PL('22,28 22,15') + C(22, 10.5, 3.2) +
-      PL('22,18 28,23') +
-      APL('28,23 31,31', '28,23 30,15', 'b', d) +
-      AC(31.8, 33, 30.4, 12.8, 3, 'wf', d),
+      PL('22,28 19,39') + PL('22,28 25,39') +
+      PL('22,28 22,15') + C(22, 10.5, 3.2) +
+      PL('22,17 27,22') +
+      ROT(PL('27,22 27,31') + C(27, 33.5, 3, 'wf'), -125, 27, 22, d),
   },
   // прес (скручування): корпус піднімається з підлоги
   abs: {
