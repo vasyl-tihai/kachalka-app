@@ -485,6 +485,7 @@ function renderSet(exerciseId) {
         <div class="card-label">${T('Виконані підходи')} <span class="muted" id="setsSummary"></span></div>
         <div class="bests-line" id="bestsLine">${bests.count > 0 ? bestsText(bests) : ''}</div>
         <div class="sets-list" id="setsList"></div>
+        <button class="btn log-btn extra" id="extraBtn" hidden>＋ ${T('Додатковий підхід')}</button>
       </section>
     </div>
   `;
@@ -496,6 +497,8 @@ function renderSet(exerciseId) {
   screenEl.querySelector('#goalChip').onclick = () => openTargetEditor(iso, exerciseId);
   // головна дія: обрав повторення на барабані → «Виконав підхід»
   screenEl.querySelector('#logBtn').onclick = () => logSet(iso, exerciseId);
+  // додатковий підхід понад ціль — кнопка внизу, біля виконаних підходів
+  screenEl.querySelector('#extraBtn').onclick = () => logSet(iso, exerciseId);
 
   // компактний вибір снаряда: показуємо лише поточний; тап відкриває решту
   const wtCurrentBtn = screenEl.querySelector('#wtCurrent');
@@ -661,12 +664,12 @@ function refreshSets(iso, exerciseId) {
       ? `<span class="done-txt">✓ ${T('Виконано')}</span> · ${done} ${T('з')} ${target}`
       : `${T('Підхід')} <b>${done + 1}</b> ${T('з')} ${target}`;
   }
-  // до цілі — велика синя «Виконав підхід»; після — непримітний «+ додатковий підхід»
+  // до цілі — велика синя «Виконав підхід» під барабаном; після виконання вона
+  // ховається, а внизу (біля виконаних підходів) зʼявляється «+ додатковий підхід»
   const logBtn = screenEl.querySelector('#logBtn');
-  if (logBtn) {
-    logBtn.className = complete ? 'btn log-btn extra' : 'btn primary log-btn';
-    logBtn.innerHTML = complete ? `＋ ${T('Додатковий підхід')}` : `✓ ${T('Виконав підхід')}`;
-  }
+  if (logBtn) logBtn.hidden = complete;
+  const extraBtn = screenEl.querySelector('#extraBtn');
+  if (extraBtn) extraBtn.hidden = !complete;
 
   const sumEl = screenEl.querySelector('#setsSummary');
   if (sumEl) {
