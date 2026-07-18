@@ -855,6 +855,12 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
    «Менше руху» обробляється в exicons.js (статична поза). */
 .ai { width: 32px; height: 32px; display: block; filter: drop-shadow(0 0 6px rgba(91, 155, 255, .3)); }
 .set-ico .ai { width: 38px; height: 38px; }
+/* розміри в списках/чипах по всьому застосунку */
+.pick-ico .ai { width: 26px; height: 26px; }
+.rec-ico .ai { width: 22px; height: 22px; margin: 0 auto; }
+.hchip { display: inline-flex; align-items: center; gap: 6px; }
+.hchip .ai { width: 18px; height: 18px; filter: none; }
+.ex-sub .ai { width: 15px; height: 15px; display: inline-block; vertical-align: -3px; filter: none; }
 .ai .b { stroke: var(--blue-soft); stroke-width: 3.2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .ai .bf { fill: var(--blue-soft); }
 .ai .w { stroke: var(--gold); stroke-width: 3.2; fill: none; stroke-linecap: round; }

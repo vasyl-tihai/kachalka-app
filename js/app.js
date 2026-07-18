@@ -1124,7 +1124,7 @@ function renderWorkouts() {
   const rows = list
     .map((w) => {
       const exs = w.items.map((id) => S.getExercise(id)).filter(Boolean);
-      const preview = exs.slice(0, 4).map((e) => e.icon || '💪').join(' ');
+      const preview = exs.slice(0, 4).map((e) => exIconHTML(e) || (e.icon || '💪')).join(' ');
       return `
       <button class="ex-card" data-w="${w.id}">
         <span class="ex-ico"><span class="glyph">🏋️</span></span>
@@ -1321,7 +1321,7 @@ function renderWorkoutDetail(workoutId) {
   const rows = items
     .map((ex, i) => `
       <div class="ex-row" data-id="${ex.id}">
-        <span class="ex-ico">${ex.icon || '💪'}</span>
+        <span class="ex-ico">${exIconHTML(ex) || `<span class="glyph">${ex.icon || '💪'}</span>`}</span>
         <span class="ex-main">
           <span class="ex-name">${esc(ex.name)}</span>
           <span class="ex-sub">${esc(typeLabel(ex.weightType))} · ${ex.weightType === 'bodyweight' ? T('вага тіла') : ex.weight + ' ' + T('кг')} · ${ex.targetSets}×${ex.targetReps}</span>
@@ -1433,7 +1433,7 @@ function openAddExercise(workoutId) {
     ? avail
         .map((ex) => `<label class="pick-row">
           <input type="checkbox" data-id="${ex.id}"/>
-          <span class="pick-ico">${ex.icon || '💪'}</span>
+          <span class="pick-ico">${exIconHTML(ex) || ex.icon || '💪'}</span>
           <span class="pick-name">${esc(ex.name)} <span class="muted">· ${ex.weightType === 'bodyweight' ? T('вага тіла') : ex.weight + ' ' + T('кг')}</span></span>
         </label>`)
         .join('')
@@ -1555,7 +1555,7 @@ function renderProgress() {
           ${lifts
             .map((l) => {
               const val = l.bodyweight ? `${l.maxReps} повт.` : `${l.maxWeight} кг · 1ПМ ≈${Math.round(l.max1RM)} кг`;
-              return `<div class="rec-row"><span class="rec-ico">${l.ex.icon || '💪'}</span>
+              return `<div class="rec-row"><span class="rec-ico">${exIconHTML(l.ex) || l.ex.icon || '💪'}</span>
                 <span class="rec-name">${esc(l.ex.name)}</span>
                 <span class="rec-val">${val}</span></div>`;
             })
@@ -1699,7 +1699,7 @@ function renderHistory(exerciseId) {
   const current = exerciseId || (list[0] && list[0].id);
 
   const chips = list
-    .map((ex) => `<button class="hchip ${ex.id === current ? 'on' : ''}" data-id="${ex.id}">${ex.icon} ${esc(ex.name)}</button>`)
+    .map((ex) => `<button class="hchip ${ex.id === current ? 'on' : ''}" data-id="${ex.id}">${exIconHTML(ex) || ex.icon} ${esc(ex.name)}</button>`)
     .join('');
 
   const ex = S.getExercise(current);
@@ -2726,7 +2726,7 @@ function renderFormcheck() {
     .map((e) => {
       const p = FC.patternById(FC.guessPattern(e));
       return `<button class="pick-row fc-row" data-id="${e.id}">
-        <span class="pick-ico">${e.icon}</span>
+        <span class="pick-ico">${exIconHTML(e) || e.icon}</span>
         <span class="pick-name">${esc(e.name)}</span>
         <span class="fc-pat">${p.icon} ${T(p.label)}</span></button>`;
     })
