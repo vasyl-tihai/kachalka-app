@@ -69,6 +69,9 @@ let coachEdit = false;
 let pendingWorkoutEdit = null;
 // чи розгорнутий селектор «Тренування дня» на головному екрані
 let workoutSelOpen = false;
+// екран підходу: тап «+ Додатковий підхід» повертає кнопку «Виконав підхід»
+// для ще одного підходу понад ціль (скидається після запису підходу)
+let extraSetArmed = false;
 
 // екран замірів тіла: обрана метрика і дата запису
 let bodyMetric = 'bodyWeight';
@@ -415,6 +418,7 @@ function renderSet(exerciseId) {
   if (!ex) return go('#/today');
 
   clearLive(); // знищити попередні таймер/барабан (захист від витоку при повторному renderSet)
+  extraSetArmed = false; // свіжий екран — додатковий підхід не «озброєний»
   const entry = S.ensureEntry(iso, exerciseId);
   const settings = S.getSettings();
   const wStep = WEIGHT_STEP[entry.weightType] || 2.5;
@@ -497,8 +501,12 @@ function renderSet(exerciseId) {
   screenEl.querySelector('#goalChip').onclick = () => openTargetEditor(iso, exerciseId);
   // головна дія: обрав повторення на барабані → «Виконав підхід»
   screenEl.querySelector('#logBtn').onclick = () => logSet(iso, exerciseId);
-  // додатковий підхід понад ціль — кнопка внизу, біля виконаних підходів
-  screenEl.querySelector('#extraBtn').onclick = () => logSet(iso, exerciseId);
+  // додатковий підхід понад ціль — кнопка внизу, біля виконаних підходів.
+  // Не записує одразу: повертає «Виконав підхід», щоб обрати повторення і підтвердити
+  screenEl.querySelector('#extraBtn').onclick = () => {
+    extraSetArmed = true;
+    refreshSets(iso, exerciseId);
+  };
 
   // компактний вибір снаряда: показуємо лише поточний; тап відкриває решту
   const wtCurrentBtn = screenEl.querySelector('#wtCurrent');
@@ -623,6 +631,7 @@ function logSet(iso, exerciseId) {
   const reps = live.wheel ? live.wheel.getValue() : entry.targetReps;
   const pre = S.exerciseBests(exerciseId); // знімок рекордів ДО запису
   S.addSet(iso, exerciseId, { reps, weight: entry.weight });
+  extraSetArmed = false; // підхід записано — наступний додатковий знову через «+»
   refreshSets(iso, exerciseId);
   // перевірка нового рекорду (лише якщо раніше вже були записи)
   let celebrated = false;
@@ -658,18 +667,22 @@ function refreshSets(iso, exerciseId) {
   const done = entry.sets.length;
   const complete = target > 0 && done >= target;
 
+  // «озброєний» додатковий підхід: користувач натиснув «+», обирає повторення
+  const armed = extraSetArmed && complete;
+
   const setLabelEl = screenEl.querySelector('#setLabel');
   if (setLabelEl) {
-    setLabelEl.innerHTML = complete
+    setLabelEl.innerHTML = complete && !armed
       ? `<span class="done-txt">✓ ${T('Виконано')}</span> · ${done} ${T('з')} ${target}`
       : `${T('Підхід')} <b>${done + 1}</b> ${T('з')} ${target}`;
   }
   // до цілі — велика синя «Виконав підхід» під барабаном; після виконання вона
-  // ховається, а внизу (біля виконаних підходів) зʼявляється «+ додатковий підхід»
+  // ховається, а внизу (біля виконаних підходів) зʼявляється «+ додатковий підхід».
+  // Тап по «+» повертає «Виконав підхід» для запису ще одного підходу.
   const logBtn = screenEl.querySelector('#logBtn');
-  if (logBtn) logBtn.hidden = complete;
+  if (logBtn) logBtn.hidden = complete && !armed;
   const extraBtn = screenEl.querySelector('#extraBtn');
-  if (extraBtn) extraBtn.hidden = !complete;
+  if (extraBtn) extraBtn.hidden = !complete || armed;
 
   const sumEl = screenEl.querySelector('#setsSummary');
   if (sumEl) {
