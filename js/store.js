@@ -553,20 +553,52 @@ export function getDayStack(iso) {
 export function getEntry(iso, exerciseId) {
   return state.entries[iso] && state.entries[iso][exerciseId];
 }
+// «почати з того, де зупинився»: ціль повторень нового дня — це повторення
+// останнього записаного підходу з найближчого попереднього тренування вправи.
+// Зробив 6 замість 12 → завтра ціль 6 (не 12).
+function carriedTargetReps(exerciseId, iso) {
+  let bestIso = null;
+  let reps = null;
+  for (const [dIso, byEx] of Object.entries(state.entries)) {
+    if (dIso >= iso) continue; // лише дні до поточного
+    if (bestIso != null && dIso < bestIso) continue;
+    const e = byEx[exerciseId];
+    if (!e || !Array.isArray(e.sets) || !e.sets.length) continue;
+    // останній підхід із зазначеними повтореннями (0/порожні пропускаємо)
+    for (let i = e.sets.length - 1; i >= 0; i--) {
+      const r = Number(e.sets[i] && e.sets[i].reps) || 0;
+      if (r > 0) {
+        bestIso = dIso;
+        reps = r;
+        break;
+      }
+    }
+  }
+  return reps;
+}
 export function ensureEntry(iso, exerciseId) {
   if (!state.entries[iso]) state.entries[iso] = {};
   let entry = state.entries[iso][exerciseId];
+  const ex = getExercise(exerciseId) || {};
   if (!entry) {
-    const ex = getExercise(exerciseId) || {};
     entry = {
       weight: ex.weight ?? 0,
       weightType: ex.weightType ?? 'dumbbell',
       targetSets: ex.targetSets ?? 4,
-      targetReps: ex.targetReps ?? 10,
+      targetReps: carriedTargetReps(exerciseId, iso) ?? ex.targetReps ?? 10,
+      autoGoal: true, // ціль виставлено автоматично (не вручну через редактор)
       sets: [],
     };
     state.entries[iso][exerciseId] = entry;
     save();
+  } else if (entry.autoGoal && (!entry.sets || !entry.sets.length)) {
+    // запис створили заздалегідь (зазирнули на день наперед) — поки не зроблено
+    // жодного підходу, тримаємо авто-ціль свіжою (після того дня могли ще тренуватись)
+    const t = carriedTargetReps(exerciseId, iso) ?? ex.targetReps ?? 10;
+    if (t !== entry.targetReps) {
+      entry.targetReps = t;
+      save();
+    }
   }
   return entry;
 }
@@ -790,8 +822,11 @@ export function suggestProgression(exerciseId) {
   if (w <= 0) return null;
   const ok = recent.every((r) => {
     if (Math.abs(workWeight(r) - w) > 0.01) return false;
-    const ts = r.targetSets || ex.targetSets;
-    const tr = r.targetReps || ex.targetReps;
+    // порівнюємо з ПЛАНОВОЮ ціллю з бібліотеки, а не з перенесеною
+    // (ціль дня самозанижується після невдалого дня — інакше підказка
+    // радила б додати вагу тому, хто відкотився з 12 до 6 повторень)
+    const ts = ex.targetSets || r.targetSets;
+    const tr = ex.targetReps || r.targetReps;
     if (r.sets.length < ts) return false;
     return r.sets.every((s) => (Number(s.reps) || 0) >= tr);
   });

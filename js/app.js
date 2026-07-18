@@ -19,6 +19,42 @@ const tabbarEl = document.getElementById('tabbar');
 // поточно вибрана дата (для головного екрана / запису)
 let selectedISO = S.todayISO();
 
+// авто-перехід на новий день: якщо застосунок «прожив ніч» у фоні,
+// при поверненні показуємо вже новий день — прогрес підходів починається з нуля
+// (учорашні записи лишаються на вчорашній даті).
+let lastSeenToday = S.todayISO();
+// звірити дату; true — день змінився і selectedISO переставлено на новий «сьогодні»
+function syncToday() {
+  const now = S.todayISO();
+  if (now === lastSeenToday) return false;
+  const wasOnToday = selectedISO === lastSeenToday;
+  lastSeenToday = now;
+  if (!wasOnToday) return false; // користувач свідомо дивиться іншу дату — не чіпаємо
+  selectedISO = now;
+  return true;
+}
+function rolloverDay() {
+  if (!syncToday()) return;
+  closeModal(); // відкрита модалка тримає стару дату в замиканні — закриваємо
+  if (location.hash.startsWith('#/set/') || location.hash.startsWith('#/camera/')) {
+    location.hash = '#/today'; // екран підходу відкритий на вчора → на «Сьогодні»
+  } else {
+    router(); // той самий екран, але вже з новою датою
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') rolloverDay();
+});
+window.addEventListener('focus', rolloverDay);
+window.addEventListener('pageshow', rolloverDay);
+// якщо застосунок лишили відкритим через північ — перевіряємо раз на хвилину,
+// але не смикаємо активний екран підходу/камери (переключиться при навігації)
+setInterval(() => {
+  if (document.visibilityState !== 'visible') return;
+  if (location.hash.startsWith('#/set/') || location.hash.startsWith('#/camera/')) return;
+  rolloverDay();
+}, 60000);
+
 // крок зміни ваги за типом снаряда (кг)
 const WEIGHT_STEP = { dumbbell: 1, barbell: 2.5, kettlebell: 2, bodyweight: 1 };
 
@@ -68,6 +104,7 @@ const routes = [
 ];
 
 function router() {
+  syncToday(); // після півночі будь-яка навігація веде вже на новий день
   clearLive();
   calNeedsSync = true; // нова навігація → календар синхронізує місяць із вибраною датою
   workoutEditMode = false; // тренування завжди відкривається в режимі перегляду
@@ -403,19 +440,19 @@ function renderSet(exerciseId) {
         <button class="icon-btn" id="cfgBtn" title="${T('Ціль і налаштування')}">⚙️</button>
       </header>
 
-      <!-- ВАГА -->
+      <!-- ВАГА (компактний рядок) -->
       <section class="card weight-card">
         <div class="wt-head">
           <span class="card-label wt-label">${T('Вага')}</span>
+          <div class="stepper" id="weightStepper" ${entry.weightType === 'bodyweight' ? 'hidden' : ''}>
+            <button class="step-btn" data-d="-${wStep}">−</button>
+            <div class="step-val" id="stepVal" title="${T('Двічі торкнись, щоб увести вручну')}"><span id="wVal">${entry.weight}</span> <small>${T('кг')}</small></div>
+            <button class="step-btn" data-d="${wStep}">+</button>
+          </div>
           <button class="wt-current" id="wtCurrent" title="${T('Змінити снаряд')}">${curType.icon} ${T(curType.label)} <span class="wt-caret">▾</span></button>
         </div>
         <div class="type-chips" id="typeChips" hidden>
           ${S.WEIGHT_TYPES.map((wt) => `<button class="tchip ${wt.id === entry.weightType ? 'on' : ''}" data-t="${wt.id}">${wt.icon} ${T(wt.label)}</button>`).join('')}
-        </div>
-        <div class="stepper" id="weightStepper" ${entry.weightType === 'bodyweight' ? 'hidden' : ''}>
-          <button class="step-btn" data-d="-${wStep}">−</button>
-          <div class="step-val" id="stepVal" title="${T('Двічі торкнись, щоб увести вручну')}"><span id="wVal">${entry.weight}</span> <small>${T('кг')}</small></div>
-          <button class="step-btn" data-d="${wStep}">+</button>
         </div>
         ${prog ? `<button class="hint-chip" id="progHint">💡 ${T('Час додати вагу — спробуй')} <b>${prog.newWeight} ${T('кг')}</b></button>` : ''}
       </section>
@@ -433,20 +470,20 @@ function renderSet(exerciseId) {
         </div>
       </section>
 
-      <!-- ЦІЛЬ + БАРАБАН -->
+      <!-- ПОВТОРЕННЯ: барабан + кнопка «Виконав підхід» -->
       <section class="card target-card">
-        <div class="card-label">${T('Підхід')} <span id="setNo">${entry.sets.length + 1}</span> ${T('з')} <span id="setTarget">${entry.targetSets}</span> · ${T('ціль повторень')}</div>
-        <div class="target-big glow" id="targetBig">${entry.targetReps}</div>
-        <div class="wheel-label">${T('Скільки повторень зробив')}</div>
+        <div class="tc-head">
+          <span class="card-label" id="setLabel"></span>
+          <button class="goal-chip" id="goalChip" title="${T('Ціль і налаштування')}">🎯 ${T('Ціль')}: <b>${entry.targetReps}</b></button>
+        </div>
         <div id="wheelMount"></div>
-        <div class="wheel-hint">${T('Обери повторення й натисни')} <b>＋</b> ${T('нижче, щоб записати підхід')}</div>
+        <button class="btn primary log-btn" id="logBtn">✓ ${T('Виконав підхід')}</button>
       </section>
 
       <!-- ВИКОНАНІ ПІДХОДИ -->
       <section class="card sets-card">
         <div class="card-label">${T('Виконані підходи')} <span class="muted" id="setsSummary"></span></div>
         <div class="bests-line" id="bestsLine">${bests.count > 0 ? bestsText(bests) : ''}</div>
-        <div class="dots" id="dots"></div>
         <div class="sets-list" id="setsList"></div>
       </section>
     </div>
@@ -456,6 +493,9 @@ function renderSet(exerciseId) {
   screenEl.querySelector('#backBtn').onclick = () => go('#/today');
   screenEl.querySelector('#camBtn').onclick = () => go('#/camera/' + exerciseId);
   screenEl.querySelector('#cfgBtn').onclick = () => openTargetEditor(iso, exerciseId);
+  screenEl.querySelector('#goalChip').onclick = () => openTargetEditor(iso, exerciseId);
+  // головна дія: обрав повторення на барабані → «Виконав підхід»
+  screenEl.querySelector('#logBtn').onclick = () => logSet(iso, exerciseId);
 
   // компактний вибір снаряда: показуємо лише поточний; тап відкриває решту
   const wtCurrentBtn = screenEl.querySelector('#wtCurrent');
@@ -613,9 +653,21 @@ function refreshSets(iso, exerciseId) {
   const plannedW = exLib ? exLib.weight || 0 : 0; // планова вага — для підсвітки збільшення
   const target = entry.targetSets || 0;
   const done = entry.sets.length;
+  const complete = target > 0 && done >= target;
 
-  const setNoEl = screenEl.querySelector('#setNo');
-  if (setNoEl) setNoEl.textContent = done + 1;
+  const setLabelEl = screenEl.querySelector('#setLabel');
+  if (setLabelEl) {
+    setLabelEl.innerHTML = complete
+      ? `<span class="done-txt">✓ ${T('Виконано')}</span> · ${done} ${T('з')} ${target}`
+      : `${T('Підхід')} <b>${done + 1}</b> ${T('з')} ${target}`;
+  }
+  // до цілі — велика синя «Виконав підхід»; після — непримітний «+ додатковий підхід»
+  const logBtn = screenEl.querySelector('#logBtn');
+  if (logBtn) {
+    logBtn.className = complete ? 'btn log-btn extra' : 'btn primary log-btn';
+    logBtn.innerHTML = complete ? `＋ ${T('Додатковий підхід')}` : `✓ ${T('Виконав підхід')}`;
+  }
+
   const sumEl = screenEl.querySelector('#setsSummary');
   if (sumEl) {
     const totalReps = entry.sets.reduce((s, x) => s + (x.reps || 0), 0);
@@ -626,19 +678,6 @@ function refreshSets(iso, exerciseId) {
   if (bestsEl) {
     const b = S.exerciseBests(exerciseId);
     bestsEl.innerHTML = b.count > 0 ? bestsText(b) : '';
-  }
-
-  const dotsEl = screenEl.querySelector('#dots');
-  if (dotsEl) {
-    // показуємо лише зроблені підходи (зайві понад ціль — помаранчеві) + кнопку «+»
-    let html = '';
-    for (let i = 0; i < done; i++) {
-      html += `<span class="dot fill ${i >= target ? 'extra' : ''}"></span>`;
-    }
-    html += `<button class="dot-add" id="addSetDot" title="${T('Додати підхід')}">＋</button>`;
-    dotsEl.innerHTML = html;
-    const addBtn = dotsEl.querySelector('#addSetDot');
-    if (addBtn) addBtn.onclick = () => logSet(iso, exerciseId);
   }
 
   const listEl = screenEl.querySelector('#setsList');
@@ -676,9 +715,19 @@ function openTargetEditor(iso, exerciseId) {
     { label: T('Готово'), class: 'primary', onClick: (root) => {
       const ts = Math.max(1, parseInt(root.querySelector('#tSets').value, 10) || entry.targetSets);
       const tr = Math.max(1, parseInt(root.querySelector('#tReps').value, 10) || entry.targetReps);
-      S.updateEntry(iso, exerciseId, { targetSets: ts, targetReps: tr });
+      // autoGoal:false — ціль виставлено вручну, авто-перенесення її більше не чіпає
+      S.updateEntry(iso, exerciseId, { targetSets: ts, targetReps: tr, autoGoal: false });
       closeModal();
-      renderSet(exerciseId);
+      // точкове оновлення екрана: повний перерендер збивав би таймер відпочинку,
+      // що вже цокає, і позицію барабана
+      const chipVal = screenEl.querySelector('#goalChip b');
+      if (chipVal) chipVal.textContent = tr;
+      if (live.wheel) {
+        live.wheel.setRange(1, Math.max(40, tr + 15));
+        live.wheel.setTarget(tr);
+        live.wheel.setValue(tr, false);
+      }
+      refreshSets(iso, exerciseId);
     } },
   ]);
 }

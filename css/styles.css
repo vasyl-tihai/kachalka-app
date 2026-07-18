@@ -154,9 +154,11 @@ input, select { font-family: inherit; }
 .center { text-align: center; }
 
 /* ===================================================================
-   ЕКРАН ПІДХОДУ
+   ЕКРАН ПІДХОДУ (компактний — усе на одному екрані)
 =================================================================== */
-.set-screen { display: flex; flex-direction: column; gap: 12px; }
+.set-screen { display: flex; flex-direction: column; gap: 10px; }
+.set-screen .card { padding: 11px 13px; }
+.set-screen .card-label { margin-bottom: 8px; }
 .set-top {
   display: flex; align-items: center; gap: 12px; padding: 4px 0 6px;
 }
@@ -178,8 +180,10 @@ input, select { font-family: inherit; }
 
 /* вага */
 /* компактний вибір снаряда */
-.wt-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.wt-label { margin-bottom: 0; }
+.wt-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+/* .wt-head .card-label — специфічність (0,2,0), інакше програвала б
+   правилу .set-screen .card-label і підпис висів вище центру рядка */
+.wt-head .card-label { margin-bottom: 0; }
 .wt-current {
   background: var(--bg-card2); border: 1px solid var(--blue); color: var(--blue-soft);
   border-radius: 12px; padding: 8px 12px; font-weight: 700; font-size: .95rem;
@@ -193,18 +197,21 @@ input, select { font-family: inherit; }
   padding: 9px 12px; font-size: .9rem; font-weight: 600;
 }
 .tchip.on { border-color: var(--blue); color: var(--blue-soft); background: rgba(91,155,255,.1); }
-.stepper { display: flex; align-items: center; gap: 14px; margin-top: 14px; justify-content: center; }
+/* вага компактно: степер живе в одному рядку із назвою і вибором снаряда */
+.stepper { display: flex; align-items: center; gap: 6px; justify-content: center; flex: 1; min-width: 0; }
 .step-btn {
-  width: 52px; height: 52px; border-radius: 50%; border: 1px solid var(--line);
-  background: var(--bg-card2); font-size: 1.8rem; font-weight: 700; display: grid; place-items: center;
+  width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--bg-card2); font-size: 1.35rem; font-weight: 700; display: grid; place-items: center;
+  flex: 0 0 auto;
 }
 .step-btn:active { transform: scale(.92); }
-.step-val { font-size: 1.8rem; font-weight: 800; min-width: 110px; text-align: center; }
-.step-val small { font-size: .9rem; color: var(--muted); font-weight: 600; }
+.step-val { font-size: 1.3rem; font-weight: 800; min-width: 72px; text-align: center; }
+.step-val small { font-size: .78rem; color: var(--muted); font-weight: 600; }
 .step-val input {
-  width: 120px; background: var(--bg-card2); border: 1px solid var(--blue); border-radius: 10px;
-  color: var(--txt); font-size: 1.5rem; font-weight: 800; text-align: center; padding: 4px 6px;
+  width: 86px; background: var(--bg-card2); border: 1px solid var(--blue); border-radius: 10px;
+  color: var(--txt); font-size: 1.2rem; font-weight: 800; text-align: center; padding: 3px 5px;
 }
+.weight-card .wt-current { font-size: .82rem; padding: 7px 9px; flex: 0 0 auto; }
 
 /* таймер */
 .timer-card { text-align: center; }
@@ -217,8 +224,8 @@ input, select { font-family: inherit; }
 .rest-step:active { transform: scale(.93); }
 .rest-presets { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .rest-presets .chip { font-size: .95rem; padding: 8px 12px; }
-.ring-mount { width: 150px; height: 150px; position: relative; }
-.ring-wrap { position: relative; width: 150px; height: 150px; }
+.ring-mount { width: 118px; height: 118px; position: relative; }
+.ring-wrap { position: relative; width: 118px; height: 118px; }
 .ring-svg { width: 100%; height: 100%; transform: rotate(0deg); }
 .ring-track { stroke: #1c1c24; }
 .ring-progress { stroke: var(--green); transition: stroke-dashoffset .12s linear;
@@ -227,39 +234,44 @@ input, select { font-family: inherit; }
   position: absolute; inset: 0; background: transparent; border: none;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
 }
-.ring-time { font-size: 2.6rem; font-weight: 800; line-height: 1; color: var(--txt); }
+.ring-time { font-size: 2rem; font-weight: 800; line-height: 1; color: var(--txt); }
 .ring-hint { color: var(--muted); font-size: .8rem; margin-top: 2px; }
 .ring-mount.running .ring-progress { stroke: var(--green); }
 
-/* ціль + барабан */
+/* повторення: маленька ціль + великий барабан + кнопка «Виконав підхід» */
 .target-card { text-align: center; }
-.target-big {
-  font-size: 4.6rem; font-weight: 800; line-height: 1; color: var(--blue-soft);
-  margin: 4px 0 2px;
+.tc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tc-head .card-label { margin-bottom: 0; }
+.tc-head .card-label b { color: var(--blue-soft); }
+.goal-chip {
+  background: var(--bg-card2); border: 1px solid var(--line); color: var(--muted);
+  border-radius: 11px; padding: 5px 10px; font-weight: 700; font-size: .8rem;
+  display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto;
 }
-.target-big.glow {
-  color: #cfe0ff;
-  text-shadow: 0 0 24px var(--blue-glow), 0 0 6px rgba(207,224,255,.6);
-  opacity: .92;
+.goal-chip b { color: var(--blue-soft); font-size: .95rem; }
+.goal-chip:active { transform: scale(.95); }
+.done-txt { color: var(--green); font-weight: 800; }
+.log-btn { margin-top: 8px; padding: 13px 16px; font-size: 1.05rem; }
+/* «додатковий підхід» після виконаної цілі — вторинна, непримітна */
+.log-btn.extra {
+  background: rgba(91, 155, 255, .07); border: 1.5px dashed var(--blue);
+  color: var(--blue-soft); font-size: .92rem; padding: 10px 14px; box-shadow: none;
 }
-.wheel-label { color: var(--muted); font-size: .85rem; margin: 10px 0 6px; }
-.wheel-hint { color: var(--muted); font-size: .82rem; margin-top: 12px; }
-.wheel-hint b { color: var(--blue-soft); }
 
 /* барабан-прокрутка */
 .wheel {
   display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
   scrollbar-width: none; -ms-overflow-style: none;
-  position: relative; padding: 6px 0; mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  position: relative; padding: 8px 0 4px; mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
 }
 .wheel::-webkit-scrollbar { display: none; }
 .wheel-track { display: flex; align-items: center; }
 .wheel-pad { flex: 0 0 0px; }
 .wheel-item {
-  scroll-snap-align: center; flex: 0 0 46px; height: 62px;
+  scroll-snap-align: center; flex: 0 0 58px; height: 68px;
   background: transparent; border: none; color: var(--muted);
-  font-size: 1.35rem; font-weight: 700; display: grid; place-items: center;
+  font-size: 1.7rem; font-weight: 700; display: grid; place-items: center;
   transition: transform .15s, color .15s; opacity: .55;
 }
 .wheel-item.is-selected {
@@ -276,21 +288,12 @@ input, select { font-family: inherit; }
   text-shadow: 0 0 18px var(--gold-glow), 0 0 6px rgba(255, 90, 60, .5);
 }
 
-/* виконані підходи */
-.dots { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; align-items: center; }
-.dot { width: 16px; height: 16px; border-radius: 50%; background: var(--bg-card2); border: 1px solid var(--line); }
-.dot.fill { background: var(--blue); border-color: var(--blue); box-shadow: 0 0 8px var(--blue-glow); }
-.dot.extra.fill { background: var(--orange); border-color: var(--orange); box-shadow: 0 0 8px var(--orange-glow); }
-.dot-add {
-  width: 40px; height: 40px; border-radius: 50%; border: 1.5px dashed var(--blue);
-  background: rgba(91, 155, 255, .1); color: var(--blue-soft); font-size: 1.5rem; font-weight: 700;
-  display: grid; place-items: center; line-height: 1; padding: 0;
-}
-.dot-add:active { transform: scale(.9); }
-.sets-list { display: flex; flex-wrap: wrap; gap: 8px; }
+/* виконані підходи — компактні виразні плитки */
+.sets-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .set-pill {
-  display: flex; align-items: center; gap: 8px; background: var(--bg-card2);
-  border: 1px solid var(--line); border-radius: 13px; padding: 7px 9px 7px 11px; font-size: .9rem;
+  display: flex; align-items: center; gap: 6px; background: rgba(91, 155, 255, .08);
+  border: 1px solid rgba(91, 155, 255, .35); border-radius: 11px; padding: 4px 4px 4px 9px; font-size: .85rem;
+  font-weight: 600;
 }
 .set-pill b { color: var(--blue-soft); }
 /* підхід понад заплановану ціль — помаранчевий */
@@ -298,8 +301,8 @@ input, select { font-family: inherit; }
 .set-pill.extra b { color: var(--orange); }
 /* вага більша за планову — жовтим */
 .set-pill .w-up { color: var(--gold); font-weight: 800; }
-.set-del { background: transparent; border: none; color: var(--muted); font-size: 1rem;
-  min-width: 40px; min-height: 40px; display: grid; place-items: center; margin: -6px -4px -6px 0; }
+.set-del { background: transparent; border: none; color: var(--muted); font-size: .9rem;
+  min-width: 34px; min-height: 34px; display: grid; place-items: center; margin: -4px 0; }
 .set-del:active { transform: scale(.9); color: var(--danger); }
 /* велика вага в степері — жовтим */
 .step-val.w-up #wVal, .step-val.w-up { color: var(--gold); }
@@ -621,7 +624,8 @@ a.btn { display: block; text-align: center; text-decoration: none; box-sizing: b
 .hint-chip:active { transform: scale(.98); }
 
 /* рядок рекордів на екрані підходу */
-.bests-line { color: #ffe0a0; font-size: .85rem; font-weight: 700; margin: -4px 0 12px; }
+.bests-line { color: #ffe0a0; font-size: .8rem; font-weight: 700; margin: -6px 0 8px; }
+.bests-line:empty { display: none; }
 
 /* картки-метрики огляду */
 .ov-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
@@ -730,4 +734,118 @@ a.btn { display: block; text-align: center; text-decoration: none; box-sizing: b
 
 @media (prefers-reduced-motion: reduce) {
   .glyph { animation: none; }
+}
+
+/* ===================================================================
+   СУЧАСНИЙ ВІЗУАЛ — «потужна» тема: глибина, світіння, енергія.
+   Блок свідомо в кінці файла: перекриває базові правила вище.
+=================================================================== */
+:root {
+  --violet: #8b5cf6;
+  --cyan: #22d3ee;
+  --surface: linear-gradient(180deg, #16161f 0%, #0b0b10 100%);
+  --surface-line: #272736;
+  --grad-primary: linear-gradient(135deg, #4f93ff 0%, #7b5bff 100%);
+}
+
+/* фон із «неоновим» сяйвом зверху — одразу задає настрій залу */
+#app {
+  background:
+    radial-gradient(130% 50% at 50% -8%, rgba(79, 147, 255, .17) 0%, transparent 60%),
+    radial-gradient(80% 35% at 100% 0%, rgba(139, 92, 246, .12) 0%, transparent 55%),
+    #000;
+}
+
+/* плавні мікроанімації для всіх кнопок */
+button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; }
+
+/* поверхні: градієнт + внутрішній відблиск + глибока тінь */
+.card, .ex-card, .stat-chip, .wsel, .chart-card, .ov-card, .hist-row,
+.bhist-row, .icon-btn, .chip, .best-cell {
+  background: var(--surface);
+  border-color: var(--surface-line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 10px 26px rgba(0, 0, 0, .4);
+}
+.ex-ico, .set-ico {
+  background: linear-gradient(160deg, #202030 0%, #111119 100%);
+  border: 1px solid #2b2b3d;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+
+/* заголовок екрана — градієнтний текст, напис-кікер — акцентний */
+.appbar-title {
+  font-size: 1.55rem; letter-spacing: -.01em;
+  background: linear-gradient(90deg, #ffffff 0%, #b9cdf5 80%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.appbar-kicker { color: var(--blue-soft); letter-spacing: .16em; opacity: .85; }
+
+/* головні кнопки — енергійний градієнт із світінням */
+.btn.primary {
+  background: var(--grad-primary);
+  border-color: transparent;
+  box-shadow: 0 10px 28px rgba(97, 110, 255, .38), inset 0 1px 0 rgba(255, 255, 255, .28);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+  font-weight: 800;
+}
+.btn.primary:active { box-shadow: 0 4px 14px rgba(97, 110, 255, .3), inset 0 1px 0 rgba(255, 255, 255, .2); }
+.log-btn { border-radius: 16px; letter-spacing: .02em; }
+
+/* картки вправ: прогрес-бар «заряджається», виконана — святкує зеленим */
+.ex-bar { height: 7px; }
+.ex-bar i {
+  background: linear-gradient(90deg, #3b7af0 0%, var(--cyan) 100%);
+  box-shadow: 0 0 10px rgba(59, 122, 240, .55);
+}
+.ex-card.done {
+  border-color: rgba(54, 215, 122, .4);
+  background:
+    linear-gradient(180deg, rgba(54, 215, 122, .10) 0%, rgba(54, 215, 122, .02) 100%),
+    var(--surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 8px 24px rgba(54, 215, 122, .10);
+}
+.ex-card.done .ex-bar i {
+  background: linear-gradient(90deg, #2bbf6c 0%, #5ff0a1 100%);
+  box-shadow: 0 0 10px var(--green-glow);
+}
+
+/* серія тренувань — «вогонь» */
+.stat-chip.flame {
+  border-color: rgba(255, 194, 75, .38);
+  background:
+    linear-gradient(180deg, rgba(255, 170, 60, .13) 0%, rgba(255, 120, 40, .02) 100%),
+    var(--surface);
+}
+
+/* нижня навігація: скло + світна риска активної вкладки */
+#tabbar {
+  background: rgba(7, 7, 11, .82);
+  backdrop-filter: blur(18px) saturate(1.35);
+  border-top: 1px solid rgba(91, 155, 255, .14);
+}
+.tab { position: relative; }
+.tab.active::before {
+  content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 30px; height: 3px; border-radius: 0 0 4px 4px;
+  background: linear-gradient(90deg, #4f93ff, var(--violet));
+  box-shadow: 0 2px 14px var(--blue-glow);
+}
+.tab.active .tab-ico { filter: drop-shadow(0 0 10px rgba(91, 155, 255, .7)); }
+
+/* таймер відпочинку: працює — світиться */
+.ring-mount.running .ring-svg { filter: drop-shadow(0 0 16px rgba(54, 215, 122, .3)); }
+
+/* барабан повторень: вибране число — важче й яскравіше */
+.wheel-item.is-selected { font-weight: 800; }
+
+/* календар: сьогодні підсвічено, тренований день світиться зеленим */
+.cal-cell.today { box-shadow: 0 0 14px rgba(91, 155, 255, .35); }
+.cal-cell.trained { box-shadow: inset 0 0 12px rgba(54, 215, 122, .12); }
+
+/* модалка — глибина «шухляди» */
+.modal {
+  background: linear-gradient(180deg, #17171f 0%, #0d0d12 100%);
+  border-color: #2c2c3c;
+  box-shadow: 0 -18px 50px rgba(0, 0, 0, .6);
 }
