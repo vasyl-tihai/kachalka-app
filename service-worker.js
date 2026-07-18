@@ -3,7 +3,7 @@
 //   • код застосунку (навігація, *.js, *.css) — network-first: свіжа версія підтягується
 //     при кожному онлайн-запуску, а офлайн працює з кешу;
 //   • іконки/шрифти/маніфест — cache-first (рідко змінюються), із докешуванням у рантаймі.
-const CACHE = 'kachalka-v16';
+const CACHE = 'kachalka-v17';
 const ASSETS = [
   './',
   './index.html',
@@ -15,6 +15,7 @@ const ASSETS = [
   './js/store.js',
   './js/timer.js',
   './js/picker.js',
+  './js/exicons.js',
   './js/pose.js',
   './js/formcheck.js',
   './js/i18n.js',

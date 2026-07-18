@@ -5,6 +5,7 @@ import { NumberWheel } from './picker.js';
 import { getLandmarker, drawPose } from './pose.js';
 import * as FC from './formcheck.js';
 import { t as T, setLang, LANGS, plural as PL, dateNames } from './i18n.js';
+import { exIconHTML } from './exicons.js';
 import * as FX from './fx.js';
 import * as BE from './backend.js';
 import { APP_VERSION } from './version.js';
@@ -283,9 +284,10 @@ function exCard(iso, id) {
   const wText = wt === 'bodyweight' ? 'вага тіла' : `${w} кг`;
   const pct = target ? Math.min(100, Math.round((done / target) * 100)) : 0;
   const complete = done >= target && target > 0;
+  const anim = exIconHTML(ex); // анімована іконка вправи; немає — емодзі
   return `
     <button class="ex-card ${complete ? 'done' : ''}" data-id="${id}">
-      <span class="ex-ico"><span class="glyph">${ex.icon || '💪'}</span></span>
+      <span class="ex-ico">${anim || `<span class="glyph">${ex.icon || '💪'}</span>`}</span>
       <span class="ex-main">
         <span class="ex-name">${esc(ex.name)}</span>
         <span class="ex-sub">${esc(typeLabel(wt))} · ${wText}</span>
@@ -435,7 +437,7 @@ function renderSet(exerciseId) {
     <div class="set-screen">
       <header class="set-top">
         <button class="icon-btn" id="backBtn">‹</button>
-        <div class="set-ico"><span class="glyph big">${ex.icon || '💪'}</span></div>
+        <div class="set-ico">${exIconHTML(ex) || `<span class="glyph big">${ex.icon || '💪'}</span>`}</div>
         <div class="set-titles">
           <div class="set-name">${esc(ex.name)}</div>
           <div class="set-date">${S.prettyDate(iso)}</div>

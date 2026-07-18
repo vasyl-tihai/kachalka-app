@@ -849,3 +849,21 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
   border-color: #2c2c3c;
   box-shadow: 0 -18px 50px rgba(0, 0, 0, .6);
 }
+
+/* ---------- анімовані іконки вправ (js/exicons.js) ----------
+   Дві пози в одному SVG; opacity перемикається як 2-кадровий мультик. */
+.ai { width: 32px; height: 32px; display: block; filter: drop-shadow(0 0 6px rgba(91, 155, 255, .3)); }
+.set-ico .ai { width: 38px; height: 38px; }
+.ai .b { stroke: var(--blue-soft); stroke-width: 3.2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.ai .bf { fill: var(--blue-soft); }
+.ai .w { stroke: var(--gold); stroke-width: 3.2; fill: none; stroke-linecap: round; }
+.ai .wf { fill: var(--gold); }
+.ai .f { stroke: #454556; stroke-width: 2.4; fill: none; stroke-linecap: round; }
+.ai .pA { animation: aiPoseA var(--ai-dur, 1.2s) linear infinite; }
+.ai .pB { animation: aiPoseB var(--ai-dur, 1.2s) linear infinite; }
+@keyframes aiPoseA { 0%, 49.9% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes aiPoseB { 0%, 49.9% { opacity: 0; } 50%, 100% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .ai .pA, .ai .pB { animation: none; }
+  .ai .pB { opacity: 0; }
+}
