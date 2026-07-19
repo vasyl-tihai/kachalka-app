@@ -99,6 +99,15 @@ const ICONS = {
       APL('24,15 17,16', '24,13 18,6', 'b', d) +
       APL('24,15 31,16', '24,13 30,6', 'b', d),
   },
+  // віджимання (вид збоку): планка, корпус опускається-піднімається
+  pushup: {
+    dur: '1.4s',
+    parts: (d) =>
+      PL('6,40 42,40', 'f') +
+      APL('13,27 38,35', '13,33 38,37', 'b', d) +
+      AC(9.5, 25, 9.5, 31, 3, 'bf', d) +
+      APL('15,28 15,39', '15,34 15,39', 'b', d),
+  },
   // підтягування: вис → підборіддя над перекладиною
   pullup: {
     dur: '1.8s',
@@ -126,7 +135,7 @@ const NAME_RULES = [
   [/присід|squat|випад|lunge/i, 'squat'],
   [/підтяг|pull.?up/i, 'pullup'],
   [/жим.*(леж|bench)|bench/i, 'bench'],
-  [/віджим|push.?up/i, 'bench'],
+  [/віджим|push.?up/i, 'pushup'],
   [/жим|press/i, 'ohp'],
   [/біцепс|згинан|curl/i, 'curl'],
   [/прес|скруч|crunch|планк|plank|abs/i, 'abs'],
@@ -147,12 +156,21 @@ function guessIcon(ex) {
   return MUSCLE_FALLBACK[ex && ex.muscle] || null; // full/other → емодзі користувача
 }
 
-/** Анімована SVG-іконка вправи або null (тоді показуємо емодзі вправи). */
-export function exIconHTML(ex) {
-  const id = guessIcon(ex);
-  if (!id) return null;
+function buildSVG(id) {
   const ic = ICONS[id];
   let inner = ic.parts(ic.dur);
   if (REDUCED) inner = inner.replace(/<animate[^>]*\/>/g, ''); // статична поза A
   return `<svg class="ai ai-${id}" viewBox="0 0 48 48" aria-hidden="true">${inner}</svg>`;
+}
+
+/** Анімована SVG-іконка вправи або null (тоді показуємо емодзі вправи). */
+export function exIconHTML(ex) {
+  const id = guessIcon(ex);
+  return id ? buildSVG(id) : null;
+}
+
+/** Іконка рухового патерна камери-тренера (formcheck: squat/pushup/press/curl). */
+const PATTERN_MAP = { squat: 'squat', pushup: 'pushup', press: 'ohp', curl: 'curl' };
+export function patternIconHTML(patternId) {
+  return buildSVG(PATTERN_MAP[patternId] || 'generic');
 }

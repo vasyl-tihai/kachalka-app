@@ -5,7 +5,7 @@ import { NumberWheel } from './picker.js';
 import { getLandmarker, drawPose } from './pose.js';
 import * as FC from './formcheck.js';
 import { t as T, setLang, LANGS, plural as PL, dateNames } from './i18n.js';
-import { exIconHTML } from './exicons.js';
+import { exIconHTML, patternIconHTML } from './exicons.js';
 import * as FX from './fx.js';
 import * as BE from './backend.js';
 import { APP_VERSION } from './version.js';
@@ -101,6 +101,8 @@ const routes = [
   { re: /^#\/history(?:\/(.+))?$/, render: renderHistory },
   { re: /^#\/settings$/, render: renderSettings },
   { re: /^#\/coach$/, render: renderCoach },
+  { re: /^#\/community$/, render: renderCommunity },
+  { re: /^#\/user\/(.+)$/, render: renderUserProfile },
   { re: /^#\/client\/(.+)$/, render: renderClientManage },
   { re: /^#\/chat\/(.+)$/, render: renderChat },
   { re: /^#\/calories$/, render: renderCalories },
@@ -140,6 +142,7 @@ const TABS = [
   { hash: '#/workouts', icon: '📋', label: 'Тренування' },
   { hash: '#/formcheck', icon: '📷', label: 'Аналіз' },
   { hash: '#/progress', icon: '📈', label: 'Прогрес' },
+  { hash: '#/community', icon: '👥', label: 'Спільнота' },
 ];
 function renderTabbar() {
   tabbarEl.innerHTML = TABS.map(
@@ -156,7 +159,9 @@ function updateTabbar(hash) {
       hash.startsWith(b.dataset.hash) ||
       (b.dataset.hash === '#/today' && (hash === '#/' || hash === '#/calories')) ||
       (b.dataset.hash === '#/workouts' && hash.startsWith('#/workout')) ||
-      (b.dataset.hash === '#/progress' && (hash.startsWith('#/history') || hash.startsWith('#/body')));
+      (b.dataset.hash === '#/progress' && (hash.startsWith('#/history') || hash.startsWith('#/body'))) ||
+      (b.dataset.hash === '#/community' &&
+        (hash.startsWith('#/user') || hash.startsWith('#/coach') || hash.startsWith('#/chat') || hash.startsWith('#/client')));
     b.classList.toggle('active', active);
   });
   // ховаємо таб-бар на повноекранних екранах (підхід, камера)
@@ -788,7 +793,7 @@ function renderCamera(exerciseId) {
   let counter = new FC.RepCounter(pattern);
 
   const chips = FC.PATTERNS.map(
-    (p) => `<button class="pchip ${p.id === pattern.id ? 'on' : ''}" data-p="${p.id}">${p.icon} ${esc(p.label)}</button>`
+    (p) => `<button class="pchip ${p.id === pattern.id ? 'on' : ''}" data-p="${p.id}">${patternIconHTML(p.id)} ${esc(p.label)}</button>`
   ).join('');
 
   screenEl.innerHTML = `
@@ -1837,8 +1842,8 @@ function renderSettings() {
     </section>
 
     <section class="card">
-      <div class="card-label">🧑‍🏫 Кабінет тренера <span class="muted">(бета)</span></div>
-      <button class="btn ghost" id="coachBtn">Відкрити кабінет</button>
+      <div class="card-label">👥 ${T('Спільнота')} <span class="muted">(бета)</span></div>
+      <button class="btn ghost" id="coachBtn">${T('Відкрити спільноту')}</button>
     </section>
 
     <section class="card">
@@ -1855,7 +1860,7 @@ function renderSettings() {
       <small>${T('версія')}: ${esc(APP_VERSION)}</small></p>
   `;
   screenEl.querySelector('#backBtn').onclick = () => history.back();
-  screenEl.querySelector('#coachBtn').onclick = () => go('#/coach');
+  screenEl.querySelector('#coachBtn').onclick = () => go('#/community');
 
   // мова — застосовується одразу
   screenEl.querySelector('#langSel').onchange = (e) => {
@@ -2001,17 +2006,303 @@ function renderSettings() {
 }
 
 // =====================================================================
+//  ЕКРАН: СПІЛЬНОТА — стрічка фото з тренувань + люди
+// =====================================================================
+// стиснути фото до maxDim px по більшій стороні (JPEG) — не роздуваємо сховище
+function downscalePhoto(file, maxDim = 1280, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * k));
+      const h = Math.max(1, Math.round(img.height * k));
+      const cv = document.createElement('canvas');
+      cv.width = w;
+      cv.height = h;
+      cv.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      cv.toBlob((b) => (b ? resolve(b) : reject(new Error('Не вдалося обробити фото'))), 'image/jpeg', quality);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Не вдалося прочитати фото'));
+    };
+    img.src = url;
+  });
+}
+
+// дата допису: «18 лип · 14:05»
+function postDate(ts) {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  const names = dateNames();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${d.getDate()} ${names.monthsShort[d.getMonth()]} · ${hh}:${mm}`;
+}
+
+async function renderCommunity() {
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <div class="appbar-titles">
+        <div class="appbar-kicker">👥 ${T('Спільнота')}</div>
+        <div class="appbar-title">КАЧАЛКА</div>
+      </div>
+      <button class="icon-btn" id="myCab" title="${T('Мій кабінет')}">👤</button>
+    </header>
+    <div id="commBody"><section class="card"><p class="muted">Завантаження…</p></section></div>`;
+  screenEl.querySelector('#myCab').onclick = () => go('#/coach');
+  const body = () => screenEl.querySelector('#commBody');
+
+  if (!BE.configured) {
+    body().innerHTML = `<section class="card"><p class="muted">Сервер ще не підключено (див. backend/SUPABASE_SETUP.md).</p></section>`;
+    return;
+  }
+  let session = null;
+  try { session = await BE.getSession(); } catch { /* нижче — запрошення увійти */ }
+  if (location.hash !== '#/community') return;
+
+  if (!session) {
+    body().innerHTML = `
+      <section class="card">
+        <div class="card-label">👥 ${T('Спільнота')} КАЧАЛКИ</div>
+        <p class="muted">Публікуй фото з тренувань, дивись, як тренуються інші,
+        і записуйся на тренування до тренерів.</p>
+        <button class="btn primary" id="commLogin">Увійти / Створити акаунт</button>
+      </section>`;
+    body().querySelector('#commLogin').onclick = () => go('#/coach');
+    return;
+  }
+
+  let posts = [], people = [], shared = null;
+  try {
+    [posts, people, shared] = await Promise.all([
+      BE.listPosts(),
+      BE.listPeople(),
+      BE.mySharedTraining().catch(() => null),
+    ]);
+  } catch (e) {
+    if (location.hash !== '#/community') return;
+    body().innerHTML = `<section class="card"><p class="muted">⚠️ ${esc(e.message)}</p>
+      <p class="muted">Якщо це перший запуск спільноти — власнику треба застосувати
+      <b>backend/patch-3-social.sql</b> у Supabase.</p></section>`;
+    return;
+  }
+  if (location.hash !== '#/community') return;
+  const meId = session.user.id;
+  // якщо ділюся тренуваннями — тихо освіжити знімок останніх 14 днів
+  if (shared) BE.shareTraining(S.exportRecentLogs(14)).catch(() => {});
+
+  const postCard = (p) => {
+    const a = p.author || {};
+    const mine = p.author_id === meId;
+    return `<section class="card post-card">
+      <div class="post-head">
+        <button class="post-user" data-u="${p.author_id}">${avatarHtml(a)}</button>
+        <button class="post-author" data-u="${p.author_id}">${esc(a.name || 'Без імені')}</button>
+        <span class="post-date muted">${postDate(p.created_at)}</span>
+        ${mine ? `<button class="set-del post-del" data-id="${p.id}" data-path="${esc(p.photo_path || '')}" title="${T('Видалити')}">✕</button>` : ''}
+      </div>
+      <img class="post-img" src="${esc(p.photo_url)}" alt="" loading="lazy"/>
+      ${p.caption ? `<p class="post-cap">${esc(p.caption)}</p>` : ''}
+    </section>`;
+  };
+  const personRow = (p) => `
+    <button class="pick-row fc-row person-row" data-u="${p.id}">
+      ${avatarHtml(p)}
+      <span class="pick-name">${esc(p.name || 'Без імені')}${p.city ? ` <span class="muted">· ${esc(p.city)}</span>` : ''}</span>
+      ${p.role === 'trainer' ? `<span class="fc-pat">🧑‍🏫 Тренер</span>` : ''}
+    </button>`;
+
+  body().innerHTML = `
+    <section class="card">
+      <div class="wt-head">
+        <span class="card-label wt-label">📸 ${T('Фото з тренувань')}</span>
+        <button class="wt-current" id="addPost">＋ ${T('Додати фото')}</button>
+      </div>
+    </section>
+    <label class="card share-row">
+      <input type="checkbox" id="shareTr" ${shared ? 'checked' : ''}/>
+      <span>🏋️ ${T('Ділитися моїми тренуваннями')}</span>
+    </label>
+    <div class="feed">${posts.length ? posts.map(postCard).join('') : `<p class="muted center">${T('Ще немає дописів — будь першим!')}</p>`}</div>
+    <section class="card">
+      <div class="card-label">${T('Люди')}</div>
+      <div class="pick-list">
+        ${people.filter((p) => p.id !== meId).map(personRow).join('') || `<p class="muted">Поки нікого немає.</p>`}
+      </div>
+    </section>`;
+
+  // переходи на сторінку людини (з допису або списку)
+  body().querySelectorAll('[data-u]').forEach((el) =>
+    el.addEventListener('click', () => go('#/user/' + el.dataset.u))
+  );
+  // видалити свій допис
+  body().querySelectorAll('.post-del').forEach((b) =>
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('Видалити цей допис?')) return;
+      try {
+        await BE.deletePost({ id: b.dataset.id, photo_path: b.dataset.path });
+        toast('Допис видалено');
+        renderCommunity();
+      } catch (err) { toast('⚠️ ' + err.message); }
+    })
+  );
+  // перемикач «ділитися тренуваннями»
+  body().querySelector('#shareTr').onchange = async (e) => {
+    try {
+      if (e.target.checked) {
+        await BE.shareTraining(S.exportRecentLogs(14));
+        toast('🏋️ Тепер інші бачать твої тренування');
+      } else {
+        await BE.unshareTraining();
+        toast('Тренування приховано');
+      }
+    } catch (err) {
+      e.target.checked = !e.target.checked;
+      toast('⚠️ ' + err.message);
+    }
+  };
+  // новий допис: фото + підпис
+  body().querySelector('#addPost').onclick = () => {
+    openModal(T('Додати фото'), `
+      <div class="field"><label>Фото</label>
+        <input type="file" id="postFile" accept="image/*"/></div>
+      <div class="field"><label>${T('Підпис (необовʼязково)')}</label>
+        <input type="text" id="postCap" maxlength="200" placeholder="Як пройшло тренування?"/></div>
+    `, [
+      { label: T('Опублікувати'), class: 'primary', onClick: async (root) => {
+        const f = root.querySelector('#postFile').files[0];
+        if (!f) { toast('Спершу обери фото'); return; }
+        toast('Завантажую фото…');
+        try {
+          const blob = await downscalePhoto(f);
+          await BE.addPost(blob, root.querySelector('#postCap').value.trim());
+          closeModal();
+          toast('📸 Опубліковано!');
+          renderCommunity();
+        } catch (err) { toast('⚠️ ' + err.message); }
+      } },
+    ]);
+  };
+}
+
+// ---- сторінка людини: профіль, запис до тренера, тренування, дописи ----
+async function renderUserProfile(userId) {
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backBtn">‹</button>
+      <div class="appbar-titles">
+        <div class="appbar-kicker">👥 ${T('Спільнота')}</div>
+        <div class="appbar-title" id="uTitle">…</div>
+      </div>
+    </header>
+    <div id="uBody"><section class="card"><p class="muted">Завантаження…</p></section></div>`;
+  screenEl.querySelector('#backBtn').onclick = () => go('#/community');
+  if (!BE.configured) return go('#/community');
+  const session = await BE.getSession().catch(() => null);
+  if (!session) return go('#/community');
+
+  let prof = null, posts = [], sharedTr = null, slots = [];
+  try {
+    prof = await BE.getProfile(userId);
+    [posts, sharedTr] = await Promise.all([
+      BE.listPosts(userId).catch(() => []),
+      BE.sharedTrainingOf(userId).catch(() => null),
+    ]);
+    if (prof.role === 'trainer') {
+      slots = await BE.listSlots(userId, new Date().toISOString()).catch(() => []);
+    }
+  } catch (e) {
+    prof = prof || { name: '' };
+  }
+  if (!location.hash.startsWith('#/user/')) return;
+  const uBody = screenEl.querySelector('#uBody');
+  const titleEl = screenEl.querySelector('#uTitle');
+  if (titleEl) titleEl.textContent = prof.name || 'Без імені';
+
+  const freeSlots = (slots || []).filter((s) => s.status === 'free').slice(0, 8);
+  const slotRow = (s) => {
+    const d = new Date(s.starts_at);
+    const when = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    return `<div class="slot-row"><span>🕒 ${when} · ${s.duration_min} хв</span>
+      <button class="mini ok book-slot" data-id="${s.id}">${T('Записатися')}</button></div>`;
+  };
+
+  // «як людина тренується» — якщо відкрила доступ
+  let trainHtml = '';
+  if (sharedTr && sharedTr.data && Object.keys(sharedTr.data).length) {
+    const days = Object.keys(sharedTr.data).sort().reverse().slice(0, 7);
+    trainHtml = `<section class="card">
+      <div class="card-label">🏋️ ${T('Останні тренування')}</div>
+      <div class="bhist">
+        ${days.map((iso) => {
+          const items = sharedTr.data[iso] || [];
+          const txt = items.map((it) => `${esc(it.name)} ${it.sets.length}×`).join(', ');
+          return `<div class="bhist-row"><span class="bhist-date">${S.prettyDate(iso)}</span>
+            <span class="bhist-vals">${txt}</span></div>`;
+        }).join('')}
+      </div>
+    </section>`;
+  }
+
+  uBody.innerHTML = `
+    <section class="card profile-card">
+      <div class="profile-head">
+        ${avatarHtml(prof, true)}
+        <div>
+          <div class="profile-name">${esc(prof.name || 'Без імені')}</div>
+          <div class="profile-role">${prof.role === 'trainer' ? '🧑‍🏫 Тренер' : '🏋️ Атлет'}${prof.city ? ' · ' + esc(prof.city) : ''}</div>
+        </div>
+      </div>
+      ${prof.bio ? `<p class="profile-bio">${esc(prof.bio)}</p>` : ''}
+      <div class="btn-row">
+        <button class="btn ghost" id="chatBtn">💬 Написати</button>
+      </div>
+    </section>
+    ${prof.role === 'trainer' ? `<section class="card">
+      <div class="card-label">📅 ${T('Записатися на тренування')}</div>
+      ${freeSlots.length ? `<div class="slot-list">${freeSlots.map(slotRow).join('')}</div>`
+        : `<p class="muted">Немає вільних слотів — напиши тренеру в чат.</p>`}
+    </section>` : ''}
+    ${trainHtml}
+    ${posts.length ? `<div class="card-label side-label">📸 ${T('Фото з тренувань')}</div>
+      <div class="feed">${posts.map((p) => `<section class="card post-card">
+        <div class="post-head"><span class="post-date muted">${postDate(p.created_at)}</span></div>
+        <img class="post-img" src="${esc(p.photo_url)}" alt="" loading="lazy"/>
+        ${p.caption ? `<p class="post-cap">${esc(p.caption)}</p>` : ''}
+      </section>`).join('')}</div>` : ''}
+  `;
+  uBody.querySelector('#chatBtn').onclick = () => go('#/chat/' + userId);
+  uBody.querySelectorAll('.book-slot').forEach((b) =>
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        await BE.bookSlot(b.dataset.id, '');
+        toast('✅ Заявку надіслано! Тренер підтвердить запис.');
+        renderUserProfile(userId);
+      } catch (err) {
+        b.disabled = false;
+        toast('⚠️ ' + err.message);
+      }
+    })
+  );
+}
+
+// =====================================================================
 //  ЕКРАН: КАБІНЕТ ТРЕНЕРА (бета) — акаунт на сервері
 // =====================================================================
 function coachShell(inner) {
   screenEl.innerHTML = `
     <header class="appbar">
       <button class="icon-btn" id="backBtn">‹</button>
-      <div class="appbar-titles"><div class="appbar-kicker">🧑‍🏫 Кабінет тренера</div>
+      <div class="appbar-titles"><div class="appbar-kicker">👤 ${T('Мій кабінет')}</div>
         <div class="appbar-title">КАЧАЛКА</div></div>
     </header>
     <div id="coachBody">${inner}</div>`;
-  screenEl.querySelector('#backBtn').onclick = () => go('#/settings');
+  screenEl.querySelector('#backBtn').onclick = () => go('#/community');
 }
 
 async function renderCoach() {
@@ -2728,7 +3019,7 @@ function renderFormcheck() {
       return `<button class="pick-row fc-row" data-id="${e.id}">
         <span class="pick-ico">${exIconHTML(e) || e.icon}</span>
         <span class="pick-name">${esc(e.name)}</span>
-        <span class="fc-pat">${p.icon} ${T(p.label)}</span></button>`;
+        <span class="fc-pat">${patternIconHTML(p.id)} ${T(p.label)}</span></button>`;
     })
     .join('');
   const kcalToday = S.calorieDayTotal(S.todayISO()).kcal;

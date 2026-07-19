@@ -861,6 +861,35 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
 .hchip { display: inline-flex; align-items: center; gap: 6px; }
 .hchip .ai { width: 18px; height: 18px; filter: none; }
 .ex-sub .ai { width: 15px; height: 15px; display: inline-block; vertical-align: -3px; filter: none; }
+.fc-pat { display: inline-flex; align-items: center; gap: 5px; }
+.fc-pat .ai { width: 16px; height: 16px; filter: none; }
+.pchip { display: inline-flex; align-items: center; gap: 6px; }
+.pchip .ai { width: 18px; height: 18px; filter: none; }
+
+/* 6 вкладок — підписи не обрізаються некрасиво */
+.tab-lbl { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; font-size: .68rem; }
+
+/* ---------- спільнота ---------- */
+#commBody > .card, #commBody > .share-row, #uBody > .card { margin-bottom: 12px; }
+.feed { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+.post-card { padding: 12px; }
+.post-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.post-user { background: transparent; border: none; padding: 0; }
+.post-author {
+  background: transparent; border: none; padding: 0; font-weight: 800; font-size: .98rem;
+  color: var(--txt); flex: 1; min-width: 0; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.post-date { font-size: .76rem; flex: 0 0 auto; }
+.post-img { width: 100%; border-radius: 14px; display: block; max-height: 440px; object-fit: cover; background: var(--bg-card2); }
+.post-cap { margin: 10px 2px 2px; font-size: .95rem; line-height: 1.4; }
+.share-row {
+  display: flex; align-items: center; gap: 12px; padding: 13px 14px;
+  font-weight: 700; cursor: pointer;
+}
+.share-row input { width: 20px; height: 20px; accent-color: var(--blue); flex: 0 0 auto; }
+.person-row .avatar { width: 40px; height: 40px; font-size: 1rem; flex: 0 0 auto; }
+.side-label { margin: 2px 4px 8px; }
 .ai .b { stroke: var(--blue-soft); stroke-width: 3.2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .ai .bf { fill: var(--blue-soft); }
 .ai .w { stroke: var(--gold); stroke-width: 3.2; fill: none; stroke-linecap: round; }

@@ -171,6 +171,97 @@ export async function listTrainers() {
   return data || [];
 }
 
+// ---- спільнота: всі люди (для стрічки і каталогу) ----
+export async function listPeople() {
+  const sb = await client();
+  const { data, error } = await sb
+    .from('profiles')
+    .select('id,name,city,role,avatar_url')
+    .order('name')
+    .limit(100);
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
+// ---- пости спільноти (фото з тренувань) ----
+export async function listPosts(authorId) {
+  const sb = await client();
+  let q = sb
+    .from('posts')
+    .select('*, author:author_id(name,avatar_url,role)')
+    .order('created_at', { ascending: false })
+    .limit(50);
+  if (authorId) q = q.eq('author_id', authorId);
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+export async function addPost(blob, caption) {
+  const sb = await client();
+  const s = await getSession();
+  if (!s) throw new Error('Немає сесії');
+  const path = `${s.user.id}/${Date.now()}.jpg`;
+  const { error: upErr } = await sb.storage
+    .from('posts')
+    .upload(path, blob, { contentType: 'image/jpeg' });
+  if (upErr) throw new Error(upErr.message);
+  const { data } = sb.storage.from('posts').getPublicUrl(path);
+  const { error } = await sb.from('posts').insert({
+    author_id: s.user.id,
+    caption: String(caption || '').slice(0, 300),
+    photo_url: data.publicUrl,
+    photo_path: path,
+  });
+  if (error) throw new Error(error.message);
+}
+export async function deletePost(post) {
+  const sb = await client();
+  const { error } = await sb.from('posts').delete().eq('id', post.id);
+  if (error) throw new Error(error.message);
+  // фото у сховищі прибираємо теж (не критично, якщо не вдасться)
+  if (post.photo_path) {
+    try { await sb.storage.from('posts').remove([post.photo_path]); } catch {}
+  }
+}
+
+// ---- публічні тренування («як я тренуюсь») — вмикає сам користувач ----
+export async function shareTraining(dataJson) {
+  const sb = await client();
+  const s = await getSession();
+  const { error } = await sb.from('shared_training').upsert({
+    user_id: s.user.id,
+    data: dataJson,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) throw new Error(error.message);
+}
+export async function unshareTraining() {
+  const sb = await client();
+  const s = await getSession();
+  const { error } = await sb.from('shared_training').delete().eq('user_id', s.user.id);
+  if (error) throw new Error(error.message);
+}
+export async function mySharedTraining() {
+  const sb = await client();
+  const s = await getSession();
+  if (!s) return null;
+  const { data } = await sb
+    .from('shared_training')
+    .select('user_id,updated_at')
+    .eq('user_id', s.user.id)
+    .maybeSingle();
+  return data || null;
+}
+export async function sharedTrainingOf(userId) {
+  const sb = await client();
+  const { data } = await sb
+    .from('shared_training')
+    .select('data,updated_at')
+    .eq('user_id', userId)
+    .maybeSingle();
+  return data || null;
+}
+
 // ---- бронювання ----
 export async function bookSlot(slotId, note) {
   const sb = await client();
@@ -279,7 +370,7 @@ export async function subscribeMessages(otherId, onNew) {
 }
 export async function getProfile(id) {
   const sb = await client();
-  const { data, error } = await sb.from('profiles').select('name,contact,avatar_url,role').eq('id', id).single();
+  const { data, error } = await sb.from('profiles').select('name,contact,avatar_url,role,city,bio').eq('id', id).single();
   if (error) return { name: '', contact: '' };
   return data;
 }
