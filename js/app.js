@@ -73,6 +73,8 @@ let workoutSelOpen = false;
 // екран підходу: тап «+ Додатковий підхід» повертає кнопку «Виконав підхід»
 // для ще одного підходу понад ціль (скидається після запису підходу)
 let extraSetArmed = false;
+// демо-режим спільноти: показує вигаданих людей і дописи (нічого не пише на сервер)
+let communityDemo = false;
 
 // екран замірів тіла: обрана метрика і дата запису
 let bodyMetric = 'bodyWeight';
@@ -2055,6 +2057,8 @@ async function renderCommunity() {
   screenEl.querySelector('#myCab').onclick = () => go('#/coach');
   const body = () => screenEl.querySelector('#commBody');
 
+  if (communityDemo) return renderCommunityDemo();
+
   if (!BE.configured) {
     body().innerHTML = `<section class="card"><p class="muted">Сервер ще не підключено (див. backend/SUPABASE_SETUP.md).</p></section>`;
     return;
@@ -2070,8 +2074,10 @@ async function renderCommunity() {
         <p class="muted">Публікуй фото з тренувань, дивись, як тренуються інші,
         і записуйся на тренування до тренерів.</p>
         <button class="btn primary" id="commLogin">Увійти / Створити акаунт</button>
+        <button class="btn ghost" id="commDemo" style="margin-top:8px">👀 Подивитися демо</button>
       </section>`;
     body().querySelector('#commLogin').onclick = () => go('#/coach');
+    body().querySelector('#commDemo').onclick = () => { communityDemo = true; renderCommunity(); };
     return;
   }
 
@@ -2132,7 +2138,9 @@ async function renderCommunity() {
       <div class="pick-list">
         ${people.filter((p) => p.id !== meId).map(personRow).join('') || `<p class="muted">Поки нікого немає.</p>`}
       </div>
-    </section>`;
+    </section>
+    <button class="btn ghost" id="commDemo">👀 Подивитися демо (як виглядатиме з людьми)</button>`;
+  body().querySelector('#commDemo').onclick = () => { communityDemo = true; renderCommunity(); };
 
   // переходи на сторінку людини (з допису або списку)
   body().querySelectorAll('[data-u]').forEach((el) =>
@@ -2189,6 +2197,107 @@ async function renderCommunity() {
   };
 }
 
+// ---- ДЕМО спільноти: вигадані люди й дописи (нічого не пише на сервер) ----
+async function renderCommunityDemo() {
+  const body = screenEl.querySelector('#commBody');
+  const { demoData } = await import('./demo.js');
+  if (location.hash !== '#/community' || !communityDemo) return;
+  const D = demoData();
+
+  const postCard = (p) => `
+    <section class="card post-card">
+      <div class="post-head">
+        <button class="post-user" data-u="${p.author_id}">${avatarHtml(p.author)}</button>
+        <button class="post-author" data-u="${p.author_id}">${esc(p.author.name)}</button>
+        <span class="post-date muted">${postDate(p.created_at)}</span>
+      </div>
+      <img class="post-img" src="${p.photo_url}" alt="" loading="lazy"/>
+      ${p.caption ? `<p class="post-cap">${esc(p.caption)}</p>` : ''}
+    </section>`;
+  const personRow = (p) => `
+    <button class="pick-row fc-row person-row" data-u="${p.id}">
+      ${avatarHtml(p)}
+      <span class="pick-name">${esc(p.name)} <span class="muted">· ${esc(p.city)}</span></span>
+      ${p.role === 'trainer' ? `<span class="fc-pat">🧑‍🏫 Тренер</span>` : ''}
+    </button>`;
+
+  body.innerHTML = `
+    <div class="demo-banner">👀 Це демо — так виглядатиме спільнота з людьми
+      <button class="mini" id="demoOff">Вийти</button></div>
+    <div class="feed">${D.posts.map(postCard).join('')}</div>
+    <section class="card">
+      <div class="card-label">${T('Люди')}</div>
+      <div class="pick-list">${D.people.map(personRow).join('')}</div>
+    </section>`;
+  body.querySelector('#demoOff').onclick = () => { communityDemo = false; renderCommunity(); };
+  body.querySelectorAll('[data-u]').forEach((el) =>
+    el.addEventListener('click', () => go('#/user/' + el.dataset.u))
+  );
+}
+
+// демо-сторінка людини (профіль/тренування/слоти з demo.js)
+async function renderDemoUser(userId) {
+  const { demoData } = await import('./demo.js');
+  if (!location.hash.startsWith('#/user/')) return;
+  const D = demoData();
+  const prof = D.byId[userId];
+  if (!prof) return go('#/community');
+  const titleEl = screenEl.querySelector('#uTitle');
+  if (titleEl) titleEl.textContent = prof.name;
+  const uBody = screenEl.querySelector('#uBody');
+  const posts = D.posts.filter((p) => p.author_id === userId);
+  const sharedTr = D.shared[userId];
+  const slots = D.slots[userId] || [];
+  const slotRow = (s) => {
+    const d = new Date(s.starts_at);
+    const when = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    return `<div class="slot-row"><span>🕒 ${when} · ${s.duration_min} хв</span>
+      <button class="mini ok demo-book">${T('Записатися')}</button></div>`;
+  };
+  let trainHtml = '';
+  if (sharedTr) {
+    const days = Object.keys(sharedTr.data).sort().reverse();
+    trainHtml = `<section class="card">
+      <div class="card-label">🏋️ ${T('Останні тренування')}</div>
+      <div class="bhist">
+        ${days.map((iso) => {
+          const txt = sharedTr.data[iso].map((it) => `${esc(it.name)} ${it.sets.length}×`).join(', ');
+          return `<div class="bhist-row"><span class="bhist-date">${S.prettyDate(iso)}</span>
+            <span class="bhist-vals">${txt}</span></div>`;
+        }).join('')}
+      </div>
+    </section>`;
+  }
+  uBody.innerHTML = `
+    <div class="demo-banner">👀 Демо-профіль</div>
+    <section class="card profile-card">
+      <div class="profile-head">
+        ${avatarHtml(prof, true)}
+        <div>
+          <div class="profile-name">${esc(prof.name)}</div>
+          <div class="profile-role">${prof.role === 'trainer' ? '🧑‍🏫 Тренер' : '🏋️ Атлет'} · ${esc(prof.city)}</div>
+        </div>
+      </div>
+      ${D.bios[userId] ? `<p class="profile-bio">${esc(D.bios[userId])}</p>` : ''}
+      <div class="btn-row"><button class="btn ghost demo-chat">💬 Написати</button></div>
+    </section>
+    ${prof.role === 'trainer' ? `<section class="card">
+      <div class="card-label">📅 ${T('Записатися на тренування')}</div>
+      <div class="slot-list">${slots.map(slotRow).join('')}</div>
+    </section>` : ''}
+    ${trainHtml}
+    ${posts.length ? `<div class="card-label side-label">📸 ${T('Фото з тренувань')}</div>
+      <div class="feed">${posts.map((p) => `<section class="card post-card">
+        <div class="post-head"><span class="post-date muted">${postDate(p.created_at)}</span></div>
+        <img class="post-img" src="${p.photo_url}" alt=""/>
+        ${p.caption ? `<p class="post-cap">${esc(p.caption)}</p>` : ''}
+      </section>`).join('')}</div>` : ''}
+  `;
+  uBody.querySelectorAll('.demo-book, .demo-chat').forEach((b) =>
+    b.addEventListener('click', () => toast('👀 Це демо-профіль — тут буде справжня дія'))
+  );
+}
+
 // ---- сторінка людини: профіль, запис до тренера, тренування, дописи ----
 async function renderUserProfile(userId) {
   screenEl.innerHTML = `
@@ -2201,6 +2310,7 @@ async function renderUserProfile(userId) {
     </header>
     <div id="uBody"><section class="card"><p class="muted">Завантаження…</p></section></div>`;
   screenEl.querySelector('#backBtn').onclick = () => go('#/community');
+  if (userId.startsWith('demo-')) return renderDemoUser(userId); // демо-профілі — без сервера
   if (!BE.configured) return go('#/community');
   const session = await BE.getSession().catch(() => null);
   if (!session) return go('#/community');
