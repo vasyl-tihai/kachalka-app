@@ -723,10 +723,10 @@ function refreshSets(iso, exerciseId) {
 
   // «минулого разу» + ціль поточного підходу:
   // барабан = скільки зробив у ЦЬОМУ Ж підході минулого тренування,
-  // ціль = на 1–2 повторення більше. Ручна ціль (autoGoal:false) має пріоритет.
-  const manual = entry.autoGoal === false;
-  const prevAll = S.prevSessionSets(exerciseId, iso); // для порівняння обсягу — завжди
-  const prevSets = manual ? null : prevAll;
+  // ціль = ЗАВЖДИ на 1–2 повторення більше за минулий раз (є історія —
+  // ручне число з редактора слугує лише кількості підходів і першому тренуванню)
+  const prevAll = S.prevSessionSets(exerciseId, iso);
+  const prevSets = prevAll;
   const idx = Math.min(done, prevSets ? prevSets.length - 1 : 0); // поточний підхід
   let suggest = entry.targetReps;
   let goalTxt = String(entry.targetReps);
@@ -739,7 +739,8 @@ function refreshSets(iso, exerciseId) {
   }
   const goalEl = screenEl.querySelector('#goalVal');
   if (goalEl) goalEl.textContent = goalTxt;
-  // сегментний прогрес-бар підходів: зроблені світяться, понад ціль — помаранчеві
+  // сегментний прогрес-бар підходів: зроблені світяться, понад ціль — помаранчеві;
+  // всі підходи виконано → бар перефарбовується зеленим
   const segEl = screenEl.querySelector('#setProgress');
   if (segEl) {
     let segs = '';
@@ -748,6 +749,7 @@ function refreshSets(iso, exerciseId) {
       segs += `<i class="${i < done ? 'on' : ''}${i >= target ? ' extra' : ''}"></i>`;
     }
     segEl.innerHTML = segs;
+    segEl.classList.toggle('complete', complete);
   }
   const prevEl = screenEl.querySelector('#prevLine');
   if (prevEl) {

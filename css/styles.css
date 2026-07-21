@@ -273,6 +273,11 @@ input, select { font-family: inherit; }
   background: linear-gradient(90deg, #ff8a3d, #ffb24b);
   box-shadow: 0 0 8px var(--orange-glow);
 }
+/* усі підходи виконано → бар зелений (додаткові лишаються помаранчевими) */
+.set-progress.complete i.on:not(.extra) {
+  background: linear-gradient(90deg, #2bbf6c, #5ff0a1);
+  box-shadow: 0 0 8px var(--green-glow);
+}
 .goal-chip {
   background: var(--bg-card2); border: 1px solid var(--line); color: var(--muted);
   border-radius: 11px; padding: 5px 10px; font-weight: 700; font-size: .8rem;
