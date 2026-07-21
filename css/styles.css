@@ -160,16 +160,25 @@ input, select { font-family: inherit; }
 .set-screen .card { padding: 11px 13px; }
 .set-screen .card-label { margin-bottom: 8px; }
 .set-top {
-  display: flex; align-items: center; gap: 12px; padding: 4px 0 6px;
+  display: flex; align-items: center; gap: 8px; padding: 4px 0 6px;
 }
-.set-top .icon-btn { font-size: 1.8rem; font-weight: 800; }
+/* компактні кнопки шапки — щоб довга назва вправи вміщалася */
+.set-top .icon-btn { width: 36px; height: 36px; border-radius: 11px; font-size: 1rem; font-weight: 800; }
+.set-top #backBtn { font-size: 1.5rem; }
 .set-ico {
-  font-size: 1.8rem; width: 50px; height: 50px; display: grid; place-items: center;
-  background: var(--bg-card2); border-radius: 16px; border: 1px solid var(--line);
+  font-size: 1.5rem; width: 42px; height: 42px; display: grid; place-items: center;
+  background: var(--bg-card2); border-radius: 13px; border: 1px solid var(--line);
+  flex: 0 0 auto;
 }
+.set-ico .ai { width: 32px; height: 32px; }
 .set-titles { flex: 1; min-width: 0; }
-.set-name { font-weight: 800; font-size: 1.15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.set-date { color: var(--blue-soft); font-size: .85rem; }
+/* довга назва переноситься на 2 рядки (не обрізається трьома крапками) */
+.set-name {
+  font-weight: 800; font-size: 1.02rem; line-height: 1.2;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; white-space: normal; word-break: break-word;
+}
+.set-date { color: var(--blue-soft); font-size: .8rem; }
 
 .card {
   background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--radius-lg);
@@ -885,7 +894,7 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
    Рух — усередині SVG (SMIL-морфінг між позами); тут лише розмір і кольори.
    «Менше руху» обробляється в exicons.js (статична поза). */
 .ai { width: 32px; height: 32px; display: block; filter: drop-shadow(0 0 6px rgba(91, 155, 255, .3)); }
-.set-ico .ai { width: 38px; height: 38px; }
+.set-ico .ai { width: 32px; height: 32px; }
 /* розміри в списках/чипах по всьому застосунку */
 .pick-ico .ai { width: 26px; height: 26px; }
 .rec-ico .ai { width: 22px; height: 22px; margin: 0 auto; }
