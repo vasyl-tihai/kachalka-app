@@ -489,6 +489,7 @@ function renderSet(exerciseId) {
           <span class="set-label" id="setLabel"></span>
           <button class="goal-chip" id="goalChip" title="${T('Ціль і налаштування')}">🎯 ${T('Ціль')}: <b id="goalVal">${entry.targetReps}</b></button>
         </div>
+        <div class="set-progress" id="setProgress"></div>
         <div class="prev-line" id="prevLine" hidden></div>
         <div id="wheelMount"></div>
         <button class="btn primary log-btn" id="logBtn">✓ ${T('Виконав підхід')}</button>
@@ -593,7 +594,30 @@ function renderSet(exerciseId) {
       FX.vibrateFinish(st);
       if (st.flashOn !== false) flashAlarm(st.flashColor);
     },
-    onDone: () => {},
+    // відпочинок після ОСТАННЬОГО підходу закінчився → авто-перехід далі
+    onDone: () => {
+      if (extraSetArmed) return; // користувач готує додатковий підхід — не смикаємо
+      const en = S.getEntry(iso, exerciseId);
+      if (!en || !en.targetSets || en.sets.length < en.targetSets) return; // ще не всі підходи
+      const stack = S.getDayStack(iso);
+      const i = stack.indexOf(exerciseId);
+      // наступна НЕвиконана вправа далі за списком дня
+      let nextId = null;
+      for (let k = i + 1; k < stack.length; k++) {
+        const en2 = S.getEntry(iso, stack[k]);
+        const ex2 = S.getExercise(stack[k]);
+        const t2 = (en2 && en2.targetSets) || (ex2 && ex2.targetSets) || 0;
+        if (!t2 || !en2 || en2.sets.length < t2) { nextId = stack[k]; break; }
+      }
+      if (nextId) {
+        const nx = S.getExercise(nextId);
+        toast(`➡️ ${T('Наступна вправа')}: <b>${esc(nx ? nx.name : '')}</b>`);
+        go('#/set/' + nextId);
+      } else {
+        toast(`🎉 ${T('Тренування виконано!')}`);
+        go('#/today');
+      }
+    },
   });
   screenEl.querySelectorAll('.rest-step').forEach((b) =>
     b.addEventListener('click', () => {
@@ -704,6 +728,16 @@ function refreshSets(iso, exerciseId) {
   }
   const goalEl = screenEl.querySelector('#goalVal');
   if (goalEl) goalEl.textContent = goalTxt;
+  // сегментний прогрес-бар підходів: зроблені світяться, понад ціль — помаранчеві
+  const segEl = screenEl.querySelector('#setProgress');
+  if (segEl) {
+    let segs = '';
+    const totalSegs = Math.max(target, done);
+    for (let i = 0; i < totalSegs; i++) {
+      segs += `<i class="${i < done ? 'on' : ''}${i >= target ? ' extra' : ''}"></i>`;
+    }
+    segEl.innerHTML = segs;
+  }
   const prevEl = screenEl.querySelector('#prevLine');
   if (prevEl) {
     if (prevSets && prevSets.length) {

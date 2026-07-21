@@ -250,6 +250,20 @@ input, select { font-family: inherit; }
 /* «Минулого разу: 12 · 10 · 8» — поточний підхід підсвічено */
 .prev-line { color: var(--muted); font-size: .84rem; margin-top: 6px; font-variant-numeric: tabular-nums; }
 .prev-line .pv-cur { color: var(--blue-soft); font-weight: 800; font-size: 1rem; }
+/* сегментний прогрес-бар підходів */
+.set-progress { display: flex; gap: 6px; margin-top: 10px; }
+.set-progress i {
+  flex: 1 1 0; height: 8px; border-radius: 99px;
+  background: var(--bg-card2); border: 1px solid var(--line); transition: background .3s, box-shadow .3s;
+}
+.set-progress i.on {
+  background: linear-gradient(90deg, #3b7af0, var(--cyan));
+  border-color: transparent; box-shadow: 0 0 8px rgba(59, 122, 240, .5);
+}
+.set-progress i.extra.on {
+  background: linear-gradient(90deg, #ff8a3d, #ffb24b);
+  box-shadow: 0 0 8px var(--orange-glow);
+}
 .goal-chip {
   background: var(--bg-card2); border: 1px solid var(--line); color: var(--muted);
   border-radius: 11px; padding: 5px 10px; font-weight: 700; font-size: .8rem;

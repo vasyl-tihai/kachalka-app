@@ -131,6 +131,8 @@ const D = {
     'Додатковий підхід': 'Extra set',
     'Виконано': 'Done',
     'Минулого разу': 'Last time',
+    'Наступна вправа': 'Next exercise',
+    'Тренування виконано!': 'Workout complete!',
     // спільнота
     'Спільнота': 'Community',
     'Люди': 'People',
@@ -366,6 +368,8 @@ const D = {
     'Додатковий підхід': 'Dodatkowa seria',
     'Виконано': 'Zrobione',
     'Минулого разу': 'Ostatnio',
+    'Наступна вправа': 'Następne ćwiczenie',
+    'Тренування виконано!': 'Trening ukończony!',
     // спільнота
     'Спільнота': 'Społeczność',
     'Люди': 'Ludzie',
@@ -591,6 +595,8 @@ const D = {
     'Додатковий підхід': 'Extra-Satz',
     'Виконано': 'Erledigt',
     'Минулого разу': 'Letztes Mal',
+    'Наступна вправа': 'Nächste Übung',
+    'Тренування виконано!': 'Workout geschafft!',
     // спільнота
     'Спільнота': 'Community',
     'Люди': 'Leute',
@@ -816,6 +822,8 @@ const D = {
     'Додатковий підхід': 'Serie extra',
     'Виконано': 'Hecho',
     'Минулого разу': 'La última vez',
+    'Наступна вправа': 'Siguiente ejercicio',
+    'Тренування виконано!': '¡Entrenamiento completado!',
     // спільнота
     'Спільнота': 'Comunidad',
     'Люди': 'Gente',
@@ -1041,6 +1049,8 @@ const D = {
     'Додатковий підхід': 'Série en plus',
     'Виконано': 'Terminé',
     'Минулого разу': 'La dernière fois',
+    'Наступна вправа': 'Exercice suivant',
+    'Тренування виконано!': 'Entraînement terminé !',
     // спільнота
     'Спільнота': 'Communauté',
     'Люди': 'Personnes',
@@ -1266,6 +1276,8 @@ const D = {
     'Додатковий підхід': 'Serie extra',
     'Виконано': 'Fatto',
     'Минулого разу': 'L\'ultima volta',
+    'Наступна вправа': 'Prossimo esercizio',
+    'Тренування виконано!': 'Allenamento completato!',
     // спільнота
     'Спільнота': 'Community',
     'Люди': 'Persone',
