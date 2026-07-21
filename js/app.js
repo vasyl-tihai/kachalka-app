@@ -486,9 +486,10 @@ function renderSet(exerciseId) {
       <!-- ПОВТОРЕННЯ: барабан + кнопка «Виконав підхід» -->
       <section class="card target-card">
         <div class="tc-head">
-          <span class="card-label" id="setLabel"></span>
-          <button class="goal-chip" id="goalChip" title="${T('Ціль і налаштування')}">🎯 ${T('Ціль')}: <b>${entry.targetReps}</b></button>
+          <span class="set-label" id="setLabel"></span>
+          <button class="goal-chip" id="goalChip" title="${T('Ціль і налаштування')}">🎯 ${T('Ціль')}: <b id="goalVal">${entry.targetReps}</b></button>
         </div>
+        <div class="prev-line" id="prevLine" hidden></div>
         <div id="wheelMount"></div>
         <button class="btn primary log-btn" id="logBtn">✓ ${T('Виконав підхід')}</button>
       </section>
@@ -685,6 +686,41 @@ function refreshSets(iso, exerciseId) {
       ? `<span class="done-txt">✓ ${T('Виконано')}</span> · ${done} ${T('з')} ${target}`
       : `${T('Підхід')} <b>${done + 1}</b> ${T('з')} ${target}`;
   }
+
+  // «минулого разу» + ціль поточного підходу:
+  // барабан = скільки зробив у ЦЬОМУ Ж підході минулого тренування,
+  // ціль = на 1–2 повторення більше. Ручна ціль (autoGoal:false) має пріоритет.
+  const manual = entry.autoGoal === false;
+  const prevSets = manual ? null : S.prevSessionSets(exerciseId, iso);
+  const idx = Math.min(done, prevSets ? prevSets.length - 1 : 0); // поточний підхід
+  let suggest = entry.targetReps;
+  let goalTxt = String(entry.targetReps);
+  let goalNum = entry.targetReps;
+  if (prevSets && prevSets.length) {
+    const prevReps = Number(prevSets[idx].reps) || entry.targetReps;
+    suggest = prevReps;
+    goalNum = prevReps + 1;
+    goalTxt = `${prevReps + 1}–${prevReps + 2}`;
+  }
+  const goalEl = screenEl.querySelector('#goalVal');
+  if (goalEl) goalEl.textContent = goalTxt;
+  const prevEl = screenEl.querySelector('#prevLine');
+  if (prevEl) {
+    if (prevSets && prevSets.length) {
+      prevEl.hidden = false;
+      prevEl.innerHTML = `${T('Минулого разу')}: ` + prevSets
+        .map((s, i) => `<span class="${i === idx && (!complete || armed) ? 'pv-cur' : ''}">${s.reps}</span>`)
+        .join(' · ');
+    } else {
+      prevEl.hidden = true;
+    }
+  }
+  // барабан підказує повторення поточного підходу (не смикаємо виконану вправу)
+  if (live.wheel && (!complete || armed)) {
+    live.wheel.setRange(1, Math.max(40, goalNum + 15));
+    live.wheel.setTarget(goalNum);
+    live.wheel.setValue(suggest, false);
+  }
   // до цілі — велика синя «Виконав підхід» під барабаном; після виконання вона
   // ховається, а внизу (біля виконаних підходів) зʼявляється «+ додатковий підхід».
   // Тап по «+» повертає «Виконав підхід» для запису ще одного підходу.
@@ -740,18 +776,11 @@ function openTargetEditor(iso, exerciseId) {
     { label: T('Готово'), class: 'primary', onClick: (root) => {
       const ts = Math.max(1, parseInt(root.querySelector('#tSets').value, 10) || entry.targetSets);
       const tr = Math.max(1, parseInt(root.querySelector('#tReps').value, 10) || entry.targetReps);
-      // autoGoal:false — ціль виставлено вручну, авто-перенесення її більше не чіпає
+      // autoGoal:false — ціль виставлено вручну, авто-підказки її більше не чіпають
       S.updateEntry(iso, exerciseId, { targetSets: ts, targetReps: tr, autoGoal: false });
       closeModal();
-      // точкове оновлення екрана: повний перерендер збивав би таймер відпочинку,
-      // що вже цокає, і позицію барабана
-      const chipVal = screenEl.querySelector('#goalChip b');
-      if (chipVal) chipVal.textContent = tr;
-      if (live.wheel) {
-        live.wheel.setRange(1, Math.max(40, tr + 15));
-        live.wheel.setTarget(tr);
-        live.wheel.setValue(tr, false);
-      }
+      // точкове оновлення (замість повного перерендеру — не збиває таймер відпочинку);
+      // чип цілі і барабан оновить refreshSets
       refreshSets(iso, exerciseId);
     } },
   ]);

@@ -243,6 +243,13 @@ input, select { font-family: inherit; }
 .tc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .tc-head .card-label { margin-bottom: 0; }
 .tc-head .card-label b { color: var(--blue-soft); }
+/* великий напис «Підхід 1 з 4» */
+.set-label { font-size: 1.1rem; font-weight: 800; color: var(--txt); text-align: left; }
+.set-label b { color: var(--blue-soft); font-size: 1.25rem; }
+.set-label .done-txt { font-size: 1.05rem; }
+/* «Минулого разу: 12 · 10 · 8» — поточний підхід підсвічено */
+.prev-line { color: var(--muted); font-size: .84rem; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.prev-line .pv-cur { color: var(--blue-soft); font-weight: 800; font-size: 1rem; }
 .goal-chip {
   background: var(--bg-card2); border: 1px solid var(--line); color: var(--muted);
   border-radius: 11px; padding: 5px 10px; font-weight: 700; font-size: .8rem;

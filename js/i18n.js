@@ -130,6 +130,7 @@ const D = {
     'Виконав підхід': 'Set done',
     'Додатковий підхід': 'Extra set',
     'Виконано': 'Done',
+    'Минулого разу': 'Last time',
     // спільнота
     'Спільнота': 'Community',
     'Люди': 'People',
@@ -364,6 +365,7 @@ const D = {
     'Виконав підхід': 'Seria zrobiona',
     'Додатковий підхід': 'Dodatkowa seria',
     'Виконано': 'Zrobione',
+    'Минулого разу': 'Ostatnio',
     // спільнота
     'Спільнота': 'Społeczność',
     'Люди': 'Ludzie',
@@ -588,6 +590,7 @@ const D = {
     'Виконав підхід': 'Satz geschafft',
     'Додатковий підхід': 'Extra-Satz',
     'Виконано': 'Erledigt',
+    'Минулого разу': 'Letztes Mal',
     // спільнота
     'Спільнота': 'Community',
     'Люди': 'Leute',
@@ -812,6 +815,7 @@ const D = {
     'Виконав підхід': 'Serie hecha',
     'Додатковий підхід': 'Serie extra',
     'Виконано': 'Hecho',
+    'Минулого разу': 'La última vez',
     // спільнота
     'Спільнота': 'Comunidad',
     'Люди': 'Gente',
@@ -1036,6 +1040,7 @@ const D = {
     'Виконав підхід': 'Série faite',
     'Додатковий підхід': 'Série en plus',
     'Виконано': 'Terminé',
+    'Минулого разу': 'La dernière fois',
     // спільнота
     'Спільнота': 'Communauté',
     'Люди': 'Personnes',
@@ -1260,6 +1265,7 @@ const D = {
     'Виконав підхід': 'Serie fatta',
     'Додатковий підхід': 'Serie extra',
     'Виконано': 'Fatto',
+    'Минулого разу': 'L\'ultima volta',
     // спільнота
     'Спільнота': 'Community',
     'Люди': 'Persone',

@@ -576,6 +576,24 @@ function carriedTargetReps(exerciseId, iso) {
   }
   return reps;
 }
+// підходи найближчого попереднього тренування вправи (лише з повтореннями >0) —
+// для підказки «минулого разу» і цілей по кожному підходу
+export function prevSessionSets(exerciseId, iso) {
+  let bestIso = null;
+  let sets = null;
+  for (const [dIso, byEx] of Object.entries(state.entries)) {
+    if (dIso >= iso) continue;
+    if (bestIso != null && dIso < bestIso) continue;
+    const e = byEx[exerciseId];
+    if (!e || !Array.isArray(e.sets) || !e.sets.length) continue;
+    const valid = e.sets.filter((s) => (Number(s.reps) || 0) > 0);
+    if (!valid.length) continue;
+    bestIso = dIso;
+    sets = valid;
+  }
+  return sets; // масив {reps, weight, ...} або null
+}
+
 export function ensureEntry(iso, exerciseId) {
   if (!state.entries[iso]) state.entries[iso] = {};
   let entry = state.entries[iso][exerciseId];
