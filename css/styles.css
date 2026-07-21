@@ -648,6 +648,16 @@ a.btn { display: block; text-align: center; text-decoration: none; box-sizing: b
 .bests-line { color: #ffe0a0; font-size: .8rem; font-weight: 700; margin: -6px 0 8px; }
 .bests-line:empty { display: none; }
 
+/* обсяг (тоннаж) вправи — «скільки роботи зроблено» */
+.vol-line { font-size: .95rem; font-weight: 700; margin: -2px 0 8px; color: var(--txt); }
+.vol-line b { color: var(--cyan, #22d3ee); font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.vol-diff { font-size: .82rem; font-weight: 800; margin-left: 4px; }
+.vol-diff.up { color: var(--green); }
+.vol-diff.down { color: var(--muted); }
+/* сумарний обсяг дня на «Сьогодні» */
+.day-volume { text-align: center; color: var(--muted); font-weight: 700; font-size: .95rem; margin-top: 14px; }
+.day-volume b { color: var(--blue-soft); font-variant-numeric: tabular-nums; }
+
 /* картки-метрики огляду */
 .ov-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
 .ov-card { background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }

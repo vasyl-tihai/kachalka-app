@@ -132,6 +132,8 @@ const D = {
     'Виконано': 'Done',
     'Минулого разу': 'Last time',
     'Наступна вправа': 'Next exercise',
+    'Обсяг': 'Volume',
+    'Обсяг тренування': 'Workout volume',
     'Тренування виконано!': 'Workout complete!',
     // спільнота
     'Спільнота': 'Community',
@@ -369,6 +371,8 @@ const D = {
     'Виконано': 'Zrobione',
     'Минулого разу': 'Ostatnio',
     'Наступна вправа': 'Następne ćwiczenie',
+    'Обсяг': 'Objętość',
+    'Обсяг тренування': 'Objętość treningu',
     'Тренування виконано!': 'Trening ukończony!',
     // спільнота
     'Спільнота': 'Społeczność',
@@ -596,6 +600,8 @@ const D = {
     'Виконано': 'Erledigt',
     'Минулого разу': 'Letztes Mal',
     'Наступна вправа': 'Nächste Übung',
+    'Обсяг': 'Volumen',
+    'Обсяг тренування': 'Trainingsvolumen',
     'Тренування виконано!': 'Workout geschafft!',
     // спільнота
     'Спільнота': 'Community',
@@ -823,6 +829,8 @@ const D = {
     'Виконано': 'Hecho',
     'Минулого разу': 'La última vez',
     'Наступна вправа': 'Siguiente ejercicio',
+    'Обсяг': 'Volumen',
+    'Обсяг тренування': 'Volumen del entreno',
     'Тренування виконано!': '¡Entrenamiento completado!',
     // спільнота
     'Спільнота': 'Comunidad',
@@ -1050,6 +1058,8 @@ const D = {
     'Виконано': 'Terminé',
     'Минулого разу': 'La dernière fois',
     'Наступна вправа': 'Exercice suivant',
+    'Обсяг': 'Volume',
+    'Обсяг тренування': 'Volume de la séance',
     'Тренування виконано!': 'Entraînement terminé !',
     // спільнота
     'Спільнота': 'Communauté',
@@ -1277,6 +1287,8 @@ const D = {
     'Виконано': 'Fatto',
     'Минулого разу': 'L\'ultima volta',
     'Наступна вправа': 'Prossimo esercizio',
+    'Обсяг': 'Volume',
+    'Обсяг тренування': 'Volume della sessione',
     'Тренування виконано!': 'Allenamento completato!',
     // спільнота
     'Спільнота': 'Community',

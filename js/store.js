@@ -645,6 +645,33 @@ export function removeSet(iso, exerciseId, index) {
   return entry;
 }
 
+// --- обсяг (тоннаж) — як рахують пауерліфтери: Σ(вага × повторення) ---
+// за один запис вправи; вага тіла в тоннаж не йде (лише повторення)
+export function entryVolume(entry) {
+  let tonnage = 0;
+  let reps = 0;
+  if (!entry || !Array.isArray(entry.sets)) return { tonnage: 0, reps: 0 };
+  for (const s of entry.sets) {
+    const r = Number(s.reps) || 0;
+    if (r <= 0) continue;
+    reps += r;
+    const bw = (s.weightType || entry.weightType) === 'bodyweight';
+    tonnage += bw ? 0 : r * (Number(s.weight) || 0);
+  }
+  return { tonnage, reps };
+}
+// сумарний обсяг усього дня
+export function dayVolume(iso) {
+  let tonnage = 0;
+  let reps = 0;
+  for (const en of Object.values(state.entries[iso] || {})) {
+    const v = entryVolume(en);
+    tonnage += v.tonnage;
+    reps += v.reps;
+  }
+  return { tonnage, reps };
+}
+
 // --- дні з тренуваннями (для календаря) ---
 export function trainedDays() {
   const set = new Set();

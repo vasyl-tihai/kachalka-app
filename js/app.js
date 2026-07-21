@@ -292,12 +292,15 @@ function exCard(iso, id) {
   const pct = target ? Math.min(100, Math.round((done / target) * 100)) : 0;
   const complete = done >= target && target > 0;
   const anim = exIconHTML(ex); // анімована іконка вправи; немає — емодзі
+  // виконаний обсяг (тоннаж) — видно, скільки роботи вже зроблено
+  const v = entry ? S.entryVolume(entry) : { tonnage: 0, reps: 0 };
+  const volTxt = v.tonnage > 0 ? ` · ⚡ ${fmtKg(v.tonnage)}` : v.reps > 0 ? ` · ⚡ ${v.reps} ${T('повт.')}` : '';
   return `
     <button class="ex-card ${complete ? 'done' : ''}" data-id="${id}">
       <span class="ex-ico">${anim || `<span class="glyph">${ex.icon || '💪'}</span>`}</span>
       <span class="ex-main">
         <span class="ex-name">${esc(ex.name)}</span>
-        <span class="ex-sub">${esc(typeLabel(wt))} · ${wText}</span>
+        <span class="ex-sub">${esc(typeLabel(wt))} · ${wText}${volTxt}</span>
       </span>
       <span class="ex-meta">
         <span class="ex-count ${complete ? 'glow' : ''}">${done}/${target}</span>
@@ -361,6 +364,12 @@ function renderToday() {
       <div class="wchips">${wChips}</div>
     </div>
     <div class="list">${listHtml}</div>
+    ${(() => {
+      const dv = S.dayVolume(iso);
+      if (!dv.reps) return '';
+      const t = dv.tonnage > 0 ? `${fmtKg(dv.tonnage)} · ` : '';
+      return `<div class="day-volume">⚡ ${T('Обсяг тренування')}: <b>${t}${dv.reps} ${T('повт.')}</b></div>`;
+    })()}
     <div class="day-actions">
       <button class="btn ghost" id="manageW">${single ? '✏️ ' + T('Редагувати це тренування') : '🏋️ ' + T('Керувати тренуваннями')}</button>
       <button class="btn ghost" id="kcalBtn">🍎 ${T('Калорії')}: ${S.calorieDayTotal(iso).kcal} ${T('ккал')} ›</button>
@@ -498,6 +507,7 @@ function renderSet(exerciseId) {
       <!-- ВИКОНАНІ ПІДХОДИ -->
       <section class="card sets-card">
         <div class="card-label">${T('Виконані підходи')} <span class="muted" id="setsSummary"></span></div>
+        <div class="vol-line" id="volLine" hidden></div>
         <div class="bests-line" id="bestsLine">${bests.count > 0 ? bestsText(bests) : ''}</div>
         <div class="sets-list" id="setsList"></div>
         <button class="btn log-btn extra" id="extraBtn" hidden>＋ ${T('Додатковий підхід')}</button>
@@ -715,7 +725,8 @@ function refreshSets(iso, exerciseId) {
   // барабан = скільки зробив у ЦЬОМУ Ж підході минулого тренування,
   // ціль = на 1–2 повторення більше. Ручна ціль (autoGoal:false) має пріоритет.
   const manual = entry.autoGoal === false;
-  const prevSets = manual ? null : S.prevSessionSets(exerciseId, iso);
+  const prevAll = S.prevSessionSets(exerciseId, iso); // для порівняння обсягу — завжди
+  const prevSets = manual ? null : prevAll;
   const idx = Math.min(done, prevSets ? prevSets.length - 1 : 0); // поточний підхід
   let suggest = entry.targetReps;
   let goalTxt = String(entry.targetReps);
@@ -767,6 +778,37 @@ function refreshSets(iso, exerciseId) {
   if (sumEl) {
     const totalReps = entry.sets.reduce((s, x) => s + (x.reps || 0), 0);
     sumEl.textContent = `· ${done} / ${target}` + (totalReps ? ` · ${totalReps} ${T('повт.')}` : '');
+  }
+
+  // обсяг (тоннаж) вправи за сьогодні + порівняння з минулим тренуванням
+  const volEl = screenEl.querySelector('#volLine');
+  if (volEl) {
+    const v = S.entryVolume(entry);
+    let prevT = 0;
+    let prevR = 0;
+    if (prevAll) {
+      for (const s of prevAll) {
+        const r = Number(s.reps) || 0;
+        prevR += r;
+        const bw = (s.weightType || entry.weightType) === 'bodyweight';
+        prevT += bw ? 0 : r * (Number(s.weight) || 0);
+      }
+    }
+    if (v.tonnage > 0) {
+      const diff = prevT > 0 ? Math.round(v.tonnage - prevT) : null;
+      volEl.hidden = false;
+      volEl.innerHTML = `⚡ ${T('Обсяг')}: <b>${fmtKg(v.tonnage)}</b>` +
+        (diff != null && diff !== 0
+          ? ` <span class="vol-diff ${diff > 0 ? 'up' : 'down'}" title="${T('Минулого разу')}: ${fmtKg(prevT)}">${diff > 0 ? '↗ +' : '↘ −'}${fmtKg(Math.abs(diff))}</span>`
+          : '');
+    } else if (v.reps > 0) {
+      const diff = prevR > 0 ? v.reps - prevR : null;
+      volEl.hidden = false;
+      volEl.innerHTML = `⚡ ${T('Обсяг')}: <b>${v.reps} ${T('повт.')}</b>` +
+        (diff ? ` <span class="vol-diff ${diff > 0 ? 'up' : 'down'}">${diff > 0 ? '↗ +' : '↘ −'}${Math.abs(diff)}</span>` : '');
+    } else {
+      volEl.hidden = true;
+    }
   }
 
   const bestsEl = screenEl.querySelector('#bestsLine');
