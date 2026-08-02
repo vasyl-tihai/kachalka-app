@@ -308,7 +308,7 @@ function exCard(iso, id) {
       <span class="ex-ico">${anim || `<span class="glyph">${ex.icon || '💪'}</span>`}</span>
       <span class="ex-main">
         <span class="ex-name">${esc(ex.name)}</span>
-        <span class="ex-sub">${esc(typeLabel(wt))} · ${wText}${volTxt}</span>
+        <span class="ex-sub">${progSubLabel(id) || `${esc(typeLabel(wt))} · ${wText}`}${volTxt}</span>
       </span>
       <span class="ex-meta">
         <span class="ex-count ${complete ? 'glow' : ''}">${done}/${target}</span>
@@ -490,6 +490,9 @@ function renderSet(exerciseId) {
         <div class="plan-chips" id="planChips"></div>
         <div class="plan-total" id="planTotal"></div>
       </section>` : ''}
+      ${pgm && !pstate ? `
+      <!-- вправа з програмою, але програму ще не запускали (напр. додали у своє тренування) -->
+      <button class="prog-start" id="progStart">🎯 ${T('Програма прогресії')}: ${T(pgm.label)} ${T('до')} ${pgm.goal} — ${T('почати')}</button>` : ''}
       ${pstate && pstate.done ? `<div class="prog-done">🏆 ${T('Ціль досягнута')}: ${pstate.goal} ${T('повт.')}</div>` : ''}
 
       <!-- ВАГА (компактний рядок) -->
@@ -697,6 +700,9 @@ function renderSet(exerciseId) {
       markWeightUp();
     };
   }
+
+  // запуск програми просто з екрана вправи (вхідний тест)
+  screenEl.querySelector('#progStart')?.addEventListener('click', () => openProgStart(iso, exerciseId));
 
   refreshSets(iso, exerciseId);
   markWeightUp();
@@ -1665,9 +1671,12 @@ function renderProgram(programId) {
     });
   });
   screenEl.querySelector('#goSession')?.addEventListener('click', () => {
-    const link = S.ensureProgramWorkout(programId);
     const iso = S.todayISO();
     selectedISO = iso;
+    // якщо вправа програми вже є в тренуванні цього дня (користувач додав її
+    // у своє тренування) — просто відкриваємо її, окреме тренування не плодимо
+    if (s.exercise && S.getDayStack(iso).includes(s.exercise.id)) return go('#/set/' + s.exercise.id);
+    const link = S.ensureProgramWorkout(programId);
     const ids = S.getDayWorkoutIds(iso);
     if (!ids.includes(link.workout.id)) S.setDayWorkouts(iso, [...ids, link.workout.id]);
     go('#/set/' + link.exercise.id);
@@ -1836,7 +1845,8 @@ function renderWorkoutDetail(workoutId) {
         <span class="ex-ico">${exIconHTML(ex) || `<span class="glyph">${ex.icon || '💪'}</span>`}</span>
         <span class="ex-main">
           <span class="ex-name">${esc(ex.name)}</span>
-          <span class="ex-sub">${esc(typeLabel(ex.weightType))} · ${ex.weightType === 'bodyweight' ? T('вага тіла') : ex.weight + ' ' + T('кг')} · ${ex.targetSets}×${ex.targetReps}</span>
+          <span class="ex-sub">${progSubLabel(ex.id)
+            || `${esc(typeLabel(ex.weightType))} · ${ex.weightType === 'bodyweight' ? T('вага тіла') : ex.weight + ' ' + T('кг')} · ${ex.targetSets}×${ex.targetReps}`}</span>
         </span>
         ${edit ? `<span class="ex-order">
           <button class="mini" data-act="up" ${i === 0 ? 'disabled' : ''}>▲</button>
@@ -1937,10 +1947,40 @@ function renderWorkoutDetail(workoutId) {
   }
 }
 
+// короткий підпис вправи, якщо в неї є програма прогресії («🎯 Прес до 300 · Рівень 1 · День 1/3»)
+function progSubLabel(exerciseId) {
+  const ex = S.getExercise(exerciseId);
+  const pgm = ex && S.programFor(ex);
+  if (!pgm) return '';
+  const p = S.progressionState(exerciseId);
+  if (!p) return `🎯 ${T(pgm.label)} ${T('до')} ${pgm.goal}`;
+  if (p.done) return `🏆 ${T('Ціль досягнута')}: ${p.goal}`;
+  const plan = S.progressionPlan({ testMax: p.testMax, level: p.level, day: p.day, goal: p.goal });
+  return `🎯 ${T(pgm.label)} ${T('до')} ${p.goal} · ${T('Рівень')} ${plan.level} · ${T('День')} ${plan.day}/3 · ${plan.total} ${T('повт.')}`;
+}
+
 function openAddExercise(workoutId) {
   const w = S.getWorkout(workoutId);
   const inWorkout = new Set(w.items);
-  const avail = S.getExercises().filter((e) => !inWorkout.has(e.id));
+  // вправи з програмою не дублюються у звичайному списку — вони в секції «Програми»
+  const avail = S.getExercises().filter((e) => !inWorkout.has(e.id) && !S.programFor(e));
+  // програми з вагою тіла — їх можна поставити у своє тренування як звичайну вправу
+  const progs = S.PROGRAMS.filter((p) => {
+    const ex = S.getExercises().find((e) => e.weightType === 'bodyweight' && (S.matchProgram(e.name) || {}).id === p.id);
+    return !ex || !inWorkout.has(ex.id);
+  });
+  const progBody = progs.length
+    ? `<div class="side-label card-label">🎯 ${T('Програми')}</div>
+       <div class="pick-list">${progs
+        .map((p) => `<button type="button" class="pick-row prog-pick" data-p="${p.id}">
+          <span class="pick-ico">${S.PROG_ICONS[p.id] || '🤸'}</span>
+          <span class="pick-name">${T(p.label)} ${T('до')} ${p.goal}
+            <span class="muted">· ${T('план підходів, без ваги')}</span></span>
+          <span class="chev">＋</span>
+        </button>`)
+        .join('')}</div>
+       <div class="card-div"></div>`
+    : '';
   const body = avail.length
     ? avail
         .map((ex) => `<label class="pick-row">
@@ -1950,7 +1990,7 @@ function openAddExercise(workoutId) {
         </label>`)
         .join('')
     : `<p class="muted">${T('Усі вправи з бібліотеки вже у цьому тренуванні. Створи нову.')}</p>`;
-  openModal(T('Додати вправу'), `<div class="pick-list">${body}</div>`, [
+  openModal(T('Додати вправу'), `${progBody}<div class="pick-list">${body}</div>`, [
     { label: '＋ ' + T('Нова вправа'), class: 'ghost', onClick: () => {
       closeModal();
       openExerciseForm(null, {
@@ -1966,6 +2006,21 @@ function openAddExercise(workoutId) {
       renderWorkoutDetail(workoutId);
     } },
   ]);
+  // тап по програмі: створює (за потреби) її вправу, кладе в тренування
+  // і одразу пропонує вхідний тест, якщо програму ще не запускали
+  document.querySelectorAll('.prog-pick').forEach((b) =>
+    b.addEventListener('click', () => {
+      const pid = b.dataset.p;
+      const ex = S.ensureProgramExercise(pid);
+      S.addItemToWorkout(workoutId, ex.id);
+      closeModal();
+      if (!S.progressionState(ex.id)) {
+        openProgStart(S.todayISO(), ex.id, () => renderWorkoutDetail(workoutId));
+      } else {
+        renderWorkoutDetail(workoutId);
+      }
+    })
+  );
 }
 
 const EMOJI = ['💪', '🦵', '🏋️', '🏋️‍♂️', '🔔', '🤸', '🔥', '🧎', '🪨', '🚴', '🏃', '🤾', '⚡', '🎯', '🥊', '🧗'];
