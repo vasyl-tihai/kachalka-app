@@ -106,6 +106,7 @@ function defaultState() {
     dayStacks: {}, // { 'YYYY-MM-DD': [workoutId] } — тренування, призначені на конкретну дату
     schedule: {}, // { '0'..'6' (день тижня, 0=Нд): [workoutId] } — тижневий план
     measurements: {}, // { 'YYYY-MM-DD': { metricId: число } } — заміри тіла
+    progression: {}, // { exerciseId: { programId, goal, testMax, level, day, … } } — програми власної ваги
     calories: {}, // { 'YYYY-MM-DD': [ {id, name, kcal, prot, fat, carb} ] } — журнал їжі за фото
     settings: {
       restSeconds: 60,
@@ -134,6 +135,9 @@ function normalizeExercise(e, i) {
     targetSets: Number(e && e.targetSets) || 4,
     targetReps: Number(e && e.targetReps) || 10,
     muscle: (e && e.muscle) || 'other',
+    // progOn: false — користувач вимкнув програму прогресії для цієї вправи
+    // (undefined = авто: увімкнена, якщо вага тіла й назва відома)
+    ...(e && e.progOn === false ? { progOn: false } : {}),
   };
 }
 
@@ -144,6 +148,8 @@ function normalizeWorkout(w, i, exIds) {
     name: w && w.name != null ? String(w.name) : `Тренування ${i + 1}`,
     items,
     order: w && typeof w.order === 'number' ? w.order : i,
+    // progId — тренування-програма (вага тіла): відкривається екраном програми
+    ...(w && w.progId ? { progId: String(w.progId) } : {}),
   };
 }
 
@@ -157,6 +163,7 @@ function normalizeState(raw) {
     dayStacks: raw.dayStacks && typeof raw.dayStacks === 'object' ? raw.dayStacks : {},
     // глибоке злиття налаштувань — нові ключі не губляться зі старих копій
     settings: { ...def.settings, ...(raw.settings && typeof raw.settings === 'object' ? raw.settings : {}) },
+    progression: raw.progression && typeof raw.progression === 'object' ? raw.progression : {},
   };
 
   // тренування (+ міграція зі старого поля stack)
@@ -514,8 +521,10 @@ export function getDayWorkoutIds(iso) {
     const planned = (state.schedule[dow] || []).filter((id) => getWorkout(id));
     return planned; // порожньо = вихідний за планом
   }
+  // плану немає → за замовч. перше ЗВИЧАЙНЕ тренування (програми лише за планом/вибором)
   const list = getWorkouts();
-  return list.length ? [list[0].id] : []; // плану немає → за замовч. перше тренування
+  const first = list.find((w) => !w.progId) || list[0];
+  return first ? [first.id] : [];
 }
 export function setDayWorkouts(iso, ids) {
   state.dayStacks[iso] = ids.filter((id) => getWorkout(id));
@@ -632,6 +641,8 @@ export function addSet(iso, exerciseId, set) {
     reps: set.reps ?? null,
     weight: set.weight ?? entry.weight,
     weightType: set.weightType ?? entry.weightType,
+    // sec — скільки тривала робота (секундомір підходу); 0/не міряли → null
+    sec: Number(set.sec) > 0 ? Math.round(set.sec) : null,
   });
   saveNow(); // запис підходу — критична дія, зберігаємо одразу
   return entry;
@@ -851,6 +862,231 @@ export function muscleTonnage(days = 30) {
   return MUSCLE_GROUPS.map((g) => ({ ...g, tonnage: Math.round(map[g.id] || 0) }))
     .filter((x) => x.tonnage > 0)
     .sort((a, b) => b.tonnage - a.tonnage);
+}
+
+// =====================================================================
+//  ПРОГРАМИ ПРОГРЕСІЇ З ВАГОЮ ТІЛА (прес, турнік, віджимання, присідання)
+//  Тут немає ваги, тому прогресія — це ОБСЯГ: скільки повторень за заняття.
+//  Принципи взяті з класичних програм власної ваги (Steve Speirs
+//  «200/300 Sit-Ups», «100 Push-Ups»; армійські Armstrong / Recon Ron
+//  для підтягувань):
+//   • вхідний тест максимуму за раз задає стартові числа;
+//   • рівень = 3 заняття (день 1/2/3), між заняттями день відпочинку;
+//   • день = 5 фіксованих підходів + фінальний «максимум, не менше N»;
+//   • до відказу — лише останній підхід (запобіжник від перетренування);
+//   • обсяг дня росте на ~7% за заняття (≈ +22% за рівень);
+//   • кожен 4-й рівень — розгрузка (60% обсягу);
+//   • не витягнув день — повторюєш той самий день, а не йдеш далі;
+//   • кожні 2 рівні — новий тест максимуму;
+//   • стеля — цільова кількість (прес 300, турнік 20, віджимання 100…).
+// =====================================================================
+export const PROGRAMS = [
+  { id: 'abs', label: 'Прес', goal: 300, keys: ['прес', 'скручув', 'abs', 'crunch', 'sit-up', 'situp'] },
+  { id: 'pullup', label: 'Підтягування', goal: 20, keys: ['підтягув', 'турнік', 'pull-up', 'pullup', 'chin-up'] },
+  { id: 'pushup', label: 'Віджимання', goal: 100, keys: ['віджим', 'push-up', 'pushup'] },
+  { id: 'squat', label: 'Присідання', goal: 200, keys: ['присід', 'squat', 'air squat'] },
+];
+
+const DAYS_PER_LEVEL = 3; // рівень = 3 заняття
+const STEP_GROWTH = 1.07; // +7% обсягу за заняття
+const DELOAD_LEVEL = 4; // кожен 4-й рівень — розгрузка
+const DELOAD_K = 0.6;
+const TEST_EVERY = 2; // ретест максимуму кожні 2 рівні
+// частки обсягу для 5 фіксованих підходів; решта (~22%) — фінальний «максимум»
+const SET_SHARE = [0.14, 0.18, 0.18, 0.14, 0.14];
+
+/** Чи є для такої НАЗВИ програма прогресії (без огляду на тип ваги). */
+export function matchProgram(name) {
+  const n = String(name || '').toLowerCase();
+  return PROGRAMS.find((p) => p.keys.some((k) => n.includes(k))) || null;
+}
+/** Програма для вправи: лише вага тіла + відома назва + не вимкнено вручну. */
+export function programFor(ex) {
+  if (!ex || ex.progOn === false) return null;
+  if (ex.weightType !== 'bodyweight') return null;
+  return matchProgram(ex.name);
+}
+
+/** Обсяг заняття (повторень) для рівня/дня за максимумом із тесту. */
+function progDayVolume(testMax, level, day, goal) {
+  const step = (level - 1) * DAYS_PER_LEVEL + (day - 1);
+  let v = Math.max(1, testMax) * 2 * Math.pow(STEP_GROWTH, step);
+  if (level % DELOAD_LEVEL === 0) v *= DELOAD_K; // розгрузочний рівень
+  return Math.max(6, Math.min(goal, Math.round(v)));
+}
+
+/** Скільки всього рівнів до цілі за поточного максимуму (для «Рівень 3 з 12»). */
+function levelsToGoal(testMax, goal) {
+  for (let lv = 1; lv <= 60; lv++) {
+    if (progDayVolume(testMax, lv, DAYS_PER_LEVEL, goal) >= goal) return lv;
+  }
+  return 60;
+}
+
+/**
+ * План заняття: підходи (останній — «максимум, не менше N»), обсяг, відпочинок.
+ * @returns {{sets:Array<{reps:number,max:boolean}>, total:number, rest:number,
+ *            level:number, day:number, levels:number, goal:number}}
+ */
+export function progressionPlan({ testMax, level, day, goal }) {
+  const v = progDayVolume(testMax, level, day, goal);
+  const fixed = SET_SHARE.map((k) => Math.max(1, Math.round(v * k)));
+  const restReps = v - fixed.reduce((a, b) => a + b, 0);
+  // фінальний підхід не менший за найважчий фіксований — це «максимум»
+  const last = Math.max(Math.max(...fixed), restReps);
+  const sets = fixed.map((reps) => ({ reps, max: false }));
+  sets.push({ reps: last, max: true });
+  const total = sets.reduce((a, s) => a + s.reps, 0);
+  // відпочинок за обсягом: малі обсяги — 45с, середні — 60с, великі — 90с
+  const rest = total < 40 ? 45 : total < 120 ? 60 : 90;
+  return { sets, total, rest, level, day, levels: levelsToGoal(testMax, goal), goal };
+}
+
+export function progressionState(exerciseId) {
+  return (state.progression && state.progression[exerciseId]) || null;
+}
+/** Запустити програму після вхідного тесту (максимум повторень за раз). */
+export function startProgression(exerciseId, testMax, iso) {
+  const ex = getExercise(exerciseId);
+  const pgm = programFor(ex) || matchProgram(ex && ex.name);
+  if (!pgm) return null;
+  if (!state.progression) state.progression = {};
+  state.progression[exerciseId] = {
+    programId: pgm.id,
+    goal: pgm.goal,
+    testMax: Math.max(1, Math.round(testMax) || 1),
+    level: 1,
+    day: 1,
+    startedISO: iso || todayISO(),
+    lastDoneISO: null,
+    testedLevel: 1,
+    done: false,
+  };
+  saveNow();
+  return state.progression[exerciseId];
+}
+export function stopProgression(exerciseId) {
+  if (state.progression && state.progression[exerciseId]) {
+    delete state.progression[exerciseId];
+    saveNow();
+  }
+}
+/** Час нового тесту максимуму? (кожні 2 рівні, на початку рівня) */
+export function needTest(exerciseId) {
+  const p = progressionState(exerciseId);
+  if (!p || p.done) return false;
+  return p.level > 1 && (p.level - 1) % TEST_EVERY === 0 && p.testedLevel !== p.level;
+}
+/** Записати результат тесту (максимум не знижуємо — програма не має відкочуватись). */
+export function markTested(exerciseId, testMax) {
+  const p = progressionState(exerciseId);
+  if (!p) return null;
+  p.testedLevel = p.level;
+  const m = Math.round(testMax) || 0;
+  if (m > p.testMax) p.testMax = m;
+  saveNow();
+  return p;
+}
+/**
+ * Заняття завершено: ok=true → наступний день/рівень, ok=false → повтор дня.
+ * За одну дату рухаємось лише раз (перезапис підходів не крутить програму).
+ */
+export function advanceProgression(exerciseId, iso, ok) {
+  const p = progressionState(exerciseId);
+  if (!p || p.done) return null;
+  if (p.lastDoneISO === iso) return null; // за цю дату вже порухали (додаткові підходи не крутять програму)
+  p.lastDoneISO = iso;
+  if (!ok) {
+    saveNow();
+    return { ...p, repeat: true };
+  }
+  // обсяг цього дня вже на цілі → програму пройдено
+  if (progDayVolume(p.testMax, p.level, p.day, p.goal) >= p.goal) {
+    p.done = true;
+    saveNow();
+    return { ...p, finished: true };
+  }
+  p.day += 1;
+  if (p.day > DAYS_PER_LEVEL) {
+    p.day = 1;
+    p.level += 1;
+  }
+  saveNow();
+  return p;
+}
+/** Який рівень/день виконувався в цьому записі (фіксуємо, щоб екран не «стрибав»). */
+export function ensureProgDay(iso, exerciseId) {
+  const p = progressionState(exerciseId);
+  if (!p || p.done) return null;
+  const entry = ensureEntry(iso, exerciseId);
+  if (!entry.prog || !entry.prog.level) {
+    entry.prog = { level: p.level, day: p.day };
+    save();
+  }
+  return entry.prog;
+}
+
+// --- ОКРЕМІ ТРЕНУВАННЯ-ПРОГРАМИ ---
+// Кожна програма — самостійне тренування з ОДНІЄЇ вправи (прес — тільки прес),
+// окремо від звичайних тренувань зі снарядами.
+export const PROG_ICONS = { abs: '🔥', pullup: '🤸', pushup: '💪', squat: '🦵' };
+const PROG_EX = {
+  abs: { name: 'Прес', icon: PROG_ICONS.abs, muscle: 'core' },
+  pullup: { name: 'Підтягування', icon: PROG_ICONS.pullup, muscle: 'back' },
+  pushup: { name: 'Віджимання', icon: PROG_ICONS.pushup, muscle: 'chest' },
+  squat: { name: 'Присідання', icon: PROG_ICONS.squat, muscle: 'legs' },
+};
+export function programById(id) {
+  return PROGRAMS.find((p) => p.id === id) || null;
+}
+/** Вправа програми: наявна (вага тіла + відома назва) або створена під програму. */
+export function ensureProgramExercise(programId) {
+  const pgm = programById(programId);
+  if (!pgm) return null;
+  const found = findProgramExercise(programId);
+  if (found) return found;
+  const tpl = PROG_EX[programId] || {};
+  return addExercise({
+    name: tpl.name || pgm.label,
+    icon: tpl.icon || '💪',
+    weightType: 'bodyweight',
+    weight: 0,
+    targetSets: 6,
+    targetReps: 10,
+    muscle: tpl.muscle || 'core',
+  });
+}
+function findProgramExercise(programId) {
+  return (
+    state.exercises.find(
+      (e) => !e.archived && e.weightType === 'bodyweight' && (matchProgram(e.name) || {}).id === programId
+    ) || null
+  );
+}
+/** Тренування програми — містить ЛИШЕ її вправу. */
+export function ensureProgramWorkout(programId) {
+  const pgm = programById(programId);
+  if (!pgm) return null;
+  const ex = ensureProgramExercise(programId);
+  const name = `${pgm.label} до ${pgm.goal}`;
+  let w = state.workouts.find((x) => x.progId === programId);
+  if (!w) w = addWorkout(name);
+  w.progId = programId;
+  w.name = name;
+  w.items = [ex.id]; // тільки ця вправа — програма не мішається зі звичайним тренуванням
+  saveNow();
+  return { workout: w, exercise: ex };
+}
+/** Стан програми для списку/екрана: вправа, тренування, рівень/день, план заняття. */
+export function programSummary(programId) {
+  const pgm = programById(programId);
+  if (!pgm) return null;
+  const ex = findProgramExercise(programId);
+  const st = ex ? progressionState(ex.id) : null;
+  const plan =
+    st && !st.done ? progressionPlan({ testMax: st.testMax, level: st.level, day: st.day, goal: st.goal }) : null;
+  const workout = state.workouts.find((x) => x.progId === programId) || null;
+  return { program: pgm, exercise: ex, state: st, plan, workout };
 }
 
 // --- підказка прогресії (офлайн-евристика) ---

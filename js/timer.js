@@ -2,6 +2,82 @@
 // Малює SVG-кільце, що заповнюється, рахує час униз, вібрує/пищить у кінці.
 import { t } from './i18n.js';
 
+/**
+ * Секундомір РОБОТИ — скільки триває сам підхід (гантелі в руках).
+ * Рахує вгору, без сигналів у кінці: зупиняє його запис підходу.
+ * Компактний рядок: кнопка ▶/⏸ + час + скидання.
+ */
+export class WorkStopwatch {
+  constructor(mount) {
+    this.mount = mount;
+    this.running = false;
+    this._acc = 0; // накопичено секунд до останньої паузи
+    this._from = 0; // performance.now() старту поточного відрізка
+    this._iv = null;
+    this._build();
+    this.render();
+  }
+
+  _build() {
+    this.mount.innerHTML = `
+      <button class="work-btn" type="button" id="workToggle">▶</button>
+      <div class="work-info">
+        <span class="work-lab">${t('Час роботи')}</span>
+        <span class="work-time">0:00</span>
+      </div>
+      <button class="work-reset" type="button" title="${t('Скинути секундомір')}">↺</button>`;
+    this.timeEl = this.mount.querySelector('.work-time');
+    this.toggleBtn = this.mount.querySelector('.work-btn');
+    this.toggleBtn.addEventListener('click', () => this.toggle());
+    this.mount.querySelector('.work-reset').addEventListener('click', () => this.reset());
+  }
+
+  get seconds() {
+    return this._acc + (this.running ? (performance.now() - this._from) / 1000 : 0);
+  }
+
+  _fmt(s) {
+    s = Math.max(0, Math.floor(s));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  render() {
+    this.timeEl.textContent = this._fmt(this.seconds);
+    this.toggleBtn.textContent = this.running ? '⏸' : '▶';
+    this.mount.classList.toggle('running', this.running);
+  }
+
+  toggle() {
+    this.running ? this.pause() : this.start();
+  }
+
+  start() {
+    if (this.running) return;
+    this.running = true;
+    this._from = performance.now();
+    clearInterval(this._iv);
+    this._iv = setInterval(() => this.render(), 200);
+    this.render();
+  }
+
+  pause() {
+    if (this.running) this._acc = this.seconds;
+    this.running = false;
+    clearInterval(this._iv);
+    this.render();
+  }
+
+  reset() {
+    this.pause();
+    this._acc = 0;
+    this.render();
+  }
+
+  destroy() {
+    this.pause();
+  }
+}
+
 export class RingTimer {
   /**
    * @param {HTMLElement} mount — контейнер

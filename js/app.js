@@ -1,6 +1,6 @@
 // app.js — головний модуль: роутер + усі екрани
 import * as S from './store.js';
-import { RingTimer } from './timer.js';
+import { RingTimer, WorkStopwatch } from './timer.js';
 import { NumberWheel } from './picker.js';
 import { getLandmarker, drawPose } from './pose.js';
 import * as FC from './formcheck.js';
@@ -81,13 +81,14 @@ let bodyMetric = 'bodyWeight';
 let bodyDate = null;
 
 // активні «живі» компоненти, які треба знищувати при зміні екрана
-let live = { timer: null, wheel: null, camera: null, chat: null };
+let live = { timer: null, work: null, wheel: null, camera: null, chat: null };
 function clearLive() {
   if (live.timer) live.timer.destroy();
+  if (live.work) live.work.destroy();
   if (live.wheel && live.wheel.destroy) live.wheel.destroy();
   if (live.camera && live.camera.destroy) live.camera.destroy();
   if (live.chat && live.chat.destroy) live.chat.destroy();
-  live = { timer: null, wheel: null, camera: null, chat: null };
+  live = { timer: null, work: null, wheel: null, camera: null, chat: null };
 }
 
 // ---------- маршрутизація ----------
@@ -98,6 +99,8 @@ const routes = [
   { re: /^#\/calendar$/, render: renderCalendar },
   { re: /^#\/workouts$/, render: renderWorkouts },
   { re: /^#\/workout\/(.+)$/, render: renderWorkoutDetail },
+  { re: /^#\/programs$/, render: renderPrograms },
+  { re: /^#\/program\/(.+)$/, render: renderProgram },
   { re: /^#\/progress$/, render: renderProgress },
   { re: /^#\/body$/, render: renderBody },
   { re: /^#\/history(?:\/(.+))?$/, render: renderHistory },
@@ -192,6 +195,11 @@ function fmtMMSS(sec) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return m > 0 ? `${m}:${String(s).padStart(2, '0')}` : String(s);
+}
+// час роботи підходу — завжди «хв:сек» (0:34), як на секундомірі
+function fmtWork(sec) {
+  sec = Math.max(0, Math.round(sec));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 }
 // парсинг введеного часу: «90» → 90с, «1:30» → 90с
 function parseDuration(str) {
@@ -444,6 +452,20 @@ function renderSet(exerciseId) {
   const bests = S.exerciseBests(exerciseId);
   const prog = S.suggestProgression(exerciseId);
   const plannedW = ex.weight || 0; // «планова» вага з бібліотеки — для підсвітки збільшення
+  // ПРОГРАМА ПРОГРЕСІЇ (вага тіла): план заняття замість «ціль = минулий раз +1–2»
+  const pgm = S.programFor(ex); // {id,label,goal} або null
+  const pday = pgm ? S.ensureProgDay(iso, exerciseId) : null; // {level,day} цього запису
+  const pstate = pgm ? S.progressionState(exerciseId) : null;
+  const plan = pday
+    ? S.progressionPlan({ testMax: pstate.testMax, level: pday.level, day: pday.day, goal: pstate.goal })
+    : null;
+  if (plan && entry.targetSets !== plan.sets.length) {
+    S.updateEntry(iso, exerciseId, { targetSets: plan.sets.length });
+    entry.targetSets = plan.sets.length;
+  }
+  const dateLine = plan
+    ? `${S.prettyDate(iso)} · ${T('Рівень')} ${plan.level} · ${T('День')} ${plan.day}/3`
+    : S.prettyDate(iso);
   const markWeightUp = () => {
     const sv = screenEl.querySelector('#stepVal');
     if (sv) sv.classList.toggle('w-up', entry.weightType !== 'bodyweight' && entry.weight > plannedW);
@@ -456,14 +478,22 @@ function renderSet(exerciseId) {
         <div class="set-ico">${exIconHTML(ex) || `<span class="glyph big">${ex.icon || '💪'}</span>`}</div>
         <div class="set-titles">
           <div class="set-name">${esc(ex.name)}</div>
-          <div class="set-date">${S.prettyDate(iso)}</div>
+          <div class="set-date">${dateLine}</div>
         </div>
         <button class="icon-btn" id="camBtn" title="${T('Камера-тренер')}">📹</button>
         <button class="icon-btn" id="cfgBtn" title="${T('Ціль і налаштування')}">⚙️</button>
       </header>
 
+      ${plan ? `
+      <!-- ПЛАН ЗАНЯТТЯ (програма прогресії): підходи дня + сумарний обсяг -->
+      <section class="card plan-card">
+        <div class="plan-chips" id="planChips"></div>
+        <div class="plan-total" id="planTotal"></div>
+      </section>` : ''}
+      ${pstate && pstate.done ? `<div class="prog-done">🏆 ${T('Ціль досягнута')}: ${pstate.goal} ${T('повт.')}</div>` : ''}
+
       <!-- ВАГА (компактний рядок) -->
-      <section class="card weight-card">
+      <section class="card weight-card" ${plan ? 'hidden' : ''}>
         <div class="wt-head">
           <span class="card-label wt-label">${T('Вага')}</span>
           <div class="stepper" id="weightStepper" ${entry.weightType === 'bodyweight' ? 'hidden' : ''}>
@@ -479,10 +509,10 @@ function renderSet(exerciseId) {
         ${prog ? `<button class="hint-chip" id="progHint">💡 ${T('Час додати вагу — спробуй')} <b>${prog.newWeight} ${T('кг')}</b></button>` : ''}
       </section>
 
-      <!-- ТАЙМЕР ВІДПОЧИНКУ -->
-      <section class="card timer-card">
+      <!-- ТАЙМЕР ВІДПОЧИНКУ (після останнього підходу — очікування перед наступною вправою) -->
+      <section class="card timer-card" id="timerCard">
         <div class="wt-head">
-          <span class="card-label wt-label">${T('Відпочинок між підходами')}</span>
+          <span class="card-label wt-label" id="restLabel">${T('Відпочинок між підходами')}</span>
           <button class="wt-current" id="restEdit" title="${T('Увести час вручну')}">✏️ ${T('Час')}</button>
         </div>
         <div class="timer-row">
@@ -490,6 +520,7 @@ function renderSet(exerciseId) {
           <div id="ringMount" class="ring-mount"></div>
           <button class="rest-step" data-d="${settings.restStep}">+${settings.restStep}</button>
         </div>
+        <div class="next-up" id="nextUp" hidden></div>
       </section>
 
       <!-- ПОВТОРЕННЯ: барабан + кнопка «Виконав підхід» -->
@@ -501,6 +532,8 @@ function renderSet(exerciseId) {
         <div class="set-progress" id="setProgress"></div>
         <div class="prev-line" id="prevLine" hidden></div>
         <div id="wheelMount"></div>
+        <!-- секундомір роботи: скільки триває сам підхід -->
+        <div class="work-row" id="workMount"></div>
         <button class="btn primary log-btn" id="logBtn">✓ ${T('Виконав підхід')}</button>
       </section>
 
@@ -596,7 +629,8 @@ function renderSet(exerciseId) {
   // таймер
   const ringMount = screenEl.querySelector('#ringMount');
   live.timer = new RingTimer(ringMount, {
-    seconds: settings.restSeconds,
+    // у програмі прогресії відпочинок задає план заняття, а не загальні налаштування
+    seconds: plan ? plan.rest : settings.restSeconds,
     // усі ефекти «кінець відпочинку» — за налаштуваннями користувача
     onFinishFx: () => {
       const st = S.getSettings();
@@ -606,19 +640,16 @@ function renderSet(exerciseId) {
     },
     // відпочинок після ОСТАННЬОГО підходу закінчився → авто-перехід далі
     onDone: () => {
-      if (extraSetArmed) return; // користувач готує додатковий підхід — не смикаємо
       const en = S.getEntry(iso, exerciseId);
-      if (!en || !en.targetSets || en.sets.length < en.targetSets) return; // ще не всі підходи
-      const stack = S.getDayStack(iso);
-      const i = stack.indexOf(exerciseId);
-      // наступна НЕвиконана вправа далі за списком дня
-      let nextId = null;
-      for (let k = i + 1; k < stack.length; k++) {
-        const en2 = S.getEntry(iso, stack[k]);
-        const ex2 = S.getExercise(stack[k]);
-        const t2 = (en2 && en2.targetSets) || (ex2 && ex2.targetSets) || 0;
-        if (!t2 || !en2 || en2.sets.length < t2) { nextId = stack[k]; break; }
+      const allDone = !!(en && en.targetSets && en.sets.length >= en.targetSets);
+      // кінець відпочинку = час працювати: секундомір роботи стартує сам
+      if ((!allDone || extraSetArmed) && live.work) {
+        live.work.reset();
+        live.work.start();
       }
+      if (extraSetArmed) return; // користувач готує додатковий підхід — не смикаємо
+      if (!allDone) return; // ще не всі підходи
+      const nextId = nextUnfinishedId(iso, exerciseId);
       if (nextId) {
         const nx = S.getExercise(nextId);
         toast(`➡️ ${T('Наступна вправа')}: <b>${esc(nx ? nx.name : '')}</b>`);
@@ -632,12 +663,15 @@ function renderSet(exerciseId) {
   screenEl.querySelectorAll('.rest-step').forEach((b) =>
     b.addEventListener('click', () => {
       live.timer.add(parseInt(b.dataset.d, 10));
-      // запам'ятати як новий стандарт відпочинку
-      S.updateSettings({ restSeconds: Math.round(live.timer.total) });
+      // запам'ятати як новий стандарт відпочинку (у програмі — ні: там час із плану)
+      if (!plan) S.updateSettings({ restSeconds: Math.round(live.timer.total) });
     })
   );
   // ручне введення часу — окрема кнопка, не конфліктує зі стартом/паузою по колу
   screenEl.querySelector('#restEdit').onclick = () => openRestEditor();
+
+  // секундомір роботи (скільки триває підхід) — зупиняє його запис підходу
+  live.work = new WorkStopwatch(screenEl.querySelector('#workMount'));
 
   // барабан повторень (target — щоб фарбувати: менше цілі біле, більше — жовте)
   const wheelMount = screenEl.querySelector('#wheelMount');
@@ -666,6 +700,102 @@ function renderSet(exerciseId) {
 
   refreshSets(iso, exerciseId);
   markWeightUp();
+
+  // час ретесту максимуму (кожні 2 рівні) — питаємо один раз на рівень
+  if (plan && S.needTest(exerciseId) && !entry.sets.length) openProgTest(iso, exerciseId, true);
+}
+
+// контекст програми для поточного запису: план дня + ціль поточного підходу
+function progCtx(iso, exerciseId) {
+  const ex = S.getExercise(exerciseId);
+  const pgm = S.programFor(ex);
+  if (!pgm) return null;
+  const p = S.progressionState(exerciseId);
+  if (!p || p.done) return null;
+  const entry = S.getEntry(iso, exerciseId);
+  const pd = (entry && entry.prog) || { level: p.level, day: p.day };
+  const plan = S.progressionPlan({ testMax: p.testMax, level: pd.level, day: pd.day, goal: p.goal });
+  return { pgm, state: p, plan };
+}
+
+// вхідний тест: скільки повторень за раз — від нього залежать усі числа програми
+function openProgStart(iso, exerciseId, after) {
+  const ex = S.getExercise(exerciseId);
+  const pgm = S.matchProgram(ex && ex.name);
+  if (!pgm) return;
+  openModal(`${T('Програма прогресії')}: ${T(pgm.label)}`, `
+    <p class="muted">${T('Програма веде від твого поточного рівня до цілі: {n} повторень за заняття. Рівень — 3 заняття, у кожному 5 підходів за планом і фінальний «максимум».', { n: pgm.goal })}</p>
+    <div class="field"><label>${T('Скільки повторень зробиш за раз (максимум)')}</label>
+      <input type="number" id="progMax" value="${Math.max(1, S.exerciseBests(exerciseId).maxReps || 10)}" min="1" max="300" inputmode="numeric"/></div>
+  `, [
+    { label: T('Почати програму'), class: 'primary', onClick: (root) => {
+      const m = Math.max(1, parseInt(root.querySelector('#progMax').value, 10) || 10);
+      S.startProgression(exerciseId, m, iso);
+      closeModal();
+      if (after) after();
+      else renderSet(exerciseId);
+      toast(`🎯 ${T('Програма почалась')} — ${T('Рівень')} 1, ${T('День')} 1`);
+    } },
+  ]);
+}
+
+// ретест максимуму на початку рівня (кожні 2 рівні)
+function openProgTest(iso, exerciseId, auto = false, after) {
+  const p = S.progressionState(exerciseId);
+  if (!p) return;
+  openModal(T('Час перевірити максимум'), `
+    <p class="muted">${T('Зроби один підхід на максимум (без плану) і впиши результат — програма перерахує числа під твою нову форму.')}</p>
+    <div class="field"><label>${T('Скільки повторень зробиш за раз (максимум)')}</label>
+      <input type="number" id="progMax" value="${p.testMax}" min="1" max="300" inputmode="numeric"/></div>
+  `, [
+    ...(auto ? [{ label: T('Пізніше'), class: 'ghost', onClick: () => {
+      S.markTested(exerciseId, 0); // не нагадувати до наступного вікна тесту
+      closeModal();
+    } }] : []),
+    { label: T('Зберегти'), class: 'primary', onClick: (root) => {
+      const m = Math.max(1, parseInt(root.querySelector('#progMax').value, 10) || p.testMax);
+      S.markTested(exerciseId, m);
+      closeModal();
+      if (after) after();
+      else renderSet(exerciseId);
+    } },
+  ]);
+}
+
+// наступна НЕвиконана вправа далі за списком дня (null — далі нічого немає)
+function nextUnfinishedId(iso, exerciseId) {
+  const stack = S.getDayStack(iso);
+  const i = stack.indexOf(exerciseId);
+  for (let k = i + 1; k < stack.length; k++) {
+    const en = S.getEntry(iso, stack[k]);
+    const ex = S.getExercise(stack[k]);
+    const tg = (en && en.targetSets) || (ex && ex.targetSets) || 0;
+    if (!tg || !en || en.sets.length < tg) return stack[k];
+  }
+  return null;
+}
+
+// Після останнього підходу таймер уже не «між підходами», а очікування ПЕРЕД
+// наступною вправою: інший колір (фіолетовий) + назва тієї вправи під кільцем.
+function updateRestMode(iso, exerciseId, waiting) {
+  const cardEl = screenEl.querySelector('#timerCard');
+  const labelEl = screenEl.querySelector('#restLabel');
+  const nextEl = screenEl.querySelector('#nextUp');
+  if (!cardEl || !labelEl || !nextEl) return;
+  const nextId = waiting ? nextUnfinishedId(iso, exerciseId) : null;
+  const nx = nextId ? S.getExercise(nextId) : null;
+  cardEl.classList.toggle('waiting', waiting);
+  labelEl.textContent = waiting
+    ? (nextId ? T('Очікування перед наступною вправою') : T('Відпочинок'))
+    : T('Відпочинок між підходами');
+  nextEl.hidden = !waiting;
+  if (!waiting) {
+    nextEl.innerHTML = '';
+    return;
+  }
+  nextEl.innerHTML = nextId
+    ? `<span class="nu-lab">➡️ ${T('Далі')}:</span> ${nx ? exIconHTML(nx) || `<span class="glyph">${nx.icon || '💪'}</span>` : ''} <b>${esc(nx ? nx.name : '')}</b>`
+    : `<span class="nu-lab">🎉 ${T('Це остання вправа')}</span>`;
 }
 
 // додати виконаний підхід: бере повторення з барабана, святкує рекорди, стартує відпочинок
@@ -674,7 +804,10 @@ function logSet(iso, exerciseId) {
   const entry = S.ensureEntry(iso, exerciseId);
   const reps = live.wheel ? live.wheel.getValue() : entry.targetReps;
   const pre = S.exerciseBests(exerciseId); // знімок рекордів ДО запису
-  S.addSet(iso, exerciseId, { reps, weight: entry.weight });
+  // секундомір роботи: час цього підходу йде в запис, потім секундомір на нуль
+  const workSec = live.work ? live.work.seconds : 0;
+  S.addSet(iso, exerciseId, { reps, weight: entry.weight, sec: workSec });
+  if (live.work) live.work.reset();
   extraSetArmed = false; // підхід записано — наступний додатковий знову через «+»
   refreshSets(iso, exerciseId);
   // перевірка нового рекорду (лише якщо раніше вже були записи)
@@ -695,6 +828,27 @@ function logSet(iso, exerciseId) {
     }
   }
   if (!celebrated && navigator.vibrate) navigator.vibrate(40);
+
+  // ПРОГРАМА ПРОГРЕСІЇ: усі підходи дня зроблено → рухаємо день/рівень.
+  // Закритим день вважається, коли КОЖЕН підхід виконано не менше плану
+  // (фінальний — «максимум, не менше N»); інакше наступного разу повтор дня.
+  const pc = progCtx(iso, exerciseId);
+  if (pc) {
+    const en = S.getEntry(iso, exerciseId);
+    const planSets = pc.plan.sets;
+    if (en && en.sets.length >= planSets.length) {
+      const ok = planSets.every((s, i) => (Number(en.sets[i] && en.sets[i].reps) || 0) >= s.reps);
+      const res = S.advanceProgression(exerciseId, iso, ok);
+      if (res && res.finished) {
+        toast(`🏆 ${T('Ціль досягнута')}: ${pc.state.goal} ${T('повт.')}`);
+      } else if (res && res.repeat) {
+        toast(`↻ ${T('День не закрито — наступного разу повтори його')}`);
+      } else if (res) {
+        toast(`✅ ${T('День виконано')} · ${T('далі')}: ${T('Рівень')} ${res.level}, ${T('День')} ${res.day}`);
+      }
+    }
+  }
+
   // авто-старт таймера відпочинку
   if (live.timer) {
     live.timer.reset();
@@ -713,6 +867,9 @@ function refreshSets(iso, exerciseId) {
 
   // «озброєний» додатковий підхід: користувач натиснув «+», обирає повторення
   const armed = extraSetArmed && complete;
+
+  // таймер: «між підходами» → «перед наступною вправою» (інший колір + назва)
+  updateRestMode(iso, exerciseId, complete && !armed);
 
   const setLabelEl = screenEl.querySelector('#setLabel');
   if (setLabelEl) {
@@ -737,8 +894,38 @@ function refreshSets(iso, exerciseId) {
     goalNum = prevReps + 1;
     goalTxt = `${prevReps + 1}–${prevReps + 2}`;
   }
+  // ПРОГРАМА ПРОГРЕСІЇ: ціль підходу диктує план заняття, а не історія
+  const pc = progCtx(iso, exerciseId);
+  let curMax = false;
+  if (pc) {
+    const pi = Math.min(done, pc.plan.sets.length - 1);
+    const ps = pc.plan.sets[pi];
+    curMax = ps.max;
+    suggest = ps.reps;
+    goalNum = ps.reps;
+    goalTxt = ps.max ? `≥ ${ps.reps}` : String(ps.reps);
+  }
   const goalEl = screenEl.querySelector('#goalVal');
   if (goalEl) goalEl.textContent = goalTxt;
+  const goalChipEl = screenEl.querySelector('#goalChip');
+  if (goalChipEl && pc) {
+    goalChipEl.innerHTML = `🎯 ${curMax ? T('Максимум') : T('Ціль')}: <b id="goalVal">${goalTxt}</b>`;
+  }
+  // чіпи підходів дня + сумарний обсяг (замість сегментного бару)
+  const chipsEl = screenEl.querySelector('#planChips');
+  if (chipsEl && pc) {
+    chipsEl.innerHTML = pc.plan.sets
+      .map((s, i) => {
+        const st = i < done ? 'done' : i === done && (!complete || armed) ? 'cur' : '';
+        return `<span class="pl-chip ${st}${s.max ? ' max' : ''}">${s.reps}${s.max ? '+' : ''}</span>`;
+      })
+      .join('');
+    const totEl = screenEl.querySelector('#planTotal');
+    if (totEl) {
+      totEl.innerHTML = `${T('Всього')}: <b>${pc.plan.total}</b> · ${T('Рівень')} ${pc.plan.level}/${pc.plan.levels}`
+        + ` · ${T('ціль')} ${pc.state.goal}`;
+    }
+  }
   // сегментний прогрес-бар підходів: зроблені світяться, понад ціль — помаранчеві;
   // всі підходи виконано → бар перефарбовується зеленим
   const segEl = screenEl.querySelector('#setProgress');
@@ -750,10 +937,13 @@ function refreshSets(iso, exerciseId) {
     }
     segEl.innerHTML = segs;
     segEl.classList.toggle('complete', complete);
+    segEl.hidden = !!pc; // у програмі прогресії його заміняють чіпи плану
   }
   const prevEl = screenEl.querySelector('#prevLine');
   if (prevEl) {
-    if (prevSets && prevSets.length) {
+    if (pc) {
+      prevEl.hidden = true; // числа дає план, історія тут тільки заплутає
+    } else if (prevSets && prevSets.length) {
       prevEl.hidden = false;
       prevEl.innerHTML = `${T('Минулого разу')}: ` + prevSets
         .map((s, i) => `<span class="${i === idx && (!complete || armed) ? 'pv-cur' : ''}">${s.reps}</span>`)
@@ -773,13 +963,19 @@ function refreshSets(iso, exerciseId) {
   // Тап по «+» повертає «Виконав підхід» для запису ще одного підходу.
   const logBtn = screenEl.querySelector('#logBtn');
   if (logBtn) logBtn.hidden = complete && !armed;
+  // секундомір роботи ховається разом із кнопкою (вправу вже виконано)
+  const workRow = screenEl.querySelector('#workMount');
+  if (workRow) workRow.hidden = complete && !armed;
   const extraBtn = screenEl.querySelector('#extraBtn');
   if (extraBtn) extraBtn.hidden = !complete || armed;
 
   const sumEl = screenEl.querySelector('#setsSummary');
   if (sumEl) {
     const totalReps = entry.sets.reduce((s, x) => s + (x.reps || 0), 0);
-    sumEl.textContent = `· ${done} / ${target}` + (totalReps ? ` · ${totalReps} ${T('повт.')}` : '');
+    const totalSec = entry.sets.reduce((s, x) => s + (x.sec || 0), 0); // сумарний час під вагою
+    sumEl.textContent = `· ${done} / ${target}`
+      + (totalReps ? ` · ${totalReps} ${T('повт.')}` : '')
+      + (totalSec ? ` · ⏱ ${fmtWork(totalSec)}` : '');
   }
 
   // обсяг (тоннаж) вправи за сьогодні + порівняння з минулим тренуванням
@@ -826,9 +1022,10 @@ function refreshSets(iso, exerciseId) {
         const isBw = (s.weightType || entry.weightType) === 'bodyweight';
         const heavier = !isBw && s.weight > plannedW; // важче за план → жовтим
         const w = isBw ? '' : ` · <span class="${heavier ? 'w-up' : ''}">${s.weight}${T('кг')}</span>`;
+        const sec = s.sec > 0 ? ` · <span class="s-sec">⏱ ${fmtWork(s.sec)}</span>` : ''; // час роботи
         const extra = i >= target ? 'extra' : ''; // понад ціль → помаранчевим
         return `<div class="set-pill ${extra}">
-          <b>${i + 1}</b><span>${s.reps} ${T('повт.')}${w}</span>
+          <b>${i + 1}</b><span>${s.reps} ${T('повт.')}${w}${sec}</span>
           <button class="set-del" data-i="${i}" title="${T('Видалити')}">✕</button>
         </div>`;
       })
@@ -843,6 +1040,28 @@ function refreshSets(iso, exerciseId) {
 }
 
 function openTargetEditor(iso, exerciseId) {
+  // у програмі прогресії числа задає план — показуємо стан програми, а не поля цілі
+  const pc = progCtx(iso, exerciseId);
+  if (pc) {
+    openModal(`${T('Програма прогресії')}: ${T(pc.pgm.label)}`, `
+      <p><b>${T('Рівень')} ${pc.plan.level}/${pc.plan.levels}</b> · ${T('День')} ${pc.plan.day}/3</p>
+      <p class="muted">${T('Всього')}: ${pc.plan.total} ${T('повт.')} · ${T('відпочинок')} ${pc.plan.rest} ${T('сек')}
+        · ${T('ціль')}: ${pc.state.goal}</p>
+      <p class="muted">${T('Максимум із тесту')}: ${pc.state.testMax} ${T('повт.')}</p>
+      <p class="muted">${T('Числа підходів задає програма — вручну їх не редагують.')}</p>
+    `, [
+      { label: T('Новий тест'), class: 'ghost', onClick: () => {
+        closeModal();
+        openProgTest(iso, exerciseId);
+      } },
+      { label: T('Скинути програму'), class: 'danger', onClick: () => {
+        S.stopProgression(exerciseId);
+        closeModal();
+        renderSet(exerciseId);
+      } },
+    ]);
+    return;
+  }
   const entry = S.ensureEntry(iso, exerciseId);
   openModal(T('Ціль на цю вправу'), `
     <div class="field"><label>${T('Бажано підходів')}</label>
@@ -1239,6 +1458,24 @@ function renderWorkouts() {
     .map((w) => {
       const exs = w.items.map((id) => S.getExercise(id)).filter(Boolean);
       const preview = exs.slice(0, 4).map((e) => exIconHTML(e) || (e.icon || '💪')).join(' ');
+      // тренування-програма (вага тіла) відкривається екраном програми, не редактором
+      if (w.progId) {
+        const s = S.programSummary(w.progId);
+        const sub = !s || !s.state
+          ? T('Не почато')
+          : s.state.done
+            ? `🏆 ${T('Ціль досягнута')}`
+            : `${T('Рівень')} ${s.plan.level}/${s.plan.levels} · ${T('День')} ${s.plan.day}/3 · ${T('Всього')} ${s.plan.total}`;
+        return `
+      <button class="ex-card" data-p="${w.progId}">
+        <span class="ex-ico"><span class="glyph">${S.PROG_ICONS[w.progId] || '🤸'}</span></span>
+        <span class="ex-main">
+          <span class="ex-name">🎯 ${esc(w.name)}</span>
+          <span class="ex-sub">${sub}</span>
+        </span>
+        <span class="ex-meta"><span class="chev">›</span></span>
+      </button>`;
+      }
       return `
       <button class="ex-card" data-w="${w.id}">
         <span class="ex-ico"><span class="glyph">🏋️</span></span>
@@ -1288,6 +1525,9 @@ function renderWorkouts() {
       <div class="plan-list">${planRows}</div>
     </section>
 
+    <button class="prog-start" id="progsBtn" style="margin-top:16px">🎯 ${T('Програми')} ${T('до')} 300 ${T('повт.')} —
+      ${T('Прес')}, ${T('Підтягування')}, ${T('Віджимання')}, ${T('Присідання')}</button>
+
     <section class="card" style="margin-top:12px">
       <div class="card-label">✨ ${T('Шаблони тренувань')}</div>
       <p class="muted" style="margin:0 0 10px">${T('З практики атлетів: важкі/легкі дні та кардіо.')}</p>
@@ -1299,6 +1539,10 @@ function renderWorkouts() {
   screenEl.querySelectorAll('.ex-card[data-w]').forEach((c) =>
     c.addEventListener('click', () => go('#/workout/' + c.dataset.w))
   );
+  screenEl.querySelectorAll('.ex-card[data-p]').forEach((c) =>
+    c.addEventListener('click', () => go('#/program/' + c.dataset.p))
+  );
+  screenEl.querySelector('#progsBtn').onclick = () => go('#/programs');
   screenEl.querySelector('#addW').onclick = () => openNewWorkout();
   screenEl.querySelector('#histBtn').onclick = () => go('#/history');
   screenEl.querySelectorAll('.plan-row').forEach((r) =>
@@ -1307,6 +1551,160 @@ function renderWorkouts() {
   screenEl.querySelectorAll('.tpl').forEach((b) =>
     b.addEventListener('click', () => addTemplate(TEMPLATES[parseInt(b.dataset.i, 10)]))
   );
+}
+
+// =====================================================================
+//  ЕКРАНИ: ПРОГРАМИ З ВАГОЮ ТІЛА (окремі тренування — «тільки прес» тощо)
+// =====================================================================
+function renderPrograms() {
+  const rows = S.PROGRAMS.map((p) => {
+    const s = S.programSummary(p.id);
+    const ico = S.PROG_ICONS[p.id] || '🤸';
+    let sub;
+    if (!s.state) sub = `${T('Не почато')} · ${T('ціль')} ${p.goal} ${T('повт.')}`;
+    else if (s.state.done) sub = `🏆 ${T('Ціль досягнута')}: ${p.goal} ${T('повт.')}`;
+    else sub = `${T('Рівень')} ${s.plan.level}/${s.plan.levels} · ${T('День')} ${s.plan.day}/3 · ${T('Всього')} ${s.plan.total}`;
+    const pct = s.state && !s.state.done ? Math.round((s.plan.total / p.goal) * 100) : s.state ? 100 : 0;
+    return `<button class="ex-card" data-p="${p.id}">
+      <span class="ex-ico"><span class="glyph">${ico}</span></span>
+      <span class="ex-main">
+        <span class="ex-name">${T(p.label)} ${T('до')} ${p.goal}</span>
+        <span class="ex-sub">${sub}</span>
+        <span class="prog-bar"><i style="width:${Math.max(2, Math.min(100, pct))}%"></i></span>
+      </span>
+      <span class="ex-meta"><span class="chev">›</span></span>
+    </button>`;
+  }).join('');
+
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backP">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">${T('Вага тіла')}</div>
+        <div class="appbar-title">${T('Програми')}</div></div>
+    </header>
+    <p class="muted side">${T('Окрема програма на одну річ: качаєш її до цілі за рівнями й днями. Ваги тут немає — росте кількість повторень.')}</p>
+    <div class="list">${rows}</div>
+  `;
+  screenEl.querySelector('#backP').onclick = () => go('#/workouts');
+  screenEl.querySelectorAll('.ex-card[data-p]').forEach((c) =>
+    c.addEventListener('click', () => go('#/program/' + c.dataset.p))
+  );
+}
+
+function renderProgram(programId) {
+  const s = S.programSummary(programId);
+  if (!s) return go('#/programs');
+  const p = s.program;
+  const ico = S.PROG_ICONS[programId] || '🤸';
+  const sch = S.getSchedule();
+  const wid = s.workout ? s.workout.id : null;
+  const onPlan = !!wid && PROG_DOWS.every((d) => (sch[String(d)] || []).includes(wid));
+
+  const chips = s.plan
+    ? s.plan.sets
+        .map((x) => `<span class="pl-chip${x.max ? ' max' : ''}">${x.reps}${x.max ? '+' : ''}</span>`)
+        .join('')
+    : '';
+
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backP">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">${T('Програма')}</div>
+        <div class="appbar-title">${T(p.label)} ${T('до')} ${p.goal}</div></div>
+    </header>
+
+    ${s.state && s.state.done ? `<div class="prog-done">🏆 ${T('Ціль досягнута')}: ${p.goal} ${T('повт.')}</div>` : ''}
+
+    <section class="card">
+      <div class="prog-hero">
+        <span class="prog-hero-ico">${ico}</span>
+        <div>
+          <div class="prog-hero-main">${s.plan ? `${T('Рівень')} ${s.plan.level}/${s.plan.levels}` : T('Не почато')}</div>
+          <div class="prog-hero-sub">${s.plan
+            ? `${T('День')} ${s.plan.day}/3 · ${T('Максимум із тесту')}: ${s.state.testMax} ${T('повт.')}`
+            : `${T('ціль')}: ${p.goal} ${T('повт.')} ${T('за заняття')}`}</div>
+        </div>
+      </div>
+      ${s.plan ? `
+      <div class="card-div"></div>
+      <div class="card-label">${T('Заняття сьогодні')}</div>
+      <div class="plan-chips">${chips}</div>
+      <div class="plan-total">${T('Всього')}: <b>${s.plan.total}</b> · ${T('відпочинок')} ${s.plan.rest} ${T('сек')}</div>` : ''}
+    </section>
+
+    <div class="day-actions">
+      ${s.state && !s.state.done
+        ? `<button class="btn primary" id="goSession">▶ ${T('Почати заняття')}</button>`
+        : ''}
+      ${!s.state ? `<button class="btn primary" id="startProg">🎯 ${T('Почати програму')}</button>` : ''}
+    </div>
+
+    ${s.state && !s.state.done ? `
+    <label class="share-row" style="margin-top:12px">
+      <input type="checkbox" id="progPlan" ${onPlan ? 'checked' : ''}/>
+      <span>📅 ${T('3 заняття на тиждень (Пн · Ср · Пт)')}
+        <small class="muted">${T('додає цю програму в тижневий план — між заняттями день відпочинку')}</small></span>
+    </label>
+    <div class="btn-col" style="margin-top:12px">
+      <button class="btn ghost" id="newTest">${T('Новий тест')}</button>
+      <button class="btn danger" id="resetProg">${T('Скинути програму')}</button>
+    </div>` : ''}
+
+    <section class="card" style="margin-top:16px">
+      <div class="card-label">📖 ${T('Як це працює')}</div>
+      <p class="muted" style="margin:0">${T('Рівень — 3 заняття. Обсяг росте на ~7% за заняття, кожен 4-й рівень легший (розгрузка), кожні 2 рівні — новий тест максимуму. Не закрив день — наступного разу повторюєш його.')}</p>
+    </section>
+  `;
+
+  screenEl.querySelector('#backP').onclick = () => go('#/programs');
+  screenEl.querySelector('#startProg')?.addEventListener('click', () => {
+    const ex = S.ensureProgramExercise(programId);
+    openProgStart(S.todayISO(), ex.id, () => {
+      S.ensureProgramWorkout(programId);
+      renderProgram(programId);
+    });
+  });
+  screenEl.querySelector('#goSession')?.addEventListener('click', () => {
+    const link = S.ensureProgramWorkout(programId);
+    const iso = S.todayISO();
+    selectedISO = iso;
+    const ids = S.getDayWorkoutIds(iso);
+    if (!ids.includes(link.workout.id)) S.setDayWorkouts(iso, [...ids, link.workout.id]);
+    go('#/set/' + link.exercise.id);
+  });
+  screenEl.querySelector('#progPlan')?.addEventListener('change', (e) => {
+    const link = S.ensureProgramWorkout(programId);
+    setProgramSchedule(link.workout.id, e.target.checked);
+    toast(e.target.checked ? `📅 ${T('Додано в тижневий план')}` : `📅 ${T('Прибрано з плану')}`);
+  });
+  screenEl.querySelector('#newTest')?.addEventListener('click', () => {
+    if (s.exercise) openProgTest(S.todayISO(), s.exercise.id, false, () => renderProgram(programId));
+  });
+  screenEl.querySelector('#resetProg')?.addEventListener('click', () => {
+    if (s.exercise) S.stopProgression(s.exercise.id);
+    renderProgram(programId);
+  });
+}
+
+const PROG_DOWS = [1, 3, 5]; // Пн · Ср · Пт — між заняттями день відпочинку
+function setProgramSchedule(workoutId, on) {
+  // Якщо тижневого плану ще не було, спершу закріплюємо поточну поведінку:
+  // без плану «Тренування дня» брало перше звичайне тренування ЩОДНЯ. Інакше
+  // вмикання плану лише для програми зробило б решту днів вихідними.
+  if (on && !S.scheduleHasAny()) {
+    const st = S.getSettings();
+    const days = Array.isArray(st.trainDays) && st.trainDays.length ? st.trainDays : [0, 1, 2, 3, 4, 5, 6];
+    const base = S.getWorkouts().find((w) => !w.progId);
+    if (base) for (const d of days) S.setScheduleDay(d, [base.id]);
+  }
+  const sch = S.getSchedule();
+  for (const dow of PROG_DOWS) {
+    const cur = (sch[String(dow)] || []).filter((id) => S.getWorkout(id));
+    const i = cur.indexOf(workoutId);
+    if (on && i < 0) cur.push(workoutId);
+    if (!on && i >= 0) cur.splice(i, 1);
+    S.setScheduleDay(dow, cur);
+  }
 }
 
 // редактор плану на день тижня: які тренування робити цього дня щотижня
@@ -1592,6 +1990,12 @@ function openExerciseForm(id, opts = {}) {
       <div class="field"><label>${T('Підходів')}</label><input type="number" id="exSets" value="${e.targetSets}" min="1"/></div>
       <div class="field"><label>${T('Повторень')}</label><input type="number" id="exReps" value="${e.targetReps}" min="1"/></div>
     </div>
+    ${S.matchProgram(e.name) ? `
+    <label class="share-row prog-switch">
+      <input type="checkbox" id="exProg" ${e.progOn === false ? '' : 'checked'}/>
+      <span>${T('Програма прогресії')} — ${T(S.matchProgram(e.name).label)} ${T('до')} ${S.matchProgram(e.name).goal}
+        <small class="muted">${T('лише для типу «вага тіла»: план підходів замість ваги')}</small></span>
+    </label>` : ''}
   `, [
     ...(id ? [{ label: T('Видалити'), class: 'danger', onClick: () => {
       if (confirm(T('Видалити вправу «{name}»? Вона зникне з усіх тренувань та історії.', { name: e.name }))) {
@@ -1610,6 +2014,8 @@ function openExerciseForm(id, opts = {}) {
         targetSets: parseInt(root.querySelector('#exSets').value, 10) || 10,
         targetReps: parseInt(root.querySelector('#exReps').value, 10) || 10,
       };
+      const progBox = root.querySelector('#exProg');
+      if (progBox) data.progOn = progBox.checked ? true : false;
       let savedId = id;
       if (id) S.updateExercise(id, data);
       else savedId = S.addExercise(data).id;

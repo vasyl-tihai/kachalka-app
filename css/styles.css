@@ -786,7 +786,8 @@ a.btn { display: block; text-align: center; text-decoration: none; box-sizing: b
    Блок свідомо в кінці файла: перекриває базові правила вище.
 =================================================================== */
 :root {
-  --violet: #8b5cf6;
+  --violet: #8b5cf6;     /* також: очікування перед наступною вправою */
+  --violet-glow: rgba(139, 92, 246, .55);
   --cyan: #22d3ee;
   --surface: linear-gradient(180deg, #16161f 0%, #0b0b10 100%);
   --surface-line: #272736;
@@ -949,3 +950,112 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
 .ai .w { stroke: var(--gold); stroke-width: 3.2; fill: none; stroke-linecap: round; }
 .ai .wf { fill: var(--gold); }
 .ai .f { stroke: #454556; stroke-width: 2.4; fill: none; stroke-linecap: round; }
+
+/* ОЧІКУВАННЯ ПЕРЕД НАСТУПНОЮ ВПРАВОЮ — таймер міняє колір із зеленого на
+   фіолетовий (свідомо в кінці файлу: перекриває .ring-mount.running вище) */
+.timer-card.waiting {
+  border-color: rgba(139, 92, 246, .45);
+  box-shadow: 0 0 20px rgba(139, 92, 246, .14);
+}
+.timer-card.waiting .wt-label { color: var(--violet); }
+.timer-card.waiting .ring-progress,
+.timer-card.waiting .ring-mount.running .ring-progress {
+  stroke: var(--violet);
+  filter: drop-shadow(0 0 6px var(--violet-glow));
+}
+.timer-card.waiting .ring-mount.running .ring-svg { filter: drop-shadow(0 0 16px rgba(139, 92, 246, .3)); }
+.timer-card.waiting .ring-time { color: var(--violet); }
+.timer-card.waiting .rest-step { color: var(--violet); border-color: rgba(139, 92, 246, .35); }
+/* яка вправа буде наступною */
+.next-up {
+  display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 12px; padding: 9px 12px; border-radius: 14px;
+  background: rgba(139, 92, 246, .12); border: 1px solid rgba(139, 92, 246, .35);
+  font-size: .95rem; line-height: 1.25;
+}
+.next-up .nu-lab { color: var(--violet); font-weight: 700; }
+.next-up b { font-weight: 800; }
+.next-up .ai { width: 24px; height: 24px; filter: none; }
+.next-up .glyph { font-size: 1.1rem; }
+
+/* СЕКУНДОМІР РОБОТИ — скільки триває сам підхід (окремо від відпочинку) */
+.work-row {
+  display: flex; align-items: center; gap: 10px;
+  margin: 2px 0 12px; padding: 7px 10px 7px 7px; border-radius: 16px;
+  background: var(--bg-card2); border: 1px solid var(--line);
+}
+.work-btn {
+  flex: 0 0 auto; width: 42px; height: 42px; border-radius: 13px;
+  background: rgba(34, 211, 238, .12); border: 1px solid rgba(34, 211, 238, .4);
+  color: var(--cyan); font-size: 1.05rem; line-height: 1;
+}
+.work-btn:active { transform: scale(.93); }
+.work-info { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; text-align: left; }
+.work-lab { color: var(--muted); font-size: .82rem; font-weight: 700; }
+.work-time {
+  font-size: 1.35rem; font-weight: 800; color: var(--txt);
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.work-reset {
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 11px;
+  background: transparent; border: 1px solid var(--line); color: var(--muted); font-size: .95rem;
+}
+/* під час роботи — бірюзове світіння, щоб було видно краєм ока */
+.work-row.running {
+  border-color: rgba(34, 211, 238, .45);
+  box-shadow: 0 0 16px rgba(34, 211, 238, .16);
+}
+.work-row.running .work-time { color: var(--cyan); }
+.work-row.running .work-btn { background: rgba(34, 211, 238, .2); }
+/* час роботи в списку виконаних підходів */
+.set-pill .s-sec { color: var(--cyan); font-variant-numeric: tabular-nums; }
+
+/* ПРОГРАМА ПРОГРЕСІЇ (вага тіла): план підходів дня зверху екрана */
+.plan-card { padding: 12px 12px 10px; }
+.plan-chips { display: flex; align-items: center; justify-content: center; gap: 7px; flex-wrap: wrap; }
+.pl-chip {
+  min-width: 40px; padding: 9px 6px; border-radius: 12px; text-align: center;
+  background: var(--bg-card2); border: 1px solid var(--line);
+  color: var(--muted); font-weight: 800; font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+.pl-chip.done { color: var(--green); border-color: rgba(54, 215, 122, .4); background: rgba(54, 215, 122, .1); }
+.pl-chip.cur {
+  color: #fff; border-color: transparent; background: var(--grad-primary, var(--blue));
+  box-shadow: 0 0 14px var(--blue-glow); transform: scale(1.06);
+}
+.pl-chip.max { border-style: dashed; border-color: rgba(255, 194, 75, .5); color: var(--gold); }
+.pl-chip.max.done { color: var(--green); border-color: rgba(54, 215, 122, .4); }
+.pl-chip.max.cur { color: #fff; border-style: solid; }
+.plan-total {
+  margin-top: 8px; text-align: center; color: var(--muted);
+  font-size: .8rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+}
+.plan-total b { color: var(--txt); font-size: .95rem; }
+/* пропозиція почати програму + позначка про досягнуту ціль */
+.prog-start {
+  display: block; width: 100%; margin-bottom: 12px; padding: 12px 14px; border-radius: 16px;
+  background: rgba(139, 92, 246, .12); border: 1px dashed rgba(139, 92, 246, .5);
+  color: var(--txt); font-weight: 700; font-size: .92rem; text-align: center;
+}
+.prog-start:active { transform: scale(.98); }
+.prog-done {
+  margin-bottom: 12px; padding: 10px 14px; border-radius: 16px; text-align: center;
+  background: rgba(255, 194, 75, .12); border: 1px solid rgba(255, 194, 75, .45);
+  color: #ffe0a0; font-weight: 800;
+}
+.prog-switch small { display: block; font-weight: 600; margin-top: 2px; }
+/* екран програми: смужка прогресу до цілі + шапка з рівнем */
+.prog-bar {
+  display: block; height: 5px; margin-top: 8px; border-radius: 3px;
+  background: var(--bg-card2); overflow: hidden;
+}
+.prog-bar i {
+  display: block; height: 100%; border-radius: 3px;
+  background: var(--grad-primary, var(--blue)); box-shadow: 0 0 8px var(--blue-glow);
+}
+.prog-hero { display: flex; align-items: center; gap: 14px; }
+.prog-hero-ico { font-size: 2.1rem; line-height: 1; }
+.prog-hero-main { font-size: 1.25rem; font-weight: 800; }
+.prog-hero-sub { color: var(--muted); font-size: .88rem; margin-top: 2px; }
+.share-row small { display: block; font-weight: 600; margin-top: 2px; }
