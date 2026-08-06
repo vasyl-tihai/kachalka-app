@@ -27,9 +27,22 @@ export class WorkStopwatch {
       </div>
       <button class="work-reset" type="button" title="${t('Скинути секундомір')}">↺</button>`;
     this.timeEl = this.mount.querySelector('.work-time');
+    this.labEl = this.mount.querySelector('.work-lab');
     this.toggleBtn = this.mount.querySelector('.work-btn');
     this.toggleBtn.addEventListener('click', () => this.toggle());
     this.mount.querySelector('.work-reset').addEventListener('click', () => this.reset());
+  }
+
+  /**
+   * «Великий старт» — перед першим підходом кнопка велика й помітна;
+   * після запуску вона анімовано (CSS-переходом) стискається до звичайної.
+   */
+  setBig(on) {
+    const v = !!on && !this.running && this.seconds === 0;
+    if (this.big === v) return;
+    this.big = v;
+    this.mount.classList.toggle('big', v);
+    this.labEl.textContent = t(v ? 'Почати підхід' : 'Час роботи');
   }
 
   get seconds() {
@@ -53,6 +66,7 @@ export class WorkStopwatch {
 
   start() {
     if (this.running) return;
+    this.setBig(false); // старт → кнопка стискається до звичайного розміру
     this.running = true;
     this._from = performance.now();
     clearInterval(this._iv);

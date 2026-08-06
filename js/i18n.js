@@ -137,6 +137,7 @@ const D = {
     'Далі': 'Next',
     'Це остання вправа': 'This is the last exercise',
     'Час роботи': 'Work time',
+    'Почати підхід': 'Start the set',
     'Скинути секундомір': 'Reset stopwatch',
     // програма прогресії (вага тіла)
     'Рівень': 'Level',
@@ -424,6 +425,7 @@ const D = {
     'Далі': 'Dalej',
     'Це остання вправа': 'To ostatnie ćwiczenie',
     'Час роботи': 'Czas pracy',
+    'Почати підхід': 'Zacznij serię',
     'Скинути секундомір': 'Zeruj stoper',
     // program progresji (masa ciała)
     'Рівень': 'Poziom',
@@ -701,6 +703,7 @@ const D = {
     'Далі': 'Weiter',
     'Це остання вправа': 'Das ist die letzte Übung',
     'Час роботи': 'Arbeitszeit',
+    'Почати підхід': 'Satz starten',
     'Скинути секундомір': 'Stoppuhr zurücksetzen',
     // Progressionsprogramm (Körpergewicht)
     'Рівень': 'Level',
@@ -978,6 +981,7 @@ const D = {
     'Далі': 'Siguiente',
     'Це остання вправа': 'Es el último ejercicio',
     'Час роботи': 'Tiempo de trabajo',
+    'Почати підхід': 'Empezar la serie',
     'Скинути секундомір': 'Reiniciar cronómetro',
     // programa de progresión (peso corporal)
     'Рівень': 'Nivel',
@@ -1255,6 +1259,7 @@ const D = {
     'Далі': 'Ensuite',
     'Це остання вправа': 'C\'est le dernier exercice',
     'Час роботи': 'Temps de travail',
+    'Почати підхід': 'Commencer la série',
     'Скинути секундомір': 'Réinitialiser le chrono',
     // programme de progression (poids du corps)
     'Рівень': 'Niveau',
@@ -1532,6 +1537,7 @@ const D = {
     'Далі': 'Poi',
     'Це остання вправа': 'È l\'ultimo esercizio',
     'Час роботи': 'Tempo di lavoro',
+    'Почати підхід': 'Inizia la serie',
     'Скинути секундомір': 'Azzera cronometro',
     // programma di progressione (peso corporeo)
     'Рівень': 'Livello',

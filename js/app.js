@@ -73,6 +73,9 @@ let workoutSelOpen = false;
 // екран підходу: тап «+ Додатковий підхід» повертає кнопку «Виконав підхід»
 // для ще одного підходу понад ціль (скидається після запису підходу)
 let extraSetArmed = false;
+// авто-перехід після відпочинку: на наступній вправі секундомір роботи стартує сам
+// (велика кнопка «Почати підхід» потрібна лише для найпершого підходу тренування)
+let autoStartWork = false;
 // демо-режим спільноти: показує вигаданих людей і дописи (нічого не пише на сервер)
 let communityDemo = false;
 
@@ -655,6 +658,7 @@ function renderSet(exerciseId) {
       const nextId = nextUnfinishedId(iso, exerciseId);
       if (nextId) {
         const nx = S.getExercise(nextId);
+        autoStartWork = true; // відпочинок вийшов → на новій вправі секундомір іде сам
         toast(`➡️ ${T('Наступна вправа')}: <b>${esc(nx ? nx.name : '')}</b>`);
         go('#/set/' + nextId);
       } else {
@@ -675,6 +679,12 @@ function renderSet(exerciseId) {
 
   // секундомір роботи (скільки триває підхід) — зупиняє його запис підходу
   live.work = new WorkStopwatch(screenEl.querySelector('#workMount'));
+  // прийшли сюди авто-переходом після відпочинку → одразу працюємо, без тапу
+  if (autoStartWork) {
+    autoStartWork = false;
+    live.work.reset();
+    live.work.start();
+  }
 
   // барабан повторень (target — щоб фарбувати: менше цілі біле, більше — жовте)
   const wheelMount = screenEl.querySelector('#wheelMount');
@@ -766,6 +776,16 @@ function openProgTest(iso, exerciseId, auto = false, after) {
       else renderSet(exerciseId);
     } },
   ]);
+}
+
+// скільки підходів уже записано цього дня (0 → тренування ще не почалось)
+function dayLoggedSets(iso) {
+  let n = 0;
+  for (const id of S.getDayStack(iso)) {
+    const en = S.getEntry(iso, id);
+    if (en && en.sets) n += en.sets.length;
+  }
+  return n;
 }
 
 // наступна НЕвиконана вправа далі за списком дня (null — далі нічого немає)
@@ -972,6 +992,9 @@ function refreshSets(iso, exerciseId) {
   // секундомір роботи ховається разом із кнопкою (вправу вже виконано)
   const workRow = screenEl.querySelector('#workMount');
   if (workRow) workRow.hidden = complete && !armed;
+  // велика кнопка старту — тільки на НАЙПЕРШОМУ підході тренування;
+  // далі кожен підхід стартує сам, коли добігає відпочинок
+  if (live.work) live.work.setBig(done === 0 && dayLoggedSets(iso) === 0);
   const extraBtn = screenEl.querySelector('#extraBtn');
   if (extraBtn) extraBtn.hidden = !complete || armed;
 

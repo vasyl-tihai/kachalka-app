@@ -988,6 +988,9 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
   flex: 0 0 auto; width: 42px; height: 42px; border-radius: 13px;
   background: rgba(34, 211, 238, .12); border: 1px solid rgba(34, 211, 238, .4);
   color: var(--cyan); font-size: 1.05rem; line-height: 1;
+  /* стискання «великого старту» до звичайного розміру */
+  transition: width .45s cubic-bezier(.2, .8, .2, 1), height .45s cubic-bezier(.2, .8, .2, 1),
+    border-radius .45s cubic-bezier(.2, .8, .2, 1), font-size .35s ease, box-shadow .45s ease;
 }
 .work-btn:active { transform: scale(.93); }
 .work-info { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; text-align: left; }
@@ -1007,6 +1010,27 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
 }
 .work-row.running .work-time { color: var(--cyan); }
 .work-row.running .work-btn { background: rgba(34, 211, 238, .2); }
+/* ВЕЛИКИЙ СТАРТ ПЕРШОГО ПІДХОДУ: кнопка велика й помітна, після запуску
+   CSS-перехід сам стискає її до звичайного розміру (клас знімає JS) */
+.work-row { transition: padding .45s cubic-bezier(.2, .8, .2, 1), gap .45s cubic-bezier(.2, .8, .2, 1); }
+.work-row.big { padding: 16px; gap: 16px; border-color: rgba(34, 211, 238, .4); }
+.work-row.big .work-btn {
+  width: 96px; height: 96px; border-radius: 50%; font-size: 2.4rem;
+  background: rgba(34, 211, 238, .18); box-shadow: 0 0 26px rgba(34, 211, 238, .3);
+  animation: workStartPulse 2.4s ease-in-out infinite;
+}
+.work-row.big .work-info { flex-direction: column; align-items: flex-start; gap: 2px; }
+.work-row.big .work-lab { font-size: 1.05rem; color: var(--txt); }
+.work-row.big .work-time { font-size: 1rem; color: var(--muted); }
+.work-row.big .work-reset { opacity: 0; pointer-events: none; }
+@keyframes workStartPulse {
+  0%, 100% { box-shadow: 0 0 22px rgba(34, 211, 238, .26); }
+  50% { box-shadow: 0 0 34px rgba(34, 211, 238, .5); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .work-btn, .work-row { transition: none; }
+  .work-row.big .work-btn { animation: none; }
+}
 /* час роботи в списку виконаних підходів */
 .set-pill .s-sec { color: var(--cyan); font-variant-numeric: tabular-nums; }
 
