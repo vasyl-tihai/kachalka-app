@@ -460,7 +460,13 @@ function renderSet(exerciseId) {
   const pday = pgm ? S.ensureProgDay(iso, exerciseId) : null; // {level,day} цього запису
   const pstate = pgm ? S.progressionState(exerciseId) : null;
   const plan = pday
-    ? S.progressionPlan({ testMax: pstate.testMax, level: pday.level, day: pday.day, goal: pstate.goal })
+    ? S.progressionPlan({
+        // показник беремо зі знімка дня — числа заняття не міняються заднім числом
+        testMax: pday.testMax || pstate.testMax,
+        level: pday.level,
+        day: pday.day,
+        goal: pstate.goal,
+      })
     : null;
   if (plan && entry.targetSets !== plan.sets.length) {
     S.updateEntry(iso, exerciseId, { targetSets: plan.sets.length });
@@ -729,8 +735,13 @@ function progCtx(iso, exerciseId) {
   const p = S.progressionState(exerciseId);
   if (!p || p.done) return null;
   const entry = S.getEntry(iso, exerciseId);
-  const pd = (entry && entry.prog) || { level: p.level, day: p.day };
-  const plan = S.progressionPlan({ testMax: p.testMax, level: pd.level, day: pd.day, goal: p.goal });
+  const pd = (entry && entry.prog) || { level: p.level, day: p.day, testMax: p.testMax };
+  const plan = S.progressionPlan({
+    testMax: pd.testMax || p.testMax,
+    level: pd.level,
+    day: pd.day,
+    goal: p.goal,
+  });
   return { pgm, state: p, plan };
 }
 
@@ -865,12 +876,18 @@ function logSet(iso, exerciseId) {
     if (en && en.sets.length >= planSets.length) {
       const ok = planSets.every((s, i) => (Number(en.sets[i] && en.sets[i].reps) || 0) >= s.reps);
       const res = S.advanceProgression(exerciseId, iso, ok);
-      if (res && res.finished) {
-        toast(`🏆 ${T('Ціль досягнута')}: ${pc.state.goal} ${T('повт.')}`);
-      } else if (res && res.repeat) {
-        toast(`↻ ${T('День не закрито — наступного разу повтори його')}`);
-      } else if (res) {
-        toast(`✅ ${T('День виконано')} · ${T('далі')}: ${T('Рівень')} ${res.level}, ${T('День')} ${res.day}`);
+      if (res) {
+        // фінальний «максимум» переріс показник → програма сама підтягує числа
+        const lastReps = Number(en.sets[planSets.length - 1] && en.sets[planSets.length - 1].reps) || 0;
+        const bump = S.bumpTestMax(exerciseId, lastReps);
+        const bTxt = bump ? ` · 💪 ${T('показник')} ${bump.from}→${bump.to}` : '';
+        if (res.finished) {
+          toast(`🏆 ${T('Ціль досягнута')}: ${pc.state.goal} ${T('повт.')}`);
+        } else if (res.repeat) {
+          toast(`↻ ${T('День не закрито — наступного разу повтори його')}${bTxt}`);
+        } else {
+          toast(`✅ ${T('День виконано')} · ${T('далі')}: ${T('Рівень')} ${res.level}, ${T('День')} ${res.day}${bTxt}`);
+        }
       }
     }
   }

@@ -1014,16 +1014,39 @@ export function advanceProgression(exerciseId, iso, ok) {
   saveNow();
   return p;
 }
-/** Який рівень/день виконувався в цьому записі (фіксуємо, щоб екран не «стрибав»). */
+/**
+ * Який рівень/день і з яким показником виконувався цей запис — знімок дня,
+ * щоб числа заняття не «стрибали» назад, коли показник підіймається.
+ */
 export function ensureProgDay(iso, exerciseId) {
   const p = progressionState(exerciseId);
   if (!p || p.done) return null;
   const entry = ensureEntry(iso, exerciseId);
   if (!entry.prog || !entry.prog.level) {
-    entry.prog = { level: p.level, day: p.day };
+    entry.prog = { level: p.level, day: p.day, testMax: p.testMax };
+    save();
+  } else if (!entry.prog.testMax) {
+    entry.prog.testMax = p.testMax; // запис зі старої версії
     save();
   }
   return entry.prog;
+}
+
+/**
+ * Фінальний підхід «максимум» перевищив тестовий показник → піднімаємо показник
+ * (програма підстроюється під форму без окремого тесту). Крок обмежено +25% за
+ * раз: людина зробила це на втомі, тож числа підтягуються, але без шоку.
+ */
+export function bumpTestMax(exerciseId, maxSetReps) {
+  const p = progressionState(exerciseId);
+  if (!p || p.done) return null;
+  const r = Math.round(Number(maxSetReps) || 0);
+  if (r <= p.testMax) return null;
+  const from = p.testMax;
+  p.testMax = Math.min(r, Math.max(from + 1, Math.round(from * 1.25)));
+  p.testedLevel = p.level; // свіжий показник є — окремий ретест не потрібен
+  saveNow();
+  return { from, to: p.testMax };
 }
 
 // --- ОКРЕМІ ТРЕНУВАННЯ-ПРОГРАМИ ---
