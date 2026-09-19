@@ -185,6 +185,9 @@ const D = {
     'Обсяг': 'Volume',
     'Обсяг тренування': 'Workout volume',
     'Тренування виконано!': 'Workout complete!',
+    'Розумний тренер': 'Smart coach',
+    'готові': 'ready',
+    'застосувати': 'apply',
     // спільнота
     'Спільнота': 'Community',
     'Люди': 'People',
@@ -474,6 +477,9 @@ const D = {
     'Обсяг': 'Objętość',
     'Обсяг тренування': 'Objętość treningu',
     'Тренування виконано!': 'Trening ukończony!',
+    'Розумний тренер': 'Inteligentny trener',
+    'готові': 'gotowe',
+    'застосувати': 'zastosuj',
     // спільнота
     'Спільнота': 'Społeczność',
     'Люди': 'Ludzie',
@@ -753,6 +759,9 @@ const D = {
     'Обсяг': 'Volumen',
     'Обсяг тренування': 'Trainingsvolumen',
     'Тренування виконано!': 'Workout geschafft!',
+    'Розумний тренер': 'Smarter Coach',
+    'готові': 'bereit',
+    'застосувати': 'übernehmen',
     // спільнота
     'Спільнота': 'Community',
     'Люди': 'Leute',
@@ -1032,6 +1041,9 @@ const D = {
     'Обсяг': 'Volumen',
     'Обсяг тренування': 'Volumen del entreno',
     'Тренування виконано!': '¡Entrenamiento completado!',
+    'Розумний тренер': 'Entrenador inteligente',
+    'готові': 'listos',
+    'застосувати': 'aplicar',
     // спільнота
     'Спільнота': 'Comunidad',
     'Люди': 'Gente',
@@ -1311,6 +1323,9 @@ const D = {
     'Обсяг': 'Volume',
     'Обсяг тренування': 'Volume de la séance',
     'Тренування виконано!': 'Entraînement terminé !',
+    'Розумний тренер': 'Coach intelligent',
+    'готові': 'prêts',
+    'застосувати': 'appliquer',
     // спільнота
     'Спільнота': 'Communauté',
     'Люди': 'Personnes',
@@ -1590,6 +1605,9 @@ const D = {
     'Обсяг': 'Volume',
     'Обсяг тренування': 'Volume della sessione',
     'Тренування виконано!': 'Allenamento completato!',
+    'Розумний тренер': 'Coach intelligente',
+    'готові': 'pronti',
+    'застосувати': 'applica',
     // спільнота
     'Спільнота': 'Community',
     'Люди': 'Persone',

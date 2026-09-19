@@ -1,6 +1,7 @@
 // app.js — головний модуль: роутер + усі екрани
 import * as S from './store.js';
 import { RingTimer, WorkStopwatch } from './timer.js';
+import * as SM from './smart.js';
 import { NumberWheel } from './picker.js';
 import { getLandmarker, drawPose } from './pose.js';
 import * as FC from './formcheck.js';
@@ -105,6 +106,7 @@ const routes = [
   { re: /^#\/programs$/, render: renderPrograms },
   { re: /^#\/program\/(.+)$/, render: renderProgram },
   { re: /^#\/progress$/, render: renderProgress },
+  { re: /^#\/smart$/, render: renderSmart },
   { re: /^#\/body$/, render: renderBody },
   { re: /^#\/history(?:\/(.+))?$/, render: renderHistory },
   { re: /^#\/settings$/, render: renderSettings },
@@ -384,6 +386,7 @@ function renderToday() {
     <div class="day-actions">
       <button class="btn ghost" id="manageW">${single ? '✏️ ' + T('Редагувати це тренування') : '🏋️ ' + T('Керувати тренуваннями')}</button>
       <button class="btn ghost" id="kcalBtn">🍎 ${T('Калорії')}: ${S.calorieDayTotal(iso).kcal} ${T('ккал')} ›</button>
+      <button class="btn ghost" id="smartBtn">🧠 ${T('Розумний тренер')}${smartTodayHint()} ›</button>
     </div>
   `;
 
@@ -418,6 +421,7 @@ function renderToday() {
   };
   screenEl.querySelector('#dateBtn').onclick = () => dp.showPicker?.() || dp.focus();
   screenEl.querySelector('#manageW').onclick = () => go(single ? '#/workout/' + single : '#/workouts');
+  screenEl.querySelector('#smartBtn').onclick = () => go('#/smart');
   screenEl.querySelector('#kcalBtn').onclick = () => go('#/calories');
 }
 
@@ -549,6 +553,8 @@ function renderSet(exerciseId) {
         </div>
         <div class="set-progress" id="setProgress"></div>
         <div class="prev-line" id="prevLine" hidden></div>
+        <!-- порада аналітика: відпочинок/вага/обсяг за твоєю ж історією -->
+        <button class="hint-chip smart" id="smartHint" hidden></button>
         <div id="wheelMount"></div>
         <!-- секундомір роботи: скільки триває сам підхід -->
         <div class="work-row" id="workMount"></div>
@@ -847,6 +853,42 @@ function updateRestMode(iso, exerciseId, waiting) {
   nextEl.innerHTML = `<span class="nu-lab">➡️ ${T('Далі')}:</span> ${nx ? exIconHTML(nx) || `<span class="glyph">${nx.icon || '💪'}</span>` : ''} <b>${esc(nx ? nx.name : '')}</b>`;
 }
 
+// Порада «розумного тренера» на екрані підходу: коротка дія, яку можна застосувати
+// одним тапом (довший відпочинок / менша вага). Рахується локально по історії.
+function updateSmartHint(iso, exerciseId) {
+  const el = screenEl.querySelector('#smartHint');
+  if (!el) return;
+  let adv = null;
+  try {
+    adv = SM.sessionAdvice(iso, exerciseId, live.timer ? live.timer.total : S.getSettings().restSeconds);
+  } catch (e) {
+    adv = null;
+  }
+  if (!adv) {
+    el.hidden = true;
+    el.onclick = null;
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML = `🧠 ${esc(adv.text)}${adv.action ? ` <b>— ${T('застосувати')}</b>` : ''}`;
+  el.classList.toggle('actionable', !!adv.action);
+  el.onclick = !adv.action
+    ? null
+    : () => {
+        if (adv.action.type === 'rest') {
+          if (live.timer) live.timer.setDuration(adv.action.value);
+          S.updateSettings({ restSeconds: adv.action.value });
+          toast(`⏱️ ${T('Відпочинок')}: ${adv.action.value} ${T('сек')}`);
+        } else if (adv.action.type === 'weight') {
+          S.updateEntry(iso, exerciseId, { weight: adv.action.value });
+          const wv = screenEl.querySelector('#wVal');
+          if (wv) wv.textContent = adv.action.value;
+          toast(`${T('Вага оновлена')}: ${adv.action.value} ${T('кг')}`);
+        }
+        el.hidden = true;
+      };
+}
+
 // додати виконаний підхід: бере повторення з барабана, святкує рекорди, стартує відпочинок
 function logSet(iso, exerciseId) {
   const ex = S.getExercise(exerciseId);
@@ -934,6 +976,7 @@ function refreshSets(iso, exerciseId) {
 
   // таймер: «між підходами» → «перед наступною вправою» (інший колір + назва)
   updateRestMode(iso, exerciseId, complete && !armed);
+  updateSmartHint(iso, exerciseId);
 
   const setLabelEl = screenEl.querySelector('#setLabel');
   if (setLabelEl) {
@@ -1612,6 +1655,7 @@ function renderWorkouts() {
   screenEl.querySelector('#progsBtn').onclick = () => go('#/programs');
   screenEl.querySelector('#addW').onclick = () => openNewWorkout();
   screenEl.querySelector('#histBtn').onclick = () => go('#/history');
+  screenEl.querySelector('#smartBtn2').onclick = () => go('#/smart');
   screenEl.querySelectorAll('.plan-row').forEach((r) =>
     r.addEventListener('click', () => openDayPlanEditor(parseInt(r.dataset.dow, 10)))
   );
@@ -2219,11 +2263,113 @@ function renderProgress() {
     <div class="day-actions">
       <button class="btn ghost" id="bodyBtn">📏 Заміри тіла${bw ? ` · ${bw.value} кг` : ''}</button>
       <button class="btn ghost" id="histBtn">📈 Історія по вправах</button>
+      <button class="btn ghost" id="smartBtn2">🧠 Розумний тренер — відновлення</button>
     </div>
   `;
   screenEl.querySelector('#setBtn').onclick = () => go('#/settings');
   screenEl.querySelector('#bodyBtn').onclick = () => go('#/body');
   screenEl.querySelector('#histBtn').onclick = () => go('#/history');
+}
+
+// короткий підпис для кнопки «Розумний тренер» на екрані дня
+function smartTodayHint() {
+  try {
+    const ready = SM.readyToday();
+    if (ready.length) return `: ${ready.slice(0, 2).map((m) => m.label).join(', ')} ${T('готові')}`;
+  } catch (e) {
+    /* історії ще немає — показуємо кнопку без підпису */
+  }
+  return '';
+}
+
+// =====================================================================
+//  ЕКРАН: РОЗУМНИЙ ТРЕНЕР (аналіз відновлення, все рахується на пристрої)
+// =====================================================================
+const SMART_STATUS = {
+  ready: { ico: '🟢', lab: 'готово' },
+  soon: { ico: '🟡', lab: 'майже' },
+  rest: { ico: '🔴', lab: 'відпочинок' },
+};
+
+// «3 спостереження» / «7 спостережень» — щоб підпис читався як людський текст
+function smartObsWord(n) {
+  const d = n % 10, dd = n % 100;
+  if (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) return `${n} спостереження`;
+  return `${n} спостережень`;
+}
+
+function smartGapWord(n) {
+  const d = n % 10, dd = n % 100;
+  if (d === 1 && dd !== 11) return `${n} день`;
+  if (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) return `${n} дні`;
+  return `${n} днів`;
+}
+
+function renderSmart() {
+  const prof = SM.restProfile();
+  const ready = prof.filter((m) => m.status === 'ready');
+
+  const readyRows = prof
+    .map((m) => {
+      const st = SMART_STATUS[m.status];
+      const since = m.daysSince == null ? 'ще не тренував' : `${smartGapWord(m.daysSince)} тому`;
+      return `<div class="mus-row rd-row">
+        <span class="mus-name">${esc(m.label)}</span>
+        <span class="mus-bar"><i class="rd-${m.status}" style="width:${Math.max(4, m.pct)}%"></i></span>
+        <span class="mus-val">${st.ico} ${m.pct}%</span>
+        <span class="rd-sub">${since} · оптимум ${smartGapWord(m.optimal)}${m.status === 'ready' ? '' : ` · далі ${S.prettyDate(m.nextISO)}`}</span>
+      </div>`;
+    })
+    .join('');
+
+  const gapRows = prof
+    .map((m) => {
+      const bars = m.buckets
+        .map((b) => {
+          const sign = b.delta > 0 ? '+' : '';
+          const cls = b.delta > 0.5 ? 'up' : b.delta < -0.5 ? 'down' : '';
+          const on = m.best && b.gap === m.best.gap ? ' on' : '';
+          return `<span class="gap-chip${on} ${cls}">${b.gap}д <b>${sign}${b.delta.toFixed(1)}%</b><small>×${b.n}</small></span>`;
+        })
+        .join('');
+      const verdict = m.best
+        ? `найкраще через <b>${smartGapWord(m.best.gap)}</b> · ${m.best.delta > 0 ? '+' : ''}${m.best.delta.toFixed(1)}% за ${smartObsWord(m.samples)}`
+        : m.samples === 0
+          ? `даних ще немає — поки ${smartGapWord(SM.DEFAULT_GAP)}`
+          : `замало даних (${m.samples} з ${SM.MIN_SAMPLES}) — поки ${smartGapWord(SM.DEFAULT_GAP)}`;
+      return `<div class="gap-block">
+        <div class="gap-head"><span>${esc(m.label)}</span><span class="muted">${verdict}</span></div>
+        ${bars ? `<div class="gap-chips">${bars}</div>` : ''}
+      </div>`;
+    })
+    .join('');
+
+  const advice = ready.length
+    ? `<b>${ready.slice(0, 3).map((m) => esc(m.label)).join(', ')}</b>${ready.length > 3 ? ` та ще ${ready.length - 3}` : ''} — вже відновилися, сьогодні можна навантажувати.`
+    : prof.length
+      ? `Усі групи ще відновлюються. Найближча — <b>${esc(prof[0].label)}</b> (${S.prettyDate(prof[0].nextISO)}).`
+      : 'Записуй підходи — після кількох тренувань тут зʼявиться твій особистий графік відновлення.';
+
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backBtn">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">Розумний тренер</div>
+        <div class="appbar-title">Відновлення</div></div>
+    </header>
+    <section class="card smart-tip"><div class="st-ico">🧠</div><div class="st-txt">${advice}</div></section>
+    ${prof.length ? `
+    <section class="card">
+      <div class="card-label">Готовність груп сьогодні</div>
+      ${readyRows}
+    </section>
+    <section class="card">
+      <div class="card-label">Твій інтервал відпочинку</div>
+      <p class="muted side">Скільки в середньому додавав результат після паузи в N днів. Зелене — твій найкращий інтервал.</p>
+      ${gapRows}
+    </section>` : ''}
+    <p class="muted side">Рахується на пристрої: для кожної вправи беруться сусідні тренування — розрив у днях і зміна найкращого підходу (1ПМ або повторення). Значення усереднюються по групі мʼязів. Потрібно щонайменше ${SM.MIN_SAMPLES} пари, інакше показується типова пауза ${smartGapWord(SM.DEFAULT_GAP)}.</p>
+  `;
+  screenEl.querySelector('#backBtn').onclick = () => go('#/progress');
 }
 
 // =====================================================================

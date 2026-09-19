@@ -1111,3 +1111,39 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
 @media (prefers-reduced-motion: reduce) {
   .ring-tip { transition: opacity .35s ease; }
 }
+
+/* РОЗУМНИЙ ТРЕНЕР: підказка на екрані підходу + екран відновлення.
+   Синій тон, щоб не плутати з жовтою підказкою прогресії ваги. */
+.hint-chip.smart {
+  background: rgba(91, 155, 255, .1); border-color: rgba(91, 155, 255, .4);
+  color: #cfe0ff; text-align: left; line-height: 1.35;
+}
+.hint-chip.smart b { color: var(--blue); }
+.hint-chip.smart:not(.actionable) { pointer-events: none; }
+
+.smart-tip { display: flex; align-items: center; gap: 12px; }
+.smart-tip .st-ico { font-size: 1.8rem; line-height: 1; }
+.smart-tip .st-txt { font-size: .95rem; line-height: 1.4; }
+
+/* готовність груп: смужка + підпис під нею */
+.rd-row { flex-wrap: wrap; }
+.rd-row .rd-sub { flex: 1 0 100%; color: var(--muted); font-size: .78rem; margin: 2px 0 6px; }
+.mus-bar i.rd-ready { background: var(--green); box-shadow: 0 0 8px var(--green-glow); }
+.mus-bar i.rd-soon { background: var(--gold); box-shadow: 0 0 8px var(--gold-glow); }
+.mus-bar i.rd-rest { background: var(--orange); box-shadow: 0 0 8px var(--orange-glow); }
+
+/* інтервали відпочинку: по кошику на кожен розрив у днях */
+.gap-block { margin-top: 12px; }
+.gap-head { display: flex; justify-content: space-between; gap: 10px; font-weight: 700; font-size: .92rem; }
+.gap-head .muted { font-weight: 600; font-size: .8rem; text-align: right; }
+.gap-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.gap-chip {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  background: var(--bg-card2); border: 1px solid var(--line);
+  border-radius: 10px; padding: 5px 8px; font-size: .8rem; color: var(--muted);
+}
+.gap-chip b { color: var(--txt); font-size: .85rem; }
+.gap-chip small { opacity: .65; }
+.gap-chip.up b { color: var(--green); }
+.gap-chip.down b { color: var(--orange); }
+.gap-chip.on { border-color: rgba(54, 215, 122, .55); background: rgba(54, 215, 122, .1); color: #bff0d2; }
