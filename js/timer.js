@@ -124,11 +124,12 @@ export class RingTimer {
           <circle class="ring-progress" cx="60" cy="60" r="${R}" fill="none" stroke-width="9"
                   stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="0"
                   transform="rotate(-90 60 60)"/>
-          <!-- «гарячий» кінчик лінії: три шари від напівпрозорого до яскравого дають
-               плавний перехід кольору в жовто-гарячий на самому кінці дуги -->
+          <!-- світлий кінчик лінії: чотири шари від ледь помітного до яскравого
+               дають плавний перехід у світло-зелений на самому кінці дуги -->
           <circle class="ring-tip t1" cx="60" cy="60" r="${R}" fill="none" stroke-width="9" stroke-linecap="butt"/>
           <circle class="ring-tip t2" cx="60" cy="60" r="${R}" fill="none" stroke-width="9" stroke-linecap="butt"/>
-          <circle class="ring-tip t3" cx="60" cy="60" r="${R}" fill="none" stroke-width="9" stroke-linecap="round"/>
+          <circle class="ring-tip t3" cx="60" cy="60" r="${R}" fill="none" stroke-width="9" stroke-linecap="butt"/>
+          <circle class="ring-tip t4" cx="60" cy="60" r="${R}" fill="none" stroke-width="9" stroke-linecap="round"/>
         </svg>
         <button class="ring-center" type="button">
           <span class="ring-time">${this._fmt(this.remaining)}</span>
@@ -136,11 +137,12 @@ export class RingTimer {
         </button>
       </div>`;
     this.progress = this.mount.querySelector('.ring-progress');
-    // довжини шарів кінчика (px по дузі): від м'якого до найгарячішого
+    // довжини шарів кінчика (px по дузі): від ледь помітного до найяскравішого
     this.tips = [
-      { el: this.mount.querySelector('.ring-tip.t1'), len: 40 },
-      { el: this.mount.querySelector('.ring-tip.t2'), len: 22 },
-      { el: this.mount.querySelector('.ring-tip.t3'), len: 10 },
+      { el: this.mount.querySelector('.ring-tip.t1'), len: 64 },
+      { el: this.mount.querySelector('.ring-tip.t2'), len: 38 },
+      { el: this.mount.querySelector('.ring-tip.t3'), len: 20 },
+      { el: this.mount.querySelector('.ring-tip.t4'), len: 9 },
     ];
     this.timeEl = this.mount.querySelector('.ring-time');
     this.hintEl = this.mount.querySelector('.ring-hint');
