@@ -124,6 +124,11 @@ export class RingTimer {
           <circle class="ring-progress" cx="60" cy="60" r="${R}" fill="none" stroke-width="9"
                   stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="0"
                   transform="rotate(-90 60 60)"/>
+          <!-- «гарячий» кінчик лінії: три шари від напівпрозорого до яскравого дають
+               плавний перехід кольору в жовто-гарячий на самому кінці дуги -->
+          <circle class="ring-tip t1" cx="60" cy="60" r="${R}" fill="none" stroke-width="9" stroke-linecap="butt"/>
+          <circle class="ring-tip t2" cx="60" cy="60" r="${R}" fill="none" stroke-width="9" stroke-linecap="butt"/>
+          <circle class="ring-tip t3" cx="60" cy="60" r="${R}" fill="none" stroke-width="9" stroke-linecap="round"/>
         </svg>
         <button class="ring-center" type="button">
           <span class="ring-time">${this._fmt(this.remaining)}</span>
@@ -131,6 +136,12 @@ export class RingTimer {
         </button>
       </div>`;
     this.progress = this.mount.querySelector('.ring-progress');
+    // довжини шарів кінчика (px по дузі): від м'якого до найгарячішого
+    this.tips = [
+      { el: this.mount.querySelector('.ring-tip.t1'), len: 40 },
+      { el: this.mount.querySelector('.ring-tip.t2'), len: 22 },
+      { el: this.mount.querySelector('.ring-tip.t3'), len: 10 },
+    ];
     this.timeEl = this.mount.querySelector('.ring-time');
     this.hintEl = this.mount.querySelector('.ring-hint');
     this.centerBtn = this.mount.querySelector('.ring-center');
@@ -167,9 +178,28 @@ export class RingTimer {
     const frac = this.total > 0 ? this.remaining / this.total : 0;
     const offset = this.circumference * (1 - frac);
     this.progress.style.strokeDashoffset = offset;
+    this._renderTips(this.circumference * frac);
     this.timeEl.textContent = this._fmt(this.remaining);
     this.mount.classList.toggle('running', this.running);
     this.hintEl.textContent = this.running ? t('пауза') : t('старт');
+  }
+
+  // Кінчик дуги: кожен шар — короткий штрих завдовжки len, посунутий на самий
+  // кінець видимої лінії поворотом кільця (без від'ємного dashoffset).
+  _renderTips(visible) {
+    const C = this.circumference;
+    for (const tip of this.tips) {
+      if (!tip.el) continue;
+      const len = Math.min(tip.len, visible);
+      if (len <= 0.5) {
+        tip.el.style.opacity = '0';
+        continue;
+      }
+      tip.el.style.opacity = '';
+      tip.el.style.strokeDasharray = `${len} ${C}`;
+      // -90° — початок дуги вгорі; далі докручуємо до кінця видимої лінії
+      tip.el.style.transform = `rotate(${-90 + (360 * (visible - len)) / C}deg)`;
+    }
   }
 
   toggle() {

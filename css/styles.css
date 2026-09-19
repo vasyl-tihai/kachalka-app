@@ -1083,3 +1083,29 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
 .prog-hero-main { font-size: 1.25rem; font-weight: 800; }
 .prog-hero-sub { color: var(--muted); font-size: .88rem; margin-top: 2px; }
 .share-row small { display: block; font-weight: 600; margin-top: 2px; }
+
+/* ФІНАЛ ДНЯ: останній підхід зроблено, наступної вправи немає —
+   замість таймера відпочинку показуємо коротке «виконано» + вихід */
+.fin-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: linear-gradient(135deg, rgba(52, 211, 153, .14), rgba(52, 211, 153, .05));
+  border: 1px solid rgba(52, 211, 153, .38);
+}
+.fin-txt { font-weight: 800; font-size: 1.05rem; color: #a7f3d0; }
+.fin-card .btn { width: auto; padding: 10px 16px; margin: 0; flex: 0 0 auto; }
+
+/* ГАРЯЧИЙ КІНЧИК ЛІНІЇ ТАЙМЕРА: на кінці дуги колір плавно переходить у
+   жовто-гарячий. Три шари різної довжини й прозорості = мʼякий градієнт;
+   зʼявляється при запуску (плавно) і гасне, коли таймер стоїть. */
+.ring-tip {
+  transform-box: view-box; transform-origin: 50% 50%;
+  transition: transform .12s linear, opacity .35s ease;
+  opacity: 0; pointer-events: none;
+}
+.ring-mount.running .ring-tip { opacity: 1; }
+.ring-tip.t1 { stroke: rgba(255, 194, 75, .28); }
+.ring-tip.t2 { stroke: rgba(255, 170, 60, .6); }
+.ring-tip.t3 { stroke: var(--orange); filter: drop-shadow(0 0 7px var(--orange-glow)); }
+@media (prefers-reduced-motion: reduce) {
+  .ring-tip { transition: opacity .35s ease; }
+}

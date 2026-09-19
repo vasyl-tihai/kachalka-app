@@ -535,6 +535,12 @@ function renderSet(exerciseId) {
         <div class="next-up" id="nextUp" hidden></div>
       </section>
 
+      <!-- ФІНАЛ ДНЯ: наступної вправи немає → таймер ховаємо, роботу завершено -->
+      <section class="card fin-card" id="finCard" hidden>
+        <div class="fin-txt">🎉 ${T('Тренування виконано!')}</div>
+        <button class="btn primary" id="finBtn">${T('Сьогодні')} ›</button>
+      </section>
+
       <!-- ПОВТОРЕННЯ: барабан + кнопка «Виконав підхід» -->
       <section class="card target-card">
         <div class="tc-head">
@@ -567,6 +573,7 @@ function renderSet(exerciseId) {
   screenEl.querySelector('#goalChip').onclick = () => openTargetEditor(iso, exerciseId);
   // головна дія: обрав повторення на барабані → «Виконав підхід»
   screenEl.querySelector('#logBtn').onclick = () => logSet(iso, exerciseId);
+  screenEl.querySelector('#finBtn').onclick = () => go('#/today');
   // додатковий підхід понад ціль — кнопка внизу, біля виконаних підходів.
   // Не записує одразу: повертає «Виконав підхід», щоб обрати повторення і підтвердити
   screenEl.querySelector('#extraBtn').onclick = () => {
@@ -818,21 +825,26 @@ function updateRestMode(iso, exerciseId, waiting) {
   const cardEl = screenEl.querySelector('#timerCard');
   const labelEl = screenEl.querySelector('#restLabel');
   const nextEl = screenEl.querySelector('#nextUp');
+  const finEl = screenEl.querySelector('#finCard');
   if (!cardEl || !labelEl || !nextEl) return;
   const nextId = waiting ? nextUnfinishedId(iso, exerciseId) : null;
   const nx = nextId ? S.getExercise(nextId) : null;
-  cardEl.classList.toggle('waiting', waiting);
+  // Остання вправа дня: чекати нема чого — таймер прибираємо зовсім
+  // (і глушимо, якщо він уже йшов), лишається тільки «виконано».
+  const finished = waiting && !nextId;
+  if (finished && live.timer) live.timer.reset();
+  cardEl.hidden = finished;
+  if (finEl) finEl.hidden = !finished;
+  cardEl.classList.toggle('waiting', waiting && !finished);
   labelEl.textContent = waiting
-    ? (nextId ? T('Очікування перед наступною вправою') : T('Відпочинок'))
+    ? T('Очікування перед наступною вправою')
     : T('Відпочинок між підходами');
-  nextEl.hidden = !waiting;
-  if (!waiting) {
+  nextEl.hidden = !waiting || finished;
+  if (!waiting || finished) {
     nextEl.innerHTML = '';
     return;
   }
-  nextEl.innerHTML = nextId
-    ? `<span class="nu-lab">➡️ ${T('Далі')}:</span> ${nx ? exIconHTML(nx) || `<span class="glyph">${nx.icon || '💪'}</span>` : ''} <b>${esc(nx ? nx.name : '')}</b>`
-    : `<span class="nu-lab">🎉 ${T('Це остання вправа')}</span>`;
+  nextEl.innerHTML = `<span class="nu-lab">➡️ ${T('Далі')}:</span> ${nx ? exIconHTML(nx) || `<span class="glyph">${nx.icon || '💪'}</span>` : ''} <b>${esc(nx ? nx.name : '')}</b>`;
 }
 
 // додати виконаний підхід: бере повторення з барабана, святкує рекорди, стартує відпочинок
@@ -892,7 +904,16 @@ function logSet(iso, exerciseId) {
     }
   }
 
-  // авто-старт таймера відпочинку
+  // авто-старт таймера відпочинку — але НЕ після останнього підходу дня:
+  // далі вправи немає, відпочивати нема перед чим, робота просто завершена
+  const enNow = S.getEntry(iso, exerciseId);
+  const allDone = !!(enNow && enNow.targetSets && enNow.sets.length >= enNow.targetSets);
+  if (allDone && !nextUnfinishedId(iso, exerciseId)) {
+    if (live.timer) live.timer.reset();
+    if (live.work) live.work.reset();
+    toast(`🎉 ${T('Тренування виконано!')}`);
+    return;
+  }
   if (live.timer) {
     live.timer.reset();
     live.timer.start();
