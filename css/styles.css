@@ -1094,11 +1094,10 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
 .fin-txt { font-weight: 800; font-size: 1.05rem; color: #a7f3d0; }
 .fin-card .btn { width: auto; padding: 10px 16px; margin: 0; flex: 0 0 auto; }
 
-/* СВІТЛИЙ КІНЧИК ЛІНІЇ ТАЙМЕРА: на кінці дуги колір плавно світлішає —
-   чотири шари різної довжини й прозорості дають мʼякий градієнт у тон кільця.
-   Відтінок береться з --tip, тож у фіолетовому режимі кінчик теж у тон. */
-.ring-mount { --tip: 168, 255, 198; }            /* світло-зелений до зеленого кільця */
-.timer-card.waiting .ring-mount { --tip: 214, 196, 255; }  /* світло-бузковий до фіолетового */
+/* ЯСКРАВИЙ КІНЧИК ЛІНІЇ ТАЙМЕРА: на кінці дуги колір плавно переходить у жовтий —
+   чотири шари різної довжини й прозорості дають мʼякий градієнт.
+   Жовтий добре видно і на зеленому кільці, і на фіолетовому (очікування). */
+.ring-mount { --tip: 255, 221, 92; }
 .ring-tip {
   transform-box: view-box; transform-origin: 50% 50%;
   transition: transform .12s linear, opacity .35s ease;
@@ -1108,7 +1107,7 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
 .ring-tip.t1 { stroke: rgba(var(--tip), .14); }
 .ring-tip.t2 { stroke: rgba(var(--tip), .3); }
 .ring-tip.t3 { stroke: rgba(var(--tip), .55); }
-.ring-tip.t4 { stroke: rgba(var(--tip), .92); filter: drop-shadow(0 0 7px rgba(var(--tip), .55)); }
+.ring-tip.t4 { stroke: rgb(var(--tip)); filter: drop-shadow(0 0 9px rgba(var(--tip), .7)); }
 @media (prefers-reduced-motion: reduce) {
   .ring-tip { transition: opacity .35s ease; }
 }
