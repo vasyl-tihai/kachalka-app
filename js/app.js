@@ -145,6 +145,25 @@ function go(hash) {
   location.hash = hash;
 }
 
+// ---------- теми оформлення ----------
+// Класична — те, як було; решта задаються атрибутом data-theme на <html>.
+const THEMES = [
+  { id: 'classic', label: 'Класична', hint: 'синьо-фіолетова, як було' },
+  { id: 'neon', label: 'Неон', hint: 'темна, один кислотний акцент' },
+  { id: 'tablo', label: 'Табло', hint: 'чорна, великі числа, прямі кути' },
+  { id: 'light', label: 'Світла', hint: 'світле тло, видно вдень' },
+];
+const THEME_BAR = { classic: '#000000', neon: '#0B0B10', tablo: '#000000', light: '#F4F4F0' };
+
+function applyTheme(id) {
+  const t = THEMES.some((x) => x.id === id) ? id : 'classic';
+  if (t === 'classic') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+  // колір системної смуги браузера — щоб не світився чорний над світлою темою
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', THEME_BAR[t] || '#000000');
+}
+
 // ---------- нижня навігація ----------
 const TABS = [
   { hash: '#/today', icon: '🏋️', label: 'Сьогодні' },
@@ -2572,6 +2591,14 @@ function renderSettings() {
     </section>
 
     <section class="card">
+      <div class="card-label">${T('Вигляд')}</div>
+      <div class="type-chips" id="themeChips">
+        ${THEMES.map((th) => `<button class="tchip ${(s.theme || 'classic') === th.id ? 'on' : ''}" data-th="${th.id}">${T(th.label)}</button>`).join('')}
+      </div>
+      <p class="muted side" style="margin:8px 4px 0">${T(THEMES.find((th) => th.id === (s.theme || 'classic')).hint)}</p>
+    </section>
+
+    <section class="card">
       <div class="card-label">${T('Таймер')}</div>
       <div class="field-row">
         <div class="field"><label>${T('Відпочинок (сек)')}</label><input type="number" id="rest" value="${s.restSeconds}" min="5" step="5"/></div>
@@ -2646,6 +2673,15 @@ function renderSettings() {
     renderTabbar();
     renderSettings();
   };
+
+  // тема — застосовується миттєво, без перезавантаження
+  screenEl.querySelector('#themeChips').addEventListener('click', (e) => {
+    const b = e.target.closest('.tchip');
+    if (!b) return;
+    S.updateSettings({ theme: b.dataset.th });
+    applyTheme(b.dataset.th);
+    renderSettings();
+  });
 
   // таймер зберігається одразу при зміні — як і решта налаштувань
   const saveTimer = () => {
@@ -4120,6 +4156,7 @@ function flashAlarm(color) {
 
 // ---------- запуск ----------
 FX.initFx(S.getCustomSound); // аудіо розблоковується першим дотиком
+applyTheme(S.getSettings().theme); // тема з налаштувань — до першого малювання
 renderTabbar();
 router();
 
