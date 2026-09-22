@@ -2447,6 +2447,59 @@ function renderProgress() {
   screenEl.querySelector('#kcalBtn2').onclick = () => go('#/calories');
 }
 
+// Значок підписки — намальований, щоб не залежати від емодзі системи.
+function proIcon(size = 20) {
+  return `<svg class="ico-pro" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true">
+    <path d="M4 8.5l3.8 2.6L12 5l4.2 6.1L20 8.5l-1.6 9H5.6L4 8.5z"></path>
+    <path d="M5.6 20.5h12.8" stroke-linecap="round"></path>
+  </svg>`;
+}
+
+// Акаунт у налаштуваннях: реєстрація й вхід через Google (та вихід).
+// Малюється окремо, бо стан сесії приходить із сервера вже після екрана.
+async function renderAccountBox() {
+  const box = () => screenEl.querySelector('#acctBody');
+  if (!box()) return;
+  if (!BE.configured) {
+    box().innerHTML = `<p class="muted">${T('Сервер ще не підключено — акаунт і спільнота поки недоступні')}</p>`;
+    return;
+  }
+  let session = null;
+  try {
+    session = await BE.getSession();
+  } catch (e) {
+    /* немає звʼязку — покажемо кнопку входу */
+  }
+  if (!box()) return;
+  if (session && session.user) {
+    const email = session.user.email || '';
+    box().innerHTML = `
+      <div class="acct-row">
+        <span class="acct-ava">${esc((email[0] || '?').toUpperCase())}</span>
+        <span class="acct-mail">${esc(email)}</span>
+      </div>
+      <button class="btn ghost" id="acctOut" style="margin-top:10px">${T('Вийти')}</button>`;
+    screenEl.querySelector('#acctOut').onclick = async () => {
+      await BE.signOut();
+      renderAccountBox();
+    };
+    return;
+  }
+  box().innerHTML = `
+    <p class="muted">${T('Реєстрація потрібна лише для спільноти й синхронізації — щоденник працює без неї')}</p>
+    <button class="btn google" id="gSignIn" style="margin-top:12px"><span class="g-badge">G</span> ${T('Продовжити з Google')}</button>
+    <button class="btn ghost" id="mailSignIn" style="margin-top:8px">${T('Пошта і пароль')}</button>`;
+  screenEl.querySelector('#gSignIn').onclick = async () => {
+    try {
+      await BE.signInWithGoogle();
+    } catch (e) {
+      toast(`⚠️ ${esc(T(String(e.message || e)))}`);
+    }
+  };
+  screenEl.querySelector('#mailSignIn').onclick = () => go('#/community');
+}
+
 // =====================================================================
 //  ЕКРАН: ПІДПИСКА (пробний період, покупка, відновлення)
 // =====================================================================
@@ -2455,7 +2508,7 @@ async function renderPro() {
   const days = BILL.trialLeft();
   const sub = S.getSettings().billing && S.getSettings().billing.sub;
   const head = st === 'active'
-    ? { ico: '⭐', title: T('Підписка активна'), sub: sub && sub.until ? `${T('діє до')} ${S.prettyDate(sub.until)}` : '' }
+    ? { ico: proIcon(34), title: T('Підписка активна'), sub: sub && sub.until ? `${T('діє до')} ${S.prettyDate(sub.until)}` : '' }
     : st === 'trial'
       ? { ico: '🎁', title: `${T('Пробний період')}: ${T('ще')} ${dayWord(days)}`, sub: T('Далі — за підпискою') }
       : { ico: '🔒', title: T('Пробний період закінчився'), sub: T('Оформи підписку, щоб продовжити') };
@@ -2553,7 +2606,7 @@ async function applyPurchase(res) {
     return;
   }
   BILL.setSubscription(ver);
-  toast(`⭐ ${T('Підписка активна')}`);
+  toast(`${proIcon(16)} ${T('Підписка активна')}`);
   go('#/today');
 }
 
@@ -2846,10 +2899,17 @@ function renderSettings() {
       </select>
     </section>
 
+    <section class="card" id="acctCard">
+      <div class="card-label">${T('Акаунт')}</div>
+      <div id="acctBody"><p class="muted">${T('Перевіряю…')}</p></div>
+    </section>
+
     <section class="card">
       <div class="card-label">${T('Підписка')}</div>
       <button class="btn ghost" id="proBtn">${
-        BILL.status() === 'active' ? `⭐ ${T('Підписка активна')} ›` : `⭐ ${T('Оформити підписку')} ›`
+        BILL.status() === 'active'
+          ? `${proIcon()} ${T('Підписка активна')} ›`
+          : `${proIcon()} ${T('Оформити підписку')} ›`
       }</button>
       <p class="muted side" style="margin:8px 4px 0">${T('Безкоштовно')}: ${BILL.FREE_PHOTOS} ${T('фото на день')}</p>
     </section>
@@ -2940,6 +3000,7 @@ function renderSettings() {
 
   // тема — застосовується миттєво, без перезавантаження
   screenEl.querySelector('#proBtn').onclick = () => go('#/pro');
+  renderAccountBox();
   screenEl.querySelector('#themeChips').addEventListener('click', (e) => {
     const b = e.target.closest('.tchip');
     if (!b) return;
@@ -4248,7 +4309,7 @@ function kcalStatusCard() {
   }
   if (BILL.status() === 'active') {
     return `<section class="card kcal-status pro">
-      <div class="ks-main">⭐ ${T('Підписка активна')}</div>
+      <div class="ks-main">${proIcon(18)} ${T('Підписка активна')}</div>
       <div class="ks-sub">${T('Фото без обмежень')}</div>
     </section>`;
   }

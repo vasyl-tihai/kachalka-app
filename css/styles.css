@@ -1378,3 +1378,14 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
   background: rgba(255, 91, 91, .16); border: 1px solid rgba(255, 91, 91, .5);
   color: #ff9b9b; border-radius: 14px; padding: 12px 16px; font-size: 1.1rem;
 }
+/* значок підписки: намальований, підхоплює колір тексту кнопки */
+.ico-pro { vertical-align: -3px; margin-right: 6px; color: var(--gold); }
+.pro-hero .ico-pro { margin: 0; }
+
+/* акаунт у налаштуваннях */
+.acct-row { display: flex; align-items: center; gap: 10px; }
+.acct-ava {
+  width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--grad-primary); color: var(--on-accent); font-weight: 800;
+}
+.acct-mail { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
