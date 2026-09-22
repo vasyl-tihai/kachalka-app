@@ -148,15 +148,15 @@ function go(hash) {
 // ---------- теми оформлення ----------
 // Класична — те, як було; решта задаються атрибутом data-theme на <html>.
 const THEMES = [
-  { id: 'classic', label: 'Класична', hint: 'синьо-фіолетова, як було' },
   { id: 'neon', label: 'Неон', hint: 'темна, один кислотний акцент' },
+  { id: 'classic', label: 'Класична', hint: 'синьо-фіолетова, як було' },
   { id: 'tablo', label: 'Табло', hint: 'чорна, великі числа, прямі кути' },
   { id: 'light', label: 'Світла', hint: 'світле тло, видно вдень' },
 ];
 const THEME_BAR = { classic: '#000000', neon: '#0B0B10', tablo: '#000000', light: '#F4F4F0' };
 
 function applyTheme(id) {
-  const t = THEMES.some((x) => x.id === id) ? id : 'classic';
+  const t = THEMES.some((x) => x.id === id) ? id : 'neon';
   if (t === 'classic') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', t);
   // колір системної смуги браузера — щоб не світився чорний над світлою темою
@@ -2593,9 +2593,9 @@ function renderSettings() {
     <section class="card">
       <div class="card-label">${T('Вигляд')}</div>
       <div class="type-chips" id="themeChips">
-        ${THEMES.map((th) => `<button class="tchip ${(s.theme || 'classic') === th.id ? 'on' : ''}" data-th="${th.id}">${T(th.label)}</button>`).join('')}
+        ${THEMES.map((th) => `<button class="tchip ${(s.theme || 'neon') === th.id ? 'on' : ''}" data-th="${th.id}">${T(th.label)}</button>`).join('')}
       </div>
-      <p class="muted side" style="margin:8px 4px 0">${T(THEMES.find((th) => th.id === (s.theme || 'classic')).hint)}</p>
+      <p class="muted side" style="margin:8px 4px 0">${T((THEMES.find((th) => th.id === (s.theme || 'neon')) || THEMES[0]).hint)}</p>
     </section>
 
     <section class="card">

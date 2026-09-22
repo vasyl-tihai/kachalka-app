@@ -112,7 +112,7 @@ function defaultState() {
       restSeconds: 60,
       restStep: 30,
       lang: 'uk', // мова інтерфейсу
-      theme: 'classic', // оформлення: classic | neon | tablo | light
+      theme: 'neon', // оформлення за замовчуванням: neon | classic | tablo | light
       soundOn: true, // звук у кінці відпочинку
       soundId: 'triple', // яка мелодія ('custom' — свій звук)
       vibrateOn: true, // вібрація
