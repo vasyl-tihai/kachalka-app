@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.kachalka.app",
+      "sha256_cert_fingerprints": [
+        "ЗАМІНИТИ_НА_SHA256_КЛЮЧА_ПІДПИСУ"
+      ]
+    }
+  }
+]

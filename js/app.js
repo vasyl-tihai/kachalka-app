@@ -2,6 +2,7 @@
 import * as S from './store.js';
 import { RingTimer, WorkStopwatch } from './timer.js';
 import * as SM from './smart.js';
+import * as BILL from './billing.js';
 import { NumberWheel } from './picker.js';
 import { getLandmarker, drawPose } from './pose.js';
 import * as FC from './formcheck.js';
@@ -107,6 +108,7 @@ const routes = [
   { re: /^#\/program\/(.+)$/, render: renderProgram },
   { re: /^#\/progress$/, render: renderProgress },
   { re: /^#\/smart$/, render: renderSmart },
+  { re: /^#\/pro$/, render: renderPro },
   { re: /^#\/body$/, render: renderBody },
   { re: /^#\/history(?:\/(.+))?$/, render: renderHistory },
   { re: /^#\/settings$/, render: renderSettings },
@@ -127,7 +129,13 @@ function router() {
   coachEdit = false; // кабінет відкривається в режимі перегляду профілю
   kcalKeyEdit = false; // екран калорій — без форми ключа
   bodyDate = null; // екран замірів щоразу відкривається на сьогодні (вибір дати живе лише в межах екрана)
-  const hash = location.hash || '#/today';
+  let hash = location.hash || '#/today';
+  // пробний період вийшов, підписки немає → усе веде на екран підписки
+  // (налаштування лишаємо доступними: там мова, експорт даних і сам статус)
+  if (BILL.locked() && hash !== '#/pro' && hash !== '#/settings') {
+    if (location.hash !== '#/pro') location.hash = '#/pro';
+    hash = '#/pro';
+  }
   for (const r of routes) {
     const m = hash.match(r.re);
     if (m) {
@@ -143,6 +151,18 @@ window.addEventListener('hashchange', router);
 
 function go(hash) {
   location.hash = hash;
+}
+
+// Одне нагадування на день, коли пробний період добігає кінця.
+function trialReminder() {
+  if (BILL.status() !== 'trial') return;
+  const left = BILL.trialLeft();
+  if (left > BILL.WARN_DAYS) return;
+  const iso = S.todayISO();
+  const s = S.getSettings();
+  if (s.trialNoticeISO === iso) return;
+  S.updateSettings({ trialNoticeISO: iso });
+  setTimeout(() => toast(`🎁 ${T('Пробний період')}: ${T('ще')} ${dayWord(left)}`), 1200);
 }
 
 // ---------- теми оформлення ----------
@@ -2302,6 +2322,116 @@ function smartTodayHint() {
 }
 
 // =====================================================================
+//  ЕКРАН: ПІДПИСКА (пробний період, покупка, відновлення)
+// =====================================================================
+async function renderPro() {
+  const st = BILL.status();
+  const days = BILL.trialLeft();
+  const sub = S.getSettings().billing && S.getSettings().billing.sub;
+  const head = st === 'active'
+    ? { ico: '⭐', title: T('Підписка активна'), sub: sub && sub.until ? `${T('діє до')} ${S.prettyDate(sub.until)}` : '' }
+    : st === 'trial'
+      ? { ico: '🎁', title: `${T('Пробний період')}: ${T('ще')} ${dayWord(days)}`, sub: T('Далі — за підпискою') }
+      : { ico: '🔒', title: T('Пробний період закінчився'), sub: T('Оформи підписку, щоб продовжити') };
+
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backPro" ${BILL.locked() ? 'hidden' : ''}>‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">${T('КАЧАЛКА')} PRO</div>
+        <div class="appbar-title">${T('Підписка')}</div></div>
+    </header>
+
+    <section class="card pro-hero">
+      <div class="pro-ico">${head.ico}</div>
+      <div>
+        <div class="pro-title">${esc(head.title)}</div>
+        ${head.sub ? `<div class="pro-sub">${esc(head.sub)}</div>` : ''}
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-label">${T('Що входить')}</div>
+      <ul class="pro-list">
+        <li>📷 ${T('Калорії по фото без обмежень')} <span class="muted">(${T('безкоштовно')} — ${BILL.FREE_PHOTOS} ${T('на день')})</span></li>
+        <li>🧠 ${T('Розумний тренер: аналіз відновлення')}</li>
+        <li>🎯 ${T('Програми власної ваги до 300 повторень')}</li>
+        <li>📹 ${T('Камера-тренер і аналіз техніки')}</li>
+        <li>📈 ${T('Уся історія, рекорди й графіки')}</li>
+      </ul>
+    </section>
+
+    <section class="card" id="planCard">
+      <div class="card-label">${T('Обери період')}</div>
+      <div class="plan-list" id="planList">
+        ${BILL.PRODUCTS.map((pr) => `
+          <button class="plan-opt" data-p="${pr.id}">
+            <span class="po-lab">${T(pr.label)}</span>
+            <span class="po-price" data-price="${pr.id}">—</span>
+            ${pr.note ? `<span class="po-note">${T(pr.note)}</span>` : ''}
+          </button>`).join('')}
+      </div>
+      <p class="muted side" id="payHint" style="margin-top:10px"></p>
+      <button class="btn ghost" id="restoreBtn" style="margin-top:10px">${T('Відновити покупку')}</button>
+    </section>
+
+    <p class="muted side">${T('Підписка списується через Google Play і скасовується там само. Дані тренувань залишаються на пристрої й після закінчення підписки.')}</p>
+  `;
+
+  const back = screenEl.querySelector('#backPro');
+  if (back) back.onclick = () => history.back();
+
+  // ціни з Play, якщо застосунок запущено з Google Play
+  const prices = await BILL.playPrices();
+  if (location.hash !== '#/pro') return;
+  const hint = screenEl.querySelector('#payHint');
+  if (prices.length) {
+    prices.forEach((p) => {
+      const el = screenEl.querySelector(`[data-price="${p.id}"]`);
+      if (el && p.price) el.textContent = p.price;
+    });
+  } else if (hint) {
+    hint.textContent = BILL.WEB_CHECKOUT
+      ? T('Оплата карткою у вікні, що відкриється')
+      : T('Оплату ще не підключено — з’явиться у версії з Google Play');
+  }
+
+  screenEl.querySelectorAll('.plan-opt').forEach((b) =>
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      const res = await BILL.buy(b.dataset.p);
+      b.disabled = false;
+      if (!res.ok) {
+        if (res.reason === 'no-billing') toast(`⚠️ ${T('Оплату ще не підключено — з’явиться у версії з Google Play')}`);
+        else if (res.reason !== 'web-checkout') toast(`⚠️ ${T('Покупку скасовано')}`);
+        return;
+      }
+      await applyPurchase(res);
+    })
+  );
+
+  screenEl.querySelector('#restoreBtn').onclick = async () => {
+    const res = await BILL.restore();
+    if (!res.ok) {
+      toast(`⚠️ ${res.reason === 'not-found' ? T('Активних покупок не знайдено') : T('Оплату ще не підключено — з’явиться у версії з Google Play')}`);
+      return;
+    }
+    await applyPurchase(res);
+  };
+}
+
+// Спільне для покупки й відновлення: звірити з сервером і записати підписку.
+async function applyPurchase(res) {
+  const ver = await BILL.verify(res);
+  if (ver.error) {
+    toast(`⚠️ ${T('Не вдалося підтвердити покупку')}`);
+    return;
+  }
+  BILL.setSubscription(ver);
+  toast(`⭐ ${T('Підписка активна')}`);
+  go('#/today');
+}
+
+// =====================================================================
 //  ЕКРАН: РОЗУМНИЙ ТРЕНЕР (аналіз відновлення, все рахується на пристрої)
 // =====================================================================
 const SMART_STATUS = {
@@ -2591,6 +2721,17 @@ function renderSettings() {
     </section>
 
     <section class="card">
+      <div class="card-label">${T('Підписка')}</div>
+      <button class="btn ghost" id="proBtn">${
+        BILL.status() === 'active'
+          ? `⭐ ${T('Підписка активна')}`
+          : BILL.status() === 'trial'
+            ? `🎁 ${T('Пробний період')}: ${T('ще')} ${dayWord(BILL.trialLeft())} ›`
+            : `🔒 ${T('Оформи підписку, щоб продовжити')} ›`
+      }</button>
+    </section>
+
+    <section class="card">
       <div class="card-label">${T('Вигляд')}</div>
       <div class="type-chips" id="themeChips">
         ${THEMES.map((th) => `<button class="tchip ${(s.theme || 'neon') === th.id ? 'on' : ''}" data-th="${th.id}">${T(th.label)}</button>`).join('')}
@@ -2675,6 +2816,7 @@ function renderSettings() {
   };
 
   // тема — застосовується миттєво, без перезавантаження
+  screenEl.querySelector('#proBtn').onclick = () => go('#/pro');
   screenEl.querySelector('#themeChips').addEventListener('click', (e) => {
     const b = e.target.closest('.tchip');
     if (!b) return;
@@ -3971,6 +4113,42 @@ function renderFormcheck() {
 //  ЕКРАН: КАЛОРІЇ ПО ФОТО
 // =====================================================================
 let kcalKeyEdit = false;
+// Картка стану на вкладці калорій: скільки фото лишилось і що з підпискою.
+function kcalStatusCard() {
+  const st = BILL.status();
+  const q = BILL.photoQuota();
+  const own = !!(S.getSettings().geminiKey || '').trim();
+  if (own) {
+    return `<section class="card kcal-status">
+      <div class="ks-main">🔑 ${T('Працює на твоєму ключі')}</div>
+      <div class="ks-sub">${T('Ліміти застосунку не діють — запити оплачуєш ти сам')}</div>
+    </section>`;
+  }
+  if (st === 'active') {
+    return `<section class="card kcal-status pro">
+      <div class="ks-main">⭐ ${T('Підписка активна')}</div>
+      <div class="ks-sub">${T('Фото без обмежень')}</div>
+    </section>`;
+  }
+  const left = q.left === Infinity ? '∞' : q.left;
+  const days = BILL.trialLeft();
+  return `<section class="card kcal-status ${q.left > 0 ? '' : 'out'}">
+    <div class="ks-main">📷 ${T('Безкоштовно сьогодні')}: <b>${left}</b> ${T('з')} ${BILL.FREE_PHOTOS}</div>
+    <div class="ks-sub">${days > 0
+      ? `${T('Пробний період')}: ${T('ще')} ${dayWord(days)}`
+      : T('Пробний період закінчився')}</div>
+    <button class="btn primary" id="kcalPro" style="margin-top:12px">⭐ ${T('Підписка — без обмежень')}</button>
+  </section>`;
+}
+
+// «1 день / 2 дні / 5 днів» — щоб підпис читався як речення
+function dayWord(n) {
+  const d = n % 10, dd = n % 100;
+  if (d === 1 && dd !== 11) return `${n} ${T('день')}`;
+  if (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) return `${n} ${T('дні')}`;
+  return `${n} ${T('днів')}`;
+}
+
 async function renderCalories() {
   const iso = selectedISO;
   const st = S.getSettings();
@@ -3980,8 +4158,11 @@ async function renderCalories() {
   // сервер власника (ключ-секрет на Supabase) — тоді користувачу ключ не потрібен
   const proxyOk = key ? false : await CAL.proxyAvailable();
   if (location.hash !== '#/calories') return; // за час перевірки пішли з екрана
-  const canAnalyze = !!key || proxyOk;
-  const showKeyForm = kcalKeyEdit || !canAnalyze;
+  const quota = BILL.photoQuota();
+  // ключ користувача — обхід наших лімітів: він платить за запити сам
+  const ownKey = !!key;
+  const canAnalyze = (ownKey || proxyOk) && (ownKey || BILL.canAnalyzePhoto());
+  const showKeyForm = kcalKeyEdit;
 
   const rows = list
     .map(
@@ -3999,9 +4180,11 @@ async function renderCalories() {
       <button class="icon-btn" id="keyBtn" title="${T('Ключ API (ChatGPT або Gemini)')}">🔑</button>
     </header>
 
+    ${kcalStatusCard()}
+
     ${showKeyForm
       ? `<section class="card">
-          <div class="card-label">🔑 ${T('Ключ API (ChatGPT або Gemini)')}</div>
+          <div class="card-label">🔑 ${T('Свій ключ API')} <span class="muted">${T('для досвідчених')}</span></div>
           <p class="muted hint">${T('Встав ключ OpenAI (ChatGPT) з platform.openai.com/api-keys — потрібен невеликий баланс на API, фото коштує копійки. Або безкоштовний ключ Google Gemini з aistudio.google.com/apikey. Застосунок сам розпізнає, який це ключ; зберігається він лише на цьому пристрої.')}</p>
           <div class="btn-col" style="margin-top:12px">
             <a class="btn ghost" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">🤖 OpenAI (ChatGPT): platform.openai.com/api-keys</a>
@@ -4016,7 +4199,15 @@ async function renderCalories() {
         </section>`
       : ''}
 
-    ${canAnalyze && !showKeyForm
+    ${!canAnalyze && !ownKey && !proxyOk && !showKeyForm
+      ? `<section class="card">
+          <div class="card-label">📷 ${T('Аналіз фото')}</div>
+          <p class="muted hint">${T('Сервер розпізнавання ще не підключено. Можна поки працювати на власному ключі API.')}</p>
+          <button class="btn ghost" id="ownKeyBtn" style="margin-top:10px">🔑 ${T('Свій ключ API')}</button>
+        </section>`
+      : ''}
+
+    ${canAnalyze
       ? `<section class="card">
           <div class="card-label">📷 ${T('Нова страва')}</div>
           <p class="muted hint">${T('Сфотографуй страву — ШІ оцінить калорійність і БЖВ')}</p>
@@ -4040,6 +4231,10 @@ async function renderCalories() {
 
   screenEl.querySelector('#backKcal').onclick = () => history.back();
   screenEl.querySelector('#keyBtn').onclick = () => { kcalKeyEdit = !kcalKeyEdit; renderCalories(); };
+  const proBtn = screenEl.querySelector('#kcalPro');
+  if (proBtn) proBtn.onclick = () => go('#/pro');
+  const ownBtn = screenEl.querySelector('#ownKeyBtn');
+  if (ownBtn) ownBtn.onclick = () => { kcalKeyEdit = true; renderCalories(); };
 
   const saveKeyBtn = screenEl.querySelector('#saveKey');
   if (saveKeyBtn)
@@ -4061,6 +4256,7 @@ async function renderCalories() {
     box().innerHTML = `<img class="food-prev" src="${url}" alt=""/><p class="muted center">🔎 ${T('Аналізую…')}</p>`;
     try {
       const r = await CAL.analyzeFoodPhoto(file, key, S.getSettings().lang);
+      if (!ownKey) BILL.usePhoto(); // запит пішов через наш сервер — рахуємо
       if (!box()) return; // користувач уже пішов з екрана
       if (!r.isFood) {
         box().innerHTML = `<img class="food-prev" src="${url}" alt=""/>
@@ -4157,6 +4353,7 @@ function flashAlarm(color) {
 // ---------- запуск ----------
 FX.initFx(S.getCustomSound); // аудіо розблоковується першим дотиком
 applyTheme(S.getSettings().theme); // тема з налаштувань — до першого малювання
+trialReminder(); // за 2 дні до кінця пробного — одне ненав'язливе нагадування
 renderTabbar();
 router();
 
