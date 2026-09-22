@@ -3,6 +3,7 @@ import * as S from './store.js';
 import { RingTimer, WorkStopwatch } from './timer.js';
 import * as SM from './smart.js';
 import * as BILL from './billing.js';
+import * as PH from './photos.js';
 import { NumberWheel } from './picker.js';
 import { getLandmarker, drawPose } from './pose.js';
 import * as FC from './formcheck.js';
@@ -364,6 +365,87 @@ function exCard(iso, id) {
     </button>`;
 }
 
+// Фото дня: знімки, зроблені в залі. Лежать в IndexedDB (js/photos.js),
+// у щоденник не потрапляють — тому картка наповнюється вже після малювання.
+function photosCard(iso) {
+  return `<section class="card photos-card" id="photosCard" data-iso="${iso}">
+    <div class="card-label">📸 ${T('Фото дня')} <span class="muted" id="phCount"></span></div>
+    <div class="ph-strip" id="phStrip"></div>
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn ghost" id="phCam">📷 ${T('Зняти')}</button>
+      <button class="btn ghost" id="phGal">🖼 ${T('З галереї')}</button>
+    </div>
+    <input type="file" id="phCamIn" accept="image/*" capture="environment" hidden/>
+    <input type="file" id="phGalIn" accept="image/*" multiple hidden/>
+  </section>`;
+}
+
+// Наповнити смужку знімками (і перемалювати після додавання чи видалення).
+async function refreshPhotos(iso) {
+  const strip = screenEl.querySelector('#phStrip');
+  const cnt = screenEl.querySelector('#phCount');
+  if (!strip) return;
+  let list = [];
+  try {
+    list = await PH.listByDay(iso);
+  } catch (e) {
+    strip.innerHTML = `<p class="muted">${T('Сховище фото недоступне')}</p>`;
+    return;
+  }
+  if (!screenEl.querySelector('#phStrip')) return; // екран уже змінився
+  if (cnt) cnt.textContent = list.length ? `· ${list.length}` : '';
+  strip.innerHTML = list.length
+    ? list.map((p) => `<button class="ph-thumb" data-id="${p.id}"><img src="${p.url}" alt=""/></button>`).join('')
+    : `<p class="muted">${T('Фото ще немає')}</p>`;
+  strip.querySelectorAll('.ph-thumb').forEach((b) =>
+    b.addEventListener('click', () => openPhoto(list.find((x) => x.id === b.dataset.id), iso))
+  );
+}
+
+// Перегляд на весь екран: тап по тлу закриває, кошик видаляє.
+function openPhoto(photo, iso) {
+  if (!photo) return;
+  const box = document.createElement('div');
+  box.className = 'ph-view';
+  box.innerHTML = `<img src="${photo.url}" alt=""/>
+    <button class="ph-del" title="${T('Видалити')}">🗑</button>`;
+  document.body.appendChild(box);
+  const close = () => box.remove();
+  box.addEventListener('click', (e) => {
+    if (e.target === box || e.target.tagName === 'IMG') close();
+  });
+  box.querySelector('.ph-del').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!confirm(T('Видалити це фото?'))) return;
+    await PH.remove(photo.id);
+    close();
+    refreshPhotos(iso);
+  });
+}
+
+// Події картки фото — чіпляються після того, як екран намальовано.
+function bindPhotos(iso) {
+  const card = screenEl.querySelector('#photosCard');
+  if (!card) return;
+  const camIn = screenEl.querySelector('#phCamIn');
+  const galIn = screenEl.querySelector('#phGalIn');
+  screenEl.querySelector('#phCam').onclick = () => camIn.click();
+  screenEl.querySelector('#phGal').onclick = () => galIn.click();
+  const take = async (files) => {
+    for (const f of files) {
+      try {
+        await PH.add(iso, f);
+      } catch (e) {
+        toast(`⚠️ ${T('Не вдалося зберегти фото')}`);
+      }
+    }
+    refreshPhotos(iso);
+  };
+  camIn.onchange = () => { if (camIn.files[0]) take([camIn.files[0]]); camIn.value = ''; };
+  galIn.onchange = () => { if (galIn.files.length) take([...galIn.files]); galIn.value = ''; };
+  refreshPhotos(iso);
+}
+
 // Підсумок дня для перегляду з календаря: що саме було зроблено того дня.
 function dayStatsCard(iso) {
   const stack = S.getDayStack(iso);
@@ -471,6 +553,7 @@ function renderToday() {
       return `<div class="day-volume">⚡ ${T('Обсяг тренування')}: <b>${t}${dv.reps} ${T('повт.')}</b></div>`;
     })()}
     ${isPast ? dayStatsCard(iso) : ''}
+    ${photosCard(iso)}
     <div class="day-actions">
       ${isPast ? '' : `<button class="btn ghost" id="manageW">${single ? '✏️ ' + T('Редагувати це тренування') : '🏋️ ' + T('Керувати тренуваннями')}</button>`}
 
@@ -510,6 +593,7 @@ function renderToday() {
     }
   };
 
+  bindPhotos(iso);
   const manageBtn = screenEl.querySelector('#manageW');
   if (manageBtn) manageBtn.onclick = () => go(single ? '#/workout/' + single : '#/workouts');
 }
