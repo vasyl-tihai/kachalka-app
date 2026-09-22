@@ -203,9 +203,12 @@ function renderTabbar() {
   );
 }
 function updateTabbar(hash) {
+  // день, відкритий з календаря, — це ще перегляд календаря, а не «Сьогодні»
+  const otherDay = (hash === '#/today' || hash === '#/') && selectedISO !== S.todayISO();
   tabbarEl.querySelectorAll('.tab').forEach((b) => {
-    const active =
-      hash.startsWith(b.dataset.hash) ||
+    const active = otherDay
+      ? b.dataset.hash === '#/calendar'
+      : hash.startsWith(b.dataset.hash) ||
       (b.dataset.hash === '#/today' && (hash === '#/' || hash === '#/calories')) ||
       (b.dataset.hash === '#/workouts' && hash.startsWith('#/workout')) ||
       (b.dataset.hash === '#/progress' && (hash.startsWith('#/history') || hash.startsWith('#/body'))) ||
@@ -361,6 +364,42 @@ function exCard(iso, id) {
     </button>`;
 }
 
+// Підсумок дня для перегляду з календаря: що саме було зроблено того дня.
+function dayStatsCard(iso) {
+  const stack = S.getDayStack(iso);
+  let sets = 0, reps = 0, tonnage = 0, secs = 0, doneEx = 0;
+  const rows = [];
+  for (const id of stack) {
+    const en = S.getEntry(iso, id);
+    if (!en || !en.sets || !en.sets.length) continue;
+    const ex = S.getExercise(id);
+    const v = S.entryVolume(en);
+    doneEx++;
+    sets += en.sets.length;
+    reps += v.reps;
+    tonnage += v.tonnage;
+    for (const st of en.sets) secs += Number(st.sec) || 0;
+    rows.push(`<div class="ds-row"><span class="ds-nm">${esc(ex ? ex.name : '')}</span>
+      <span class="ds-val">${en.sets.map((x) => x.reps).join(' · ')}</span></div>`);
+  }
+  if (!sets) {
+    return `<section class="card day-stats empty-day">
+      <div class="ds-none">😴 ${T('Того дня тренування не було')}</div>
+    </section>`;
+  }
+  const mm = Math.floor(secs / 60);
+  return `<section class="card day-stats">
+    <div class="card-label">📊 ${T('Підсумок дня')}</div>
+    <div class="ds-grid">
+      <div class="ds-cell"><b>${tonnage > 0 ? fmtKg(tonnage) : '—'}</b><span>${T('обсяг')}</span></div>
+      <div class="ds-cell"><b>${sets}</b><span>${T('підходів')}</span></div>
+      <div class="ds-cell"><b>${reps}</b><span>${T('повторень')}</span></div>
+      <div class="ds-cell"><b>${secs > 0 ? mm + ' ' + T('хв') : '—'}</b><span>${T('під вагою')}</span></div>
+    </div>
+    <div class="ds-list">${rows.join('')}</div>
+  </section>`;
+}
+
 function renderToday() {
   const iso = selectedISO;
   const isToday = iso === S.todayISO();
@@ -391,11 +430,13 @@ function renderToday() {
     : emptyToday();
 
   const single = dayWIds.length === 1 ? dayWIds[0] : null;
+  const isPast = iso < S.todayISO(); // минулий день — це перегляд, а не планування
 
   screenEl.innerHTML = `
     <header class="appbar">
+      ${isToday ? '' : `<button class="icon-btn" id="calTop" title="${T('До календаря')}">‹</button>`}
       <div class="appbar-titles">
-        <div class="appbar-kicker">${isToday ? T('Сьогодні') : T('Тренування')}</div>
+        <div class="appbar-kicker">${isToday ? T('Сьогодні') : T('Календар')}</div>
         <div class="appbar-title">${S.prettyDate(iso)}</div>
       </div>
       <button class="icon-btn" id="dateBtn" title="${T('Обрати дату')}">📅</button>
@@ -422,9 +463,10 @@ function renderToday() {
       const t = dv.tonnage > 0 ? `${fmtKg(dv.tonnage)} · ` : '';
       return `<div class="day-volume">⚡ ${T('Обсяг тренування')}: <b>${t}${dv.reps} ${T('повт.')}</b></div>`;
     })()}
+    ${isPast ? dayStatsCard(iso) : ''}
     <div class="day-actions">
-      <button class="btn ghost" id="manageW">${single ? '✏️ ' + T('Редагувати це тренування') : '🏋️ ' + T('Керувати тренуваннями')}</button>
-
+      ${isPast ? '' : `<button class="btn ghost" id="manageW">${single ? '✏️ ' + T('Редагувати це тренування') : '🏋️ ' + T('Керувати тренуваннями')}</button>`}
+      ${isToday ? '' : `<button class="btn ghost" id="calBack">📅 ${T('До календаря')}</button>`}
     </div>
   `;
 
@@ -458,7 +500,12 @@ function renderToday() {
     }
   };
   screenEl.querySelector('#dateBtn').onclick = () => dp.showPicker?.() || dp.focus();
-  screenEl.querySelector('#manageW').onclick = () => go(single ? '#/workout/' + single : '#/workouts');
+  const manageBtn = screenEl.querySelector('#manageW');
+  if (manageBtn) manageBtn.onclick = () => go(single ? '#/workout/' + single : '#/workouts');
+  const calBack = screenEl.querySelector('#calBack');
+  if (calBack) calBack.onclick = () => go('#/calendar');
+  const calTop = screenEl.querySelector('#calTop');
+  if (calTop) calTop.onclick = () => go('#/calendar');
 }
 
 function emptyToday() {

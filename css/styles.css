@@ -1339,3 +1339,15 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
   position: absolute; top: -9px; right: 8px; font-size: .68rem; font-weight: 800;
   background: var(--gold); color: #1b1b1b; border-radius: 8px; padding: 2px 6px;
 }
+
+/* ПІДСУМОК ДНЯ (перегляд минулої дати з календаря) */
+.day-stats .ds-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.day-stats .ds-cell { background: var(--bg-card2); border-radius: 14px; padding: 10px 8px; text-align: center; }
+.day-stats .ds-cell b { display: block; font-size: 1.05rem; font-weight: 800; }
+.day-stats .ds-cell span { display: block; color: var(--muted); font-size: .7rem; margin-top: 3px; }
+.day-stats .ds-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.day-stats .ds-row { display: flex; justify-content: space-between; gap: 10px; font-size: .85rem; }
+.day-stats .ds-nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.day-stats .ds-val { color: var(--muted); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+.day-stats.empty-day { text-align: center; }
+.day-stats .ds-none { color: var(--muted); font-weight: 600; }
