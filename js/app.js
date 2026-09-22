@@ -189,7 +189,7 @@ const TABS = [
   { hash: '#/today', icon: '🏋️', label: 'Сьогодні' },
   { hash: '#/calendar', icon: '📅', label: 'Календар' },
   { hash: '#/workouts', icon: '📋', label: 'Тренування' },
-  { hash: '#/formcheck', icon: '📷', label: 'Аналіз' },
+  { hash: '#/formcheck', icon: '📷', label: 'Сканер' },
   { hash: '#/progress', icon: '📈', label: 'Прогрес' },
   { hash: '#/community', icon: '👥', label: 'Спільнота' },
 ];
@@ -4076,7 +4076,7 @@ function renderFormcheck() {
   const kcalToday = S.calorieDayTotal(S.todayISO()).kcal;
   screenEl.innerHTML = `
     <header class="appbar">
-      <div class="appbar-titles"><div class="appbar-kicker">📷 ${T('Аналіз')}</div>
+      <div class="appbar-titles"><div class="appbar-kicker">📷 ${T('Сканер')}</div>
         <div class="appbar-title">КАЧАЛКА</div></div>
     </header>
 
