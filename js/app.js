@@ -156,6 +156,7 @@ function go(hash) {
 
 // Одне нагадування на день, коли пробний період добігає кінця.
 function trialReminder() {
+  if (!BILL.ENFORCE) return; // оплата ще не підключена — не нагадуємо
   if (BILL.status() !== 'trial') return;
   const left = BILL.trialLeft();
   if (left > BILL.WARN_DAYS) return;
@@ -2848,12 +2849,9 @@ function renderSettings() {
     <section class="card">
       <div class="card-label">${T('Підписка')}</div>
       <button class="btn ghost" id="proBtn">${
-        BILL.status() === 'active'
-          ? `⭐ ${T('Підписка активна')}`
-          : BILL.status() === 'trial'
-            ? `🎁 ${T('Пробний період')}: ${T('ще')} ${dayWord(BILL.trialLeft())} ›`
-            : `🔒 ${T('Оформи підписку, щоб продовжити')} ›`
+        BILL.status() === 'active' ? `⭐ ${T('Підписка активна')} ›` : `⭐ ${T('Оформити підписку')} ›`
       }</button>
+      <p class="muted side" style="margin:8px 4px 0">${T('Безкоштовно')}: ${BILL.FREE_PHOTOS} ${T('фото на день')}</p>
     </section>
 
     <section class="card">
@@ -4240,7 +4238,6 @@ function renderFormcheck() {
 let kcalKeyEdit = false;
 // Картка стану на вкладці калорій: скільки фото лишилось і що з підпискою.
 function kcalStatusCard() {
-  const st = BILL.status();
   const q = BILL.photoQuota();
   const own = !!(S.getSettings().geminiKey || '').trim();
   if (own) {
@@ -4249,20 +4246,19 @@ function kcalStatusCard() {
       <div class="ks-sub">${T('Ліміти застосунку не діють — запити оплачуєш ти сам')}</div>
     </section>`;
   }
-  if (st === 'active') {
+  if (BILL.status() === 'active') {
     return `<section class="card kcal-status pro">
       <div class="ks-main">⭐ ${T('Підписка активна')}</div>
       <div class="ks-sub">${T('Фото без обмежень')}</div>
     </section>`;
   }
   const left = q.left === Infinity ? '∞' : q.left;
-  const days = BILL.trialLeft();
-  return `<section class="card kcal-status ${q.left > 0 ? '' : 'out'}">
+  const out = q.left <= 0;
+  return `<section class="card kcal-status ${out ? 'out' : ''}">
     <div class="ks-main">📷 ${T('Безкоштовно сьогодні')}: <b>${left}</b> ${T('з')} ${BILL.FREE_PHOTOS}</div>
-    <div class="ks-sub">${days > 0
-      ? `${T('Пробний період')}: ${T('ще')} ${dayWord(days)}`
-      : T('Пробний період закінчився')}</div>
-    <button class="btn primary" id="kcalPro" style="margin-top:12px">⭐ ${T('Підписка — без обмежень')}</button>
+    <div class="ks-sub">${out
+      ? T('Ліміт на сьогодні вичерпано — далі потрібна підписка')
+      : T('Наступні фото — завтра або за підпискою')}</div>
   </section>`;
 }
 
@@ -4356,8 +4352,6 @@ async function renderCalories() {
 
   screenEl.querySelector('#backKcal').onclick = () => history.back();
   screenEl.querySelector('#keyBtn').onclick = () => { kcalKeyEdit = !kcalKeyEdit; renderCalories(); };
-  const proBtn = screenEl.querySelector('#kcalPro');
-  if (proBtn) proBtn.onclick = () => go('#/pro');
   const ownBtn = screenEl.querySelector('#ownKeyBtn');
   if (ownBtn) ownBtn.onclick = () => { kcalKeyEdit = true; renderCalories(); };
 
@@ -4377,6 +4371,10 @@ async function renderCalories() {
   const box = () => screenEl.querySelector('#analyzeBox');
   const analyze = async (file) => {
     if (!file || !box()) return;
+    if (!ownKey && !BILL.canAnalyzePhoto()) {
+      toast(`📷 ${T('Ліміт на сьогодні вичерпано — далі потрібна підписка')}`);
+      return;
+    }
     const url = URL.createObjectURL(file);
     box().innerHTML = `<img class="food-prev" src="${url}" alt=""/><p class="muted center">🔎 ${T('Аналізую…')}</p>`;
     try {

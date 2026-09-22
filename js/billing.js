@@ -18,6 +18,9 @@ export const TRIAL_DAYS = 7; // скільки днів працює безко�
 export const FREE_PHOTOS = 3; // фото-аналізів на день у пробному періоді
 export const PRO_PHOTOS = 0; // 0 = без обмежень для підписників
 export const WARN_DAYS = 2; // за скільки днів до кінця нагадати
+// ENFORCE=false — поки оплата не підключена, застосунок НЕ замикається після
+// пробного тижня й не нагадує про підписку. Денний ліміт фото діє завжди.
+export const ENFORCE = false;
 
 // товари: ті самі id треба завести в Google Play Console і в веб-оплаті
 export const PRODUCTS = [
@@ -75,7 +78,7 @@ export function status() {
 
 /** Чи показувати пейвол замість застосунку. */
 export function locked() {
-  return status() === 'expired';
+  return ENFORCE && status() === 'expired';
 }
 
 /** Ліміт фото на сьогодні: { used, limit, left } (limit 0 = без обмежень). */
