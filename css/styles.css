@@ -1351,3 +1351,9 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
 .day-stats .ds-val { color: var(--muted); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
 .day-stats.empty-day { text-align: center; }
 .day-stats .ds-none { color: var(--muted); font-weight: 600; }
+
+/* кнопка переходу в календар — у рядку з датою, замість емодзі у шапці */
+.chip.cal-btn { display: grid; place-items: center; padding: 8px 12px; color: var(--blue-soft); }
+.chip.cal-btn svg { width: 22px; height: 22px; display: block; }
+/* нативна іконка в полі дати дублює кнопку календаря — ховаємо, поле лишається клікабельним */
+.date-input::-webkit-calendar-picker-indicator { opacity: 0; width: 0; padding: 0; margin: 0; }

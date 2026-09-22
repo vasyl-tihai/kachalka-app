@@ -434,18 +434,25 @@ function renderToday() {
 
   screenEl.innerHTML = `
     <header class="appbar">
-      ${isToday ? '' : `<button class="icon-btn" id="calTop" title="${T('До календаря')}">‹</button>`}
       <div class="appbar-titles">
         <div class="appbar-kicker">${isToday ? T('Сьогодні') : T('Календар')}</div>
         <div class="appbar-title">${S.prettyDate(iso)}</div>
       </div>
-      <button class="icon-btn" id="dateBtn" title="${T('Обрати дату')}">📅</button>
     </header>
     <div class="day-nav">
       <button class="chip" id="prevDay">‹</button>
       <input type="date" id="datePick" value="${iso}" class="date-input"/>
       <button class="chip" id="nextDay">›</button>
-      <button class="chip ghost" id="todayBtn">${T('Сьогодні')}</button>
+      ${isToday ? '' : `<button class="chip ghost" id="todayBtn">${T('Сьогодні')}</button>`}
+      <button class="chip cal-btn" id="calBtn" title="${T('До календаря')}" aria-label="${T('До календаря')}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <rect x="3" y="5" width="18" height="16" rx="3"></rect>
+          <path d="M8 3v4M16 3v4M3 10h18"></path>
+          <circle cx="8.5" cy="14.5" r="1.1" fill="currentColor" stroke="none"></circle>
+          <circle cx="12" cy="14.5" r="1.1" fill="currentColor" stroke="none"></circle>
+          <circle cx="15.5" cy="14.5" r="1.1" fill="currentColor" stroke="none"></circle>
+        </svg>
+      </button>
     </div>
     ${statStrip()}
     <div class="wsel ${workoutSelOpen ? 'open' : ''}">
@@ -466,7 +473,7 @@ function renderToday() {
     ${isPast ? dayStatsCard(iso) : ''}
     <div class="day-actions">
       ${isPast ? '' : `<button class="btn ghost" id="manageW">${single ? '✏️ ' + T('Редагувати це тренування') : '🏋️ ' + T('Керувати тренуваннями')}</button>`}
-      ${isToday ? '' : `<button class="btn ghost" id="calBack">📅 ${T('До календаря')}</button>`}
+
     </div>
   `;
 
@@ -488,10 +495,13 @@ function renderToday() {
   );
   screenEl.querySelector('#prevDay').onclick = () => shiftDay(-1);
   screenEl.querySelector('#nextDay').onclick = () => shiftDay(1);
-  screenEl.querySelector('#todayBtn').onclick = () => {
-    selectedISO = S.todayISO();
-    router();
-  };
+  const todayBtn = screenEl.querySelector('#todayBtn');
+  if (todayBtn)
+    todayBtn.onclick = () => {
+      selectedISO = S.todayISO();
+      router();
+    };
+  screenEl.querySelector('#calBtn').onclick = () => go('#/calendar');
   const dp = screenEl.querySelector('#datePick');
   dp.onchange = () => {
     if (dp.value) {
@@ -499,13 +509,9 @@ function renderToday() {
       router();
     }
   };
-  screenEl.querySelector('#dateBtn').onclick = () => dp.showPicker?.() || dp.focus();
+
   const manageBtn = screenEl.querySelector('#manageW');
   if (manageBtn) manageBtn.onclick = () => go(single ? '#/workout/' + single : '#/workouts');
-  const calBack = screenEl.querySelector('#calBack');
-  if (calBack) calBack.onclick = () => go('#/calendar');
-  const calTop = screenEl.querySelector('#calTop');
-  if (calTop) calTop.onclick = () => go('#/calendar');
 }
 
 function emptyToday() {
