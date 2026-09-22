@@ -424,8 +424,7 @@ function renderToday() {
     })()}
     <div class="day-actions">
       <button class="btn ghost" id="manageW">${single ? '✏️ ' + T('Редагувати це тренування') : '🏋️ ' + T('Керувати тренуваннями')}</button>
-      <button class="btn ghost" id="kcalBtn">🍎 ${T('Калорії')}: ${S.calorieDayTotal(iso).kcal} ${T('ккал')} ›</button>
-      <button class="btn ghost" id="smartBtn">🧠 ${T('Розумний тренер')}${smartTodayHint()} ›</button>
+
     </div>
   `;
 
@@ -460,8 +459,6 @@ function renderToday() {
   };
   screenEl.querySelector('#dateBtn').onclick = () => dp.showPicker?.() || dp.focus();
   screenEl.querySelector('#manageW').onclick = () => go(single ? '#/workout/' + single : '#/workouts');
-  screenEl.querySelector('#smartBtn').onclick = () => go('#/smart');
-  screenEl.querySelector('#kcalBtn').onclick = () => go('#/calories');
 }
 
 function emptyToday() {
@@ -1694,7 +1691,6 @@ function renderWorkouts() {
   screenEl.querySelector('#progsBtn').onclick = () => go('#/programs');
   screenEl.querySelector('#addW').onclick = () => openNewWorkout();
   screenEl.querySelector('#histBtn').onclick = () => go('#/history');
-  screenEl.querySelector('#smartBtn2').onclick = () => go('#/smart');
   screenEl.querySelectorAll('.plan-row').forEach((r) =>
     r.addEventListener('click', () => openDayPlanEditor(parseInt(r.dataset.dow, 10)))
   );
@@ -2303,22 +2299,14 @@ function renderProgress() {
       <button class="btn ghost" id="bodyBtn">📏 Заміри тіла${bw ? ` · ${bw.value} кг` : ''}</button>
       <button class="btn ghost" id="histBtn">📈 Історія по вправах</button>
       <button class="btn ghost" id="smartBtn2">🧠 Розумний тренер — відновлення</button>
+      <button class="btn ghost" id="kcalBtn2">🍎 Калорії по фото</button>
     </div>
   `;
   screenEl.querySelector('#setBtn').onclick = () => go('#/settings');
   screenEl.querySelector('#bodyBtn').onclick = () => go('#/body');
   screenEl.querySelector('#histBtn').onclick = () => go('#/history');
-}
-
-// короткий підпис для кнопки «Розумний тренер» на екрані дня
-function smartTodayHint() {
-  try {
-    const ready = SM.readyToday();
-    if (ready.length) return `: ${ready.slice(0, 2).map((m) => m.label).join(', ')} ${T('готові')}`;
-  } catch (e) {
-    /* історії ще немає — показуємо кнопку без підпису */
-  }
-  return '';
+  screenEl.querySelector('#smartBtn2').onclick = () => go('#/smart');
+  screenEl.querySelector('#kcalBtn2').onclick = () => go('#/calories');
 }
 
 // =====================================================================
