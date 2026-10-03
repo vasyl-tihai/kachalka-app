@@ -23,7 +23,7 @@
 <body>
 <main>
   <h1>Політика конфіденційності</h1>
-  <div class="upd">Застосунок «КАЧАЛКА». Оновлено 3 жовтня 2026 р.</div>
+  <div class="upd">Застосунок «КАЧАЛКА». Оновлено 4 жовтня 2026 р.</div>
 
   <p>Коротко: щоденник тренувань зберігається на твоєму пристрої. Ми не продаємо дані, не
   показуємо реклами й не збираємо нічого «про всяк випадок».</p>
@@ -49,6 +49,10 @@
     <li><b>Якщо ти реєструєшся у «Спільноті»</b> — пошта, імʼя та те, що ти сам публікуєш,
       зберігаються на сервері (Supabase). Без реєстрації цей розділ нічого не надсилає.
       Вхід через Google передає нам лише пошту й імʼя з твого Google-акаунта.</li>
+    <li><b>Автоімпорт рецепта</b> (тільки коли ти сам його запускаєш): фото рецепта або
+      посилання (стаття, YouTube, TikTok) надсилається на наш сервер, він відкриває сторінку
+      за посиланням і передає текст або фото OpenAI, щоб скласти рецепт. Ні фото, ні посилання
+      на сервері не зберігаються — результат лягає лише у твою форму на пристрої.</li>
     <li><b>Відео в рецептах</b>: якщо до свого рецепта ти додаєш посилання на YouTube,
       ролик показується через youtube-nocookie.com; кнопка «Відео» відкриває YouTube.
       Що при цьому бачить YouTube — регулює політика Google.</li>
@@ -93,7 +97,9 @@
         estimate calories; the photo is not stored. A purchase token is sent to Google Play
         to verify the subscription. If you sign up for the Community section, your email,
         name and what you post are stored on our server (Supabase); Google sign-in shares
-        only your email and name. A YouTube link you add to your own recipe is played via
+        only your email and name. Recipe auto-import (only when you start it) sends the
+        recipe photo or link to our server, which reads the page and asks OpenAI to build the
+        recipe; neither is stored. A YouTube link you add to your own recipe is played via
         youtube-nocookie.com.</li>
       <li><b>Camera:</b> the form-analysis feature runs pose detection on the device; video
         is never uploaded or recorded.</li>
