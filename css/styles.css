@@ -1107,6 +1107,7 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
   margin-bottom: 12px;
 }
 .demo-banner .mini { width: auto; height: auto; padding: 7px 12px; font-size: .82rem; }
+[data-theme="light"] .demo-banner { color: #7a5200; background: rgba(255, 194, 75, .18); border-color: rgba(176, 120, 0, .45); }
 /* Спільнота: перемикач розділів Рецепти / Стрічка / Люди */
 .cseg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; margin: 0 0 12px; background: var(--bg-card2); border: 1px solid var(--line); border-radius: 14px; }
 .cseg button { border: 0; background: none; color: var(--muted); font: inherit; font-weight: 800; font-size: .9rem; padding: 9px 4px; border-radius: 10px; cursor: pointer; }
