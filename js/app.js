@@ -8,6 +8,7 @@ import { NumberWheel } from './picker.js';
 import { getLandmarker, drawPose } from './pose.js';
 import * as FC from './formcheck.js';
 import { t as T, setLang, LANGS, plural as PL, dateNames } from './i18n.js';
+import { mountBody3D, BODY_PARTS, BODY_BASE } from './body3d.js';
 import { exIconHTML, patternIconHTML } from './exicons.js';
 import * as FX from './fx.js';
 import * as BE from './backend.js';
@@ -83,18 +84,20 @@ let autoStartWork = false;
 let communityDemo = false;
 
 // екран замірів тіла: обрана метрика і дата запису
-let bodyMetric = 'bodyWeight';
+let bodyMetric = 'chest';
+let bodyAngle = -0.35; // поворот 3D-фігури між заходами на екран
 let bodyDate = null;
 
 // активні «живі» компоненти, які треба знищувати при зміні екрана
-let live = { timer: null, work: null, wheel: null, camera: null, chat: null };
+let live = { timer: null, work: null, wheel: null, camera: null, chat: null, body3d: null };
 function clearLive() {
   if (live.timer) live.timer.destroy();
   if (live.work) live.work.destroy();
   if (live.wheel && live.wheel.destroy) live.wheel.destroy();
   if (live.camera && live.camera.destroy) live.camera.destroy();
   if (live.chat && live.chat.destroy) live.chat.destroy();
-  live = { timer: null, work: null, wheel: null, camera: null, chat: null };
+  if (live.body3d) { bodyAngle = live.body3d.angle(); live.body3d.destroy(); }
+  live = { timer: null, work: null, wheel: null, camera: null, chat: null, body3d: null };
 }
 
 // ---------- маршрутизація ----------
@@ -2704,89 +2707,192 @@ function renderSmart() {
 //  ЕКРАН: ЗАМІРИ ТІЛА
 // =====================================================================
 function renderBody() {
-  if (!S.BODY_METRICS.some((m) => m.id === bodyMetric)) bodyMetric = 'bodyWeight';
-  const dateISO = bodyDate || S.todayISO();
-  const existing = S.getMeasurement(dateISO);
-  const metric = S.BODY_METRICS.find((m) => m.id === bodyMetric) || S.BODY_METRICS[0];
-  const rows = S.measurementHistory(bodyMetric);
-  const latest = S.latestMeasurement(bodyMetric);
-  const dates = S.measurementDates();
-
-  const chips = S.BODY_METRICS.map(
-    (m) => `<button class="hchip ${m.id === bodyMetric ? 'on' : ''}" data-m="${m.id}">${esc(m.label)}</button>`
-  ).join('');
-
-  const inputs = S.BODY_METRICS.map(
-    (m) => `<div class="field"><label>${esc(m.label)} <span class="muted">${m.unit}</span></label>
-      <input type="number" inputmode="decimal" step="0.1" min="0" data-metric="${m.id}" value="${existing[m.id] != null ? existing[m.id] : ''}" placeholder="—"/></div>`
-  ).join('');
-
-  let deltaHtml = '';
-  if (latest) {
-    const d = latest.delta;
-    const cls = d > 0 ? 'up' : d < 0 ? 'down' : '';
-    const sign = d > 0 ? '+' : '';
-    deltaHtml = `<div class="body-latest">
-      <span class="bl-val">${latest.value} <small>${metric.unit}</small></span>
-      ${latest.count > 1 ? `<span class="bl-delta ${cls}">${sign}${d} ${metric.unit} від старту</span>` : '<span class="muted">перший запис</span>'}
-    </div>`;
-  }
-
-  const histList = dates.length
-    ? dates
-        .map((iso) => {
-          const m = S.getMeasurement(iso);
-          const parts = S.BODY_METRICS.filter((mt) => m[mt.id] != null).map((mt) => `${esc(mt.label)} ${m[mt.id]}${mt.unit}`);
-          return `<div class="bhist-row"><span class="bhist-date">${S.prettyDate(iso)}</span>
-            <span class="bhist-vals">${parts.join(' · ')}</span>
-            <button class="set-del" data-iso="${iso}" title="Видалити">✕</button></div>`;
-        })
-        .join('')
-    : '';
+  if (!S.BODY_METRICS.some((m) => m.id === bodyMetric)) bodyMetric = 'chest';
+  const sex = S.getSettings().sex === 'f' ? 'f' : 'm';
+  const extra = S.BODY_METRICS.filter((m) => !BODY_PARTS.includes(m.id));
 
   screenEl.innerHTML = `
     <header class="appbar">
       <button class="icon-btn" id="backBtn">‹</button>
-      <div class="appbar-titles"><div class="appbar-kicker">Прогрес</div>
-        <div class="appbar-title">Заміри тіла</div></div>
+      <div class="appbar-titles"><div class="appbar-kicker">${T('Прогрес')}</div>
+        <div class="appbar-title">${T('Заміри тіла')}</div></div>
     </header>
-    <div class="hchips">${chips}</div>
-    <div class="chart-card">
-      <div class="card-label">${esc(metric.label)}, ${metric.unit}</div>
-      ${deltaHtml}
-      ${lineChartSVG(rows)}
-    </div>
-    <section class="card">
-      <div class="card-label">Записати заміри</div>
-      <div class="field"><label>Дата</label><input type="date" id="bDate" value="${dateISO}" class="date-input"/></div>
-      <div class="metric-grid">${inputs}</div>
-      <button class="btn primary" id="saveBody">Зберегти заміри</button>
+    <section class="b3d-card">
+      <div class="b3d-seg" id="sexSeg">
+        <button data-sex="m" class="${sex === 'm' ? 'on' : ''}">${T('Чоловік')}</button>
+        <button data-sex="f" class="${sex === 'f' ? 'on' : ''}">${T('Жінка')}</button>
+      </div>
+      <div class="b3d-stage" id="b3dStage"></div>
+      <div class="b3d-hint" id="b3dHint">${T('Тягни, щоб повернути · тапни на частину тіла')}</div>
+      <div class="b3d-extra" id="b3dExtra">${extra
+        .map((m) => `<button class="b3d-chip" data-m="${m.id}"><span>${esc(T(m.label))}</span><b></b></button>`)
+        .join('')}</div>
     </section>
-    ${histList ? `<div class="card-label bhist-title">Історія замірів</div><div class="bhist">${histList}</div>` : ''}
+    <div id="bodyDetails"></div>
   `;
 
   screenEl.querySelector('#backBtn').onclick = () => go('#/progress');
-  screenEl.querySelectorAll('.hchip').forEach((b) =>
-    b.addEventListener('click', () => { bodyMetric = b.dataset.m; renderBody(); })
-  );
-  const dateInp = screenEl.querySelector('#bDate');
-  dateInp.onchange = () => { bodyDate = dateInp.value || S.todayISO(); renderBody(); };
-  screenEl.querySelector('#saveBody').onclick = () => {
-    const patch = {};
-    screenEl.querySelectorAll('[data-metric]').forEach((inp) => { patch[inp.dataset.metric] = inp.value; });
-    S.setMeasurement(dateInp.value || dateISO, patch);
-    toast('Заміри збережено');
-    renderBody();
+
+  const latestVals = () => {
+    const v = {};
+    S.BODY_METRICS.forEach((m) => { const l = S.latestMeasurement(m.id); if (l) v[m.id] = l.value; });
+    return v;
   };
-  screenEl.querySelectorAll('.bhist-row .set-del').forEach((b) =>
+  const labelsFor = (v) => {
+    const l = {};
+    BODY_PARTS.forEach((id) => {
+      const m = S.BODY_METRICS.find((x) => x.id === id);
+      l[id] = { title: T(m.short || m.label), value: v[id] != null ? `${v[id]} ${T(m.unit)}` : '—' };
+    });
+    return l;
+  };
+  const paintExtra = (v) => {
+    screenEl.querySelectorAll('.b3d-chip').forEach((b) => {
+      const m = S.BODY_METRICS.find((x) => x.id === b.dataset.m);
+      b.querySelector('b').textContent = v[m.id] != null ? `${v[m.id]} ${T(m.unit)}` : '—';
+      b.classList.toggle('on', m.id === bodyMetric);
+    });
+  };
+
+  const selectMetric = (id) => {
+    bodyMetric = id;
+    if (live.body3d) live.body3d.select(BODY_PARTS.includes(id) ? id : null);
+    paintExtra(latestVals());
+    paintBodyDetails();
+  };
+  screenEl.querySelectorAll('.b3d-chip').forEach((b) => b.addEventListener('click', () => selectMetric(b.dataset.m)));
+
+  screenEl.querySelectorAll('#sexSeg button').forEach((b) =>
     b.addEventListener('click', () => {
-      const iso = b.dataset.iso;
-      if (confirm(`Видалити заміри за ${S.prettyDate(iso)}?`)) {
-        S.deleteMeasurement(iso);
-        renderBody();
-      }
+      S.updateSettings({ sex: b.dataset.sex });
+      screenEl.querySelectorAll('#sexSeg button').forEach((x) => x.classList.toggle('on', x === b));
+      if (live.body3d) live.body3d.update({}, b.dataset.sex);
     })
   );
+
+  // нижня частина: редактор вибраного заміру, графік, історія
+  function paintBodyDetails() {
+    const box = screenEl.querySelector('#bodyDetails');
+    if (!box) return;
+    const dateISO = bodyDate || S.todayISO();
+    const metric = S.BODY_METRICS.find((m) => m.id === bodyMetric);
+    const unit = T(metric.unit);
+    const onDate = S.getMeasurement(dateISO)[metric.id];
+    const latest = S.latestMeasurement(metric.id);
+    const startVal = onDate != null ? onDate : latest ? latest.value : '';
+    const rows = S.measurementHistory(metric.id);
+    const dates = S.measurementDates();
+
+    let deltaHtml = '';
+    if (latest) {
+      const d = latest.delta;
+      const cls = d > 0 ? 'up' : d < 0 ? 'down' : '';
+      const sign = d > 0 ? '+' : '';
+      deltaHtml = `<div class="body-latest">
+        <span class="bl-val">${latest.value} <small>${unit}</small></span>
+        ${latest.count > 1 ? `<span class="bl-delta ${cls}">${sign}${d} ${unit} ${T('від старту')}</span>` : `<span class="muted">${T('перший запис')}</span>`}
+      </div>`;
+    }
+    const histList = dates
+      .map((iso) => {
+        const m = S.getMeasurement(iso);
+        const parts = S.BODY_METRICS.filter((mt) => m[mt.id] != null).map((mt) => `${esc(T(mt.short || mt.label))} ${m[mt.id]}${T(mt.unit)}`);
+        return `<div class="bhist-row"><span class="bhist-date">${S.prettyDate(iso)}</span>
+          <span class="bhist-vals">${parts.join(' · ')}</span>
+          <button class="set-del" data-iso="${iso}" title="${T('Видалити')}">✕</button></div>`;
+      })
+      .join('');
+
+    box.innerHTML = `
+      <section class="card b3d-editor">
+        <div class="b3d-ed-head">
+          <span class="b3d-ed-title">${esc(T(metric.label))}</span>
+          <input type="date" id="bDate" value="${dateISO}" class="date-input b3d-date"/>
+        </div>
+        <div class="b3d-ed-row">
+          <button class="b3d-step" id="bMinus" aria-label="−">−</button>
+          <div class="b3d-val"><input type="number" inputmode="decimal" step="0.1" min="0" id="bVal" value="${startVal}" placeholder="—"/><span>${unit}</span></div>
+          <button class="b3d-step" id="bPlus" aria-label="+">+</button>
+        </div>
+        <button class="btn primary" id="saveBody">${T('Зберегти')}</button>
+      </section>
+      <div class="chart-card">
+        <div class="card-label">${esc(T(metric.label))}, ${unit}</div>
+        ${deltaHtml}
+        ${lineChartSVG(rows)}
+      </div>
+      ${histList ? `<div class="card-label bhist-title">${T('Історія замірів')}</div><div class="bhist">${histList}</div>` : ''}
+    `;
+
+    const valInp = box.querySelector('#bVal');
+    // фігура міняється одразу, ще до збереження
+    const preview = () => {
+      const n = Number(valInp.value);
+      if (live.body3d && n > 0) live.body3d.update({ [metric.id]: n });
+    };
+    const step = (d) => {
+      const n = Number(valInp.value) || (latest ? latest.value : BODY_BASE[sex][metric.id]) || 0;
+      valInp.value = Math.max(0, Math.round((n + d) * 10) / 10);
+      preview();
+    };
+    box.querySelector('#bMinus').onclick = () => step(-0.5);
+    box.querySelector('#bPlus').onclick = () => step(0.5);
+    valInp.oninput = preview;
+    const dateInp = box.querySelector('#bDate');
+    dateInp.onchange = () => { bodyDate = dateInp.value || S.todayISO(); paintBodyDetails(); };
+    const refresh = () => {
+      const v = latestVals();
+      if (live.body3d) { live.body3d.setLabels(labelsFor(v)); live.body3d.update(v); }
+      paintExtra(v);
+      paintBodyDetails();
+    };
+    box.querySelector('#saveBody').onclick = () => {
+      S.setMeasurement(dateInp.value || dateISO, { [metric.id]: valInp.value });
+      toast(T('Заміри збережено'));
+      refresh();
+    };
+    box.querySelectorAll('.bhist-row .set-del').forEach((b) =>
+      b.addEventListener('click', () => {
+        const iso = b.dataset.iso;
+        if (confirm(`${T('Видалити заміри за')} ${S.prettyDate(iso)}?`)) {
+          S.deleteMeasurement(iso);
+          refresh();
+        }
+      })
+    );
+  }
+
+  const vals = latestVals();
+  paintExtra(vals);
+  paintBodyDetails();
+
+  const stage = screenEl.querySelector('#b3dStage');
+  const hash = location.hash;
+  mountBody3D(stage, {
+    sex,
+    values: vals,
+    selected: BODY_PARTS.includes(bodyMetric) ? bodyMetric : null,
+    labels: labelsFor(vals),
+    angle: bodyAngle,
+    onPick: selectMetric,
+  })
+    .then((b3d) => {
+      // користувач міг піти з екрана, поки вантажився Three.js
+      if (location.hash !== hash || !stage.isConnected) { b3d.destroy(); return; }
+      live.body3d = b3d;
+    })
+    .catch(() => {
+      // без WebGL — звичайний список частин тіла замість фігури
+      stage.classList.add('b3d-fallback');
+      screenEl.querySelector('#b3dHint').textContent = T('3D-фігура недоступна на цьому пристрої');
+      const ex = screenEl.querySelector('#b3dExtra');
+      ex.insertAdjacentHTML('afterbegin', BODY_PARTS.map((id) => {
+        const m = S.BODY_METRICS.find((x) => x.id === id);
+        return `<button class="b3d-chip" data-m="${id}"><span>${esc(T(m.short || m.label))}</span><b></b></button>`;
+      }).join(''));
+      ex.querySelectorAll('.b3d-chip').forEach((b) => { b.onclick = () => selectMetric(b.dataset.m); });
+      paintExtra(latestVals());
+    });
 }
 
 // бейдж рекордів для екрана історії по вправі

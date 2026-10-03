@@ -56,9 +56,9 @@ export const BODY_METRICS = [
   { id: 'bodyWeight', label: 'Вага тіла', unit: 'кг' },
   { id: 'chest', label: 'Груди', unit: 'см' },
   { id: 'waist', label: 'Талія', unit: 'см' },
-  { id: 'hips', label: 'Стегна', unit: 'см' },
+  { id: 'hips', label: 'Обхват стегон', short: 'Стегна', unit: 'см' },
   { id: 'biceps', label: 'Біцепс', unit: 'см' },
-  { id: 'thigh', label: 'Стегно', unit: 'см' },
+  { id: 'thigh', label: 'Стегно (нога)', short: 'Стегно', unit: 'см' },
   { id: 'bodyFat', label: 'Жир', unit: '%' },
 ];
 
@@ -119,6 +119,7 @@ function defaultState() {
       flashOn: true, // світлова сигналізація (спалах екрана)
       flashColor: '#ff2f2f', // колір спалаху
       customSoundName: '', // назва завантаженого файлу звуку
+      sex: 'm', // фігура на екрані замірів: m | f
     },
   };
 }

@@ -786,6 +786,43 @@ a.btn { display: block; text-align: center; text-decoration: none; box-sizing: b
 .bhist-date { font-weight: 700; font-size: .85rem; flex: 0 0 auto; }
 .bhist-vals { flex: 1; min-width: 0; color: var(--muted); font-size: .82rem; }
 
+/* ---------- 3D-фігура на екрані замірів ---------- */
+.b3d-card { position: relative; background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 12px 10px 12px; margin-bottom: 12px; overflow: hidden; }
+.b3d-seg { position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; background: var(--bg-card2); border: 1px solid var(--line); border-radius: 12px; padding: 3px; gap: 2px; }
+.b3d-seg button { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: .78rem; font-weight: 700; padding: 6px 10px; border-radius: 9px; cursor: pointer; }
+.b3d-seg button.on { background: var(--grad-primary, var(--blue)); color: var(--on-accent); }
+.b3d-stage { position: relative; height: 430px; margin-top: 4px; }
+.b3d-stage.b3d-fallback { display: none; }
+.b3d-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; cursor: grab; }
+.b3d-canvas:active { cursor: grabbing; }
+.b3d-overlay { position: absolute; inset: 0; pointer-events: none; }
+.b3d-lines { position: absolute; inset: 0; overflow: visible; }
+.b3d-ln { fill: none; stroke: var(--muted); stroke-width: 1; opacity: .55; }
+.b3d-ln.on { stroke: var(--blue); stroke-width: 1.5; opacity: 1; }
+.b3d-label { position: absolute; transform: translateY(-50%); pointer-events: auto; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; background: var(--bg-card2); border: 1px solid var(--line); border-radius: 12px; padding: 5px 9px; font: inherit; color: var(--txt); cursor: pointer; min-width: 62px; text-align: left; }
+.b3d-label.left { left: 8px; }
+.b3d-label.right { right: 8px; align-items: flex-end; text-align: right; }
+.b3d-label.on { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue), 0 0 14px var(--blue-glow); }
+.b3d-lt { font-size: .68rem; font-weight: 700; color: var(--muted); text-transform: var(--label-tt); letter-spacing: var(--label-ls); }
+.b3d-lv { font-size: .92rem; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.b3d-label.on .b3d-lv { color: var(--blue-soft); }
+.b3d-hint { text-align: center; color: var(--muted); font-size: .75rem; margin: 2px 0 10px; }
+.b3d-extra { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.b3d-chip { display: flex; align-items: baseline; gap: 8px; background: var(--bg-card2); border: 1px solid var(--line); border-radius: 13px; padding: 8px 12px; font: inherit; color: var(--txt); cursor: pointer; }
+.b3d-chip span { font-size: .8rem; color: var(--muted); font-weight: 700; }
+.b3d-chip b { font-size: .9rem; font-variant-numeric: tabular-nums; }
+.b3d-chip.on { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
+.b3d-chip.on b { color: var(--blue-soft); }
+.b3d-editor { margin-bottom: 12px; }
+.b3d-ed-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.b3d-ed-title { font-weight: 800; font-size: 1.05rem; min-width: 0; }
+.b3d-date { width: auto; max-width: 150px; padding: 7px 10px; font-size: .85rem; }
+.b3d-ed-row { display: grid; grid-template-columns: 52px 1fr 52px; gap: 10px; align-items: center; margin-bottom: 14px; }
+.b3d-step { height: 52px; border-radius: 16px; border: 1px solid var(--line); background: var(--bg-card2); color: var(--txt); font: inherit; font-size: 1.6rem; font-weight: 700; cursor: pointer; }
+.b3d-val { display: flex; align-items: baseline; justify-content: center; gap: 6px; background: var(--bg-card2); border: 1px solid var(--line); border-radius: 16px; height: 52px; padding: 0 12px; }
+.b3d-val input { width: 100%; min-width: 0; border: 0; background: transparent; color: var(--txt); font: inherit; font-size: 1.6rem; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; outline: none; padding: 0; height: 50px; }
+.b3d-val span { color: var(--muted); font-weight: 700; }
+
 /* ---------- анімація значків (рухається сам емодзі, а не плитка) ---------- */
 .glyph { display: inline-block; transform-origin: 50% 78%; animation: swing 1.8s ease-in-out infinite; }
 @keyframes swing {
