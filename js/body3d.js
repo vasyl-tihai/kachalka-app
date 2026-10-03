@@ -445,13 +445,13 @@ export async function mountBody3D(container, opts) {
       }
       at[id] = best || [W / 2, H / 2];
     }
-    const gap = 38;
+    const gap = 56; // мітки ~40 px заввишки + проміжок
     for (const ids of [LEFT, BODY_PARTS.filter((x) => !LEFT.includes(x))]) {
       const order = ids.slice().sort((a, b) => at[a][1] - at[b][1]);
       let prev = -Infinity;
-      for (const id of order) { at[id].ly = Math.max(at[id][1], prev + gap, 18); prev = at[id].ly; }
+      for (const id of order) { at[id].ly = Math.max(at[id][1], prev + gap, 24); prev = at[id].ly; }
       // якщо низ вилазить за край — підтягнути колонку вгору
-      const over = prev - (H - 18);
+      const over = prev - (H - 24);
       if (over > 0) order.forEach((id) => { at[id].ly -= over; });
     }
     for (const id of BODY_PARTS) {
