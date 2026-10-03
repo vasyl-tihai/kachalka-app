@@ -10,6 +10,7 @@ import * as FC from './formcheck.js';
 import { t as T, setLang, LANGS, plural as PL, dateNames } from './i18n.js';
 import { mountBody3D, BODY_PARTS, BODY_BASE } from './body3d.js';
 import * as RC from './recipes.js';
+import * as RI from './recipe-import.js';
 import { exIconHTML, patternIconHTML } from './exicons.js';
 import * as FX from './fx.js';
 import * as BE from './backend.js';
@@ -3557,10 +3558,13 @@ async function renderCommunity() {
   const liked = likedSet();
   const realPeople = people.filter((p) => p.id !== meId);
   const official = D.people.filter((p) => p.official);
-  const samples = D.people.filter((p) => p.sample);
+  // приклади профілів — лише поки справжніх людей менше 5
+  const showSamples = realPeople.length < 5;
+  const samples = showSamples ? D.people.filter((p) => p.sample) : [];
   let content;
   if (seg === 'feed') {
-    const all = [...posts, ...D.posts].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    const demoPosts = D.posts.filter((p) => showSamples || !p.author.sample);
+    const all = [...posts, ...demoPosts].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     content = `<div class="feed">${all.map((p) => postCardHTML(p, meId, liked)).join('')}</div>`;
   } else {
     content = `
@@ -3572,11 +3576,11 @@ async function renderCommunity() {
         <div class="card-label">${T('Люди')}</div>
         <div class="pick-list">${realPeople.map(personRowHTML).join('')}</div>
       </section>` : ''}
-      <section class="card">
+      ${samples.length ? `<section class="card">
         <div class="card-label">${T('Приклади профілів')}</div>
         <p class="muted small">${T('Так виглядатимуть сторінки тренерів і атлетів. Приклади зникнуть, коли зареєструються справжні люди.')}</p>
         <div class="pick-list">${samples.map(personRowHTML).join('')}</div>
-      </section>`;
+      </section>` : ''}`;
   }
   const body = screenEl.querySelector('#commBody');
   body.innerHTML = top + content;
@@ -4823,6 +4827,17 @@ async function renderRecipeEdit(idEnc) {
       <div class="appbar-titles"><div class="appbar-kicker">📖 ${T('Рецепти')}</div>
         <div class="appbar-title">${r ? T('Редагувати рецепт') : T('Новий рецепт')}</div></div>
     </header>
+    ${r ? '' : `<section class="card re-import">
+      <div class="card-label">✨ ${T('Автоімпорт рецепта')} <span class="pro-tag">PRO</span></div>
+      <p class="muted small">${T('Кинь фото рецепта або посилання на статтю, YouTube чи TikTok — заповню все сам')}</p>
+      <div class="ri-row">
+        <input type="url" id="riUrl" placeholder="${T('Посилання на рецепт або відео')}"/>
+        <button class="btn primary" id="riGo">→</button>
+      </div>
+      <button class="btn ghost" id="riPhoto">📷 ${T('Фото рецепта')}</button>
+      <input type="file" id="riPhotoIn" accept="image/*" hidden/>
+      <p class="muted small" id="riQuota"></p>
+    </section>`}
     <section class="card">
       <div class="re-photo" id="rePhoto"><span>📷 ${T('Додати фото страви')}</span><img alt="" hidden/></div>
       <div class="btn-row" style="margin-top:8px">
@@ -4873,6 +4888,66 @@ async function renderRecipeEdit(idEnc) {
   screenEl.querySelector('#reGal').onclick = () => gal.click();
   cam.onchange = () => pick(cam);
   gal.onchange = () => pick(gal);
+
+  // ---- автоімпорт (лише для нового рецепта) ----
+  const riGo = screenEl.querySelector('#riGo');
+  if (riGo) {
+    const urlIn = screenEl.querySelector('#riUrl');
+    const photoBtn = screenEl.querySelector('#riPhoto');
+    const photoIn = screenEl.querySelector('#riPhotoIn');
+    const paintQuota = () => {
+      const q = BILL.importQuota();
+      const st = BILL.status();
+      screenEl.querySelector('#riQuota').textContent = st === 'active' ? T('PRO — без обмежень')
+        : st === 'expired' ? T('Доступно з підпискою PRO')
+          : `${T('Пробний період')}: ${T('сьогодні лишилось')} ${q.left} / ${q.limit}`;
+    };
+    paintQuota();
+    const fill = (rec) => {
+      const set = (q, x) => { if (x !== undefined && x !== null && x !== '' && x !== 0) screenEl.querySelector(q).value = x; };
+      set('#reName', rec.name); set('#reCat', rec.cat); set('#reGoal', rec.goal);
+      set('#reK', rec.kcal); set('#reP', rec.p); set('#reF', rec.f); set('#reC', rec.c); set('#reT', rec.time);
+      set('#reIng', (rec.ing || []).join('\n')); set('#reSteps', (rec.steps || []).join('\n'));
+      set('#reVideo', rec.video);
+    };
+    const run = async (input, btn) => {
+      if (BILL.importQuota().left <= 0) {
+        if (BILL.status() === 'expired') { toast(T('Автоімпорт — функція PRO')); go('#/pro'); }
+        else toast(T('Ліміт пробного періоду на сьогодні вичерпано — з PRO без обмежень'));
+        return;
+      }
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '⏳';
+      toast(T('Розбираю рецепт…'));
+      try {
+        const rec = await RI.importRecipe({ ...input, lang: S.getSettings().lang || 'uk' });
+        fill(rec);
+        BILL.useImport();
+        paintQuota();
+        toast(T('Готово — перевір і збережи'));
+        screenEl.querySelector('#reName').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (e) {
+        toast(T(RI.importError(e)));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    };
+    riGo.onclick = () => {
+      const url = RI.findUrl(urlIn.value);
+      if (!url) { toast(T('Встав посилання на рецепт або відео')); return; }
+      run({ url }, riGo);
+    };
+    photoBtn.onclick = () => photoIn.click();
+    photoIn.onchange = () => { if (photoIn.files[0]) run({ file: photoIn.files[0] }, photoBtn); };
+    // прийшли з «Поділитися» (TikTok / YouTube / браузер)
+    if (pendingShare) {
+      urlIn.value = pendingShare;
+      pendingShare = '';
+      run({ url: urlIn.value }, riGo);
+    }
+  }
 
   screenEl.querySelector('#reSave').onclick = async () => {
     const val = (q) => screenEl.querySelector(q).value;
@@ -5103,6 +5178,15 @@ FX.initFx(S.getCustomSound); // аудіо розблоковується пер
 applyTheme(S.getSettings().theme); // тема з налаштувань — до першого малювання
 trialReminder(); // за 2 дні до кінця пробного — одне ненав'язливе нагадування
 renderTabbar();
+// «Поділитися» з TikTok / YouTube / браузера → імпорт рецепта (share_target у маніфесті)
+let pendingShare = '';
+{
+  const sp = new URLSearchParams(location.search);
+  if (sp.has('url') || sp.has('text')) {
+    pendingShare = RI.findUrl(sp.get('url')) || RI.findUrl(sp.get('text')) || RI.findUrl(sp.get('title'));
+    history.replaceState(null, '', location.pathname + '#/recipe-new');
+  }
+}
 router();
 
 // повернення після входу через Google: в URL є ?code=... — обміняти на сесію

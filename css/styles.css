@@ -928,6 +928,10 @@ a.btn { display: block; text-align: center; text-decoration: none; box-sizing: b
 .re-grid5 input { padding: 10px 4px; text-align: center; }
 .field textarea { background: var(--bg-card2); border: 1px solid var(--line); color: var(--txt); border-radius: 13px; padding: 12px 10px; font: inherit; font-size: .95rem; width: 100%; resize: vertical; }
 #reSave { margin-top: 10px; }
+.ri-row { display: flex; gap: 8px; margin: 10px 0 8px; }
+.ri-row input { flex: 1; min-width: 0; background: var(--bg-card2); border: 1px solid var(--line); color: var(--txt); border-radius: 13px; padding: 12px 10px; font: inherit; }
+.ri-row .btn { width: auto; padding: 0 18px; }
+.pro-tag { display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 99px; background: var(--grad-primary, var(--blue)); color: var(--on-accent); font-size: .66rem; font-weight: 800; vertical-align: 1px; }
 
 /* ---------- анімація значків (рухається сам емодзі, а не плитка) ---------- */
 .glyph { display: inline-block; transform-origin: 50% 78%; animation: swing 1.8s ease-in-out infinite; }

@@ -17,6 +17,7 @@ const VERIFY_URL = SUPABASE_URL ? SUPABASE_URL + '/functions/v1/subscription' : 
 export const TRIAL_DAYS = 7; // скільки днів працює безкоштовно після встановлення
 export const FREE_PHOTOS = 3; // фото-аналізів на день у пробному періоді
 export const PRO_PHOTOS = 0; // 0 = без обмежень для підписників
+export const FREE_IMPORTS = 2; // автоімпортів рецептів на день у пробному періоді (PRO — без ліміту)
 export const WARN_DAYS = 2; // за скільки днів до кінця нагадати
 // ENFORCE=false — поки оплата не підключена, застосунок НЕ замикається після
 // пробного тижня й не нагадує про підписку. Денний ліміт фото діє завжди.
@@ -98,6 +99,22 @@ export function usePhoto() {
   const b = data();
   const same = b.photoISO === todayISO();
   save({ photoISO: todayISO(), photoN: same ? (Number(b.photoN) || 0) + 1 : 1 });
+}
+
+/** Автоімпорт рецептів: { used, limit, left }. limit 0 = без обмежень (PRO); після пробного — недоступно. */
+export function importQuota() {
+  const b = data();
+  const st = status();
+  const used = b.impISO === todayISO() ? Number(b.impN) || 0 : 0;
+  if (st === 'active') return { used, limit: 0, left: Infinity };
+  if (st === 'expired') return { used, limit: 0, left: 0 };
+  return { used, limit: FREE_IMPORTS, left: Math.max(0, FREE_IMPORTS - used) };
+}
+
+export function useImport() {
+  const b = data();
+  const same = b.impISO === todayISO();
+  save({ impISO: todayISO(), impN: same ? (Number(b.impN) || 0) + 1 : 1 });
 }
 
 /** Записати підписку локально (після покупки або відповіді сервера). */
