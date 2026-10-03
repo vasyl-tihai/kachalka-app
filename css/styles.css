@@ -380,6 +380,8 @@ input, select { font-family: inherit; }
 .cal-cell.missed { background: rgba(255,91,91,.12); border-color: rgba(255,91,91,.45); color: #ffb3b3; }
 .cal-cell.planned { background: rgba(91,155,255,.08); border-color: rgba(91,155,255,.5); color: var(--blue-soft); }
 .cal-cell.today { outline: 2px solid var(--blue); }
+.cal-cell.has-photo::after { content: ''; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 2px; background: var(--gold); box-shadow: 0 0 6px var(--gold-glow); }
+.cal-legend .lg.photo { background: var(--gold); border-radius: 2px; }
 .cal-dot { position: absolute; bottom: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green-glow); }
 .cal-legend { display: flex; gap: 14px; justify-content: center; margin-top: 12px; color: var(--muted); font-size: .82rem; }
 .cal-legend .lg { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; }
@@ -1248,6 +1250,7 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
   border: 1px solid rgba(52, 211, 153, .38);
 }
 .fin-txt { font-weight: 800; font-size: 1.05rem; color: #a7f3d0; }
+.fin-sub { font-size: .82rem; font-weight: 700; color: var(--muted); margin-top: 4px; }
 .fin-card .btn { width: auto; padding: 10px 16px; margin: 0; flex: 0 0 auto; }
 
 /* ЯСКРАВИЙ КІНЧИК ЛІНІЇ ТАЙМЕРА: на кінці дуги колір плавно переходить у жовтий —

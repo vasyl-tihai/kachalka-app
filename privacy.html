@@ -23,14 +23,15 @@
 <body>
 <main>
   <h1>Політика конфіденційності</h1>
-  <div class="upd">Застосунок «КАЧАЛКА». Оновлено 22 вересня 2026 р.</div>
+  <div class="upd">Застосунок «КАЧАЛКА». Оновлено 3 жовтня 2026 р.</div>
 
   <p>Коротко: щоденник тренувань зберігається на твоєму пристрої. Ми не продаємо дані, не
   показуємо реклами й не збираємо нічого «про всяк випадок».</p>
 
   <h2>Що зберігається на пристрої</h2>
   <ul>
-    <li>тренування, підходи, вага, час відпочинку, заміри тіла, записи калорій;</li>
+    <li>тренування, підходи, вага, час відпочинку, заміри тіла й цільова вага, записи калорій;</li>
+    <li>фото дня, обрані й власні рецепти (разом із їхніми фото);</li>
     <li>налаштування: мова, тема, звук, дні тренувань;</li>
     <li>стан підписки й лічильник безкоштовних фото за день.</li>
   </ul>
@@ -46,7 +47,11 @@
     <li><b>Підтвердження підписки</b>: токен покупки передається Google Play для перевірки,
       що підписка активна.</li>
     <li><b>Якщо ти реєструєшся у «Спільноті»</b> — пошта, імʼя та те, що ти сам публікуєш,
-      зберігаються на сервері (Supabase). Без реєстрації цей розділ нічого не надсилає.</li>
+      зберігаються на сервері (Supabase). Без реєстрації цей розділ нічого не надсилає.
+      Вхід через Google передає нам лише пошту й імʼя з твого Google-акаунта.</li>
+    <li><b>Відео в рецептах</b>: якщо до свого рецепта ти додаєш посилання на YouTube,
+      ролик показується через youtube-nocookie.com; кнопка «Відео» відкриває YouTube.
+      Що при цьому бачить YouTube — регулює політика Google.</li>
   </ul>
 
   <h2>Камера</h2>
@@ -81,12 +86,15 @@
     <p>KACHALKA is a workout diary. Your training data is stored on your device only. We do
     not sell data, show ads, or track you across apps.</p>
     <ul>
-      <li><b>On-device:</b> workouts, sets, weights, body measurements, calorie entries,
+      <li><b>On-device:</b> workouts, sets, weights, body measurements and goal weight,
+        calorie entries, day photos, saved and your own recipes (with their photos),
         settings, subscription state.</li>
       <li><b>Sent out:</b> a meal photo you take is sent to OpenAI or Google Gemini to
         estimate calories; the photo is not stored. A purchase token is sent to Google Play
         to verify the subscription. If you sign up for the Community section, your email,
-        name and what you post are stored on our server (Supabase).</li>
+        name and what you post are stored on our server (Supabase); Google sign-in shares
+        only your email and name. A YouTube link you add to your own recipe is played via
+        youtube-nocookie.com.</li>
       <li><b>Camera:</b> the form-analysis feature runs pose detection on the device; video
         is never uploaded or recorded.</li>
       <li><b>Deletion:</b> clearing the app data removes everything on the device. For a

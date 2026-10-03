@@ -1007,6 +1007,27 @@ function nextUnfinishedId(iso, exerciseId) {
   return null;
 }
 
+// Підпис фіналу. Програма власної ваги (одна вправа) — «Заняття завершено · наступне — Пн»:
+// день береться з тижневого плану, а без плану — через день (м'язам треба відпочити).
+function finCaption(iso, exerciseId) {
+  const ex = S.getExercise(exerciseId);
+  if (!ex || !S.programFor(ex)) return `🎉 ${T('Тренування виконано!')}`;
+  const p = S.progressionState(exerciseId);
+  if (p && p.done) return `🏆 ${T('Ціль досягнута')}`;
+  const w = S.getWorkouts().find((x) => x.progId && x.items.includes(exerciseId));
+  const sched = S.getSchedule();
+  const base = S.isoToDate(iso);
+  let next = null;
+  for (let k = 1; k <= 7 && w; k++) {
+    const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + k);
+    if ((sched[String(d.getDay())] || []).includes(w.id)) { next = d; break; }
+  }
+  if (!next) next = new Date(base.getFullYear(), base.getMonth(), base.getDate() + 2);
+  const day = dateNames().dows[next.getDay()];
+  const lvl = p ? `<div class="fin-sub">${T('Рівень')} ${p.level} · ${T('День')} ${p.day}/3</div>` : '';
+  return `✅ ${T('Заняття завершено')} · ${T('наступне')} — ${day}${lvl}`;
+}
+
 // Після останнього підходу таймер уже не «між підходами», а очікування ПЕРЕД
 // наступною вправою: інший колір (фіолетовий) + назва тієї вправи під кільцем.
 function updateRestMode(iso, exerciseId, waiting) {
@@ -1023,6 +1044,11 @@ function updateRestMode(iso, exerciseId, waiting) {
   if (finished && live.timer) live.timer.reset();
   cardEl.hidden = finished;
   if (finEl) finEl.hidden = !finished;
+  if (finished && finEl) {
+    let cap;
+    try { cap = finCaption(iso, exerciseId); } catch { cap = `🎉 ${T('Тренування виконано!')}`; }
+    finEl.querySelector('.fin-txt').innerHTML = cap;
+  }
   cardEl.classList.toggle('waiting', waiting && !finished);
   labelEl.textContent = waiting
     ? T('Очікування перед наступною вправою')
@@ -1736,6 +1762,19 @@ function renderCalendar() {
   screenEl.querySelectorAll('.cal-cell[data-iso]').forEach((c) =>
     c.addEventListener('click', () => { selectedISO = c.dataset.iso; go('#/today'); })
   );
+  // дні з фото — маленька позначка в кутку (фото в IndexedDB, тому вже після малювання)
+  PH.daysWithPhotos().then((days) => {
+    if (location.hash !== '#/calendar') return;
+    let any = false;
+    screenEl.querySelectorAll('.cal-cell[data-iso]').forEach((c) => {
+      if (days.has(c.dataset.iso)) { c.classList.add('has-photo'); c.title = T('Є фото'); any = true; }
+    });
+    if (any) {
+      let lg = screenEl.querySelector('.cal-legend');
+      if (!lg) { lg = document.createElement('div'); lg.className = 'cal-legend'; screenEl.querySelector('.cal-grid:not(.head)').after(lg); }
+      lg.insertAdjacentHTML('beforeend', `<span><i class="lg photo"></i>${T('фото')}</span>`);
+    }
+  }).catch(() => {});
 }
 function plural(n, one, few, many) {
   return PL(n, one, few, many); // форми українською; переклад — усередині i18n
