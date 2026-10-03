@@ -19,10 +19,17 @@ export const BODY_BASE = {
 };
 
 // заміри, що мають місце на фігурі (решта — кнопками під нею)
-export const BODY_PARTS = ['neck', 'shoulders', 'chest', 'waist', 'belly', 'hips', 'biceps', 'forearm', 'wrist', 'thigh', 'calf', 'ankle'];
-const LEFT = ['neck', 'shoulders', 'chest', 'waist', 'belly', 'hips'];
-const ARM_IDS = ['biceps', 'forearm', 'wrist'];
-const LEG_IDS = ['thigh', 'calf', 'ankle'];
+// руки й ноги — окремо ліва (L, +X моделі) і права (R)
+const TORSO = ['neck', 'shoulders', 'chest', 'waist', 'belly', 'hips'];
+const LIMBS = ['biceps', 'forearm', 'wrist', 'thigh', 'calf', 'ankle'];
+export const BODY_PARTS = [...TORSO, ...LIMBS.flatMap((k) => [k + 'L', k + 'R'])];
+// фігура дивиться на нас: її права сторона — ліворуч на екрані
+const LEFT = ['neck', 'chest', 'belly', ...LIMBS.map((k) => k + 'R')];
+const LIMB_IDS = {
+  1: ['bicepsL', 'forearmL', 'wristL'], 2: ['bicepsR', 'forearmR', 'wristR'],
+  3: ['thighL', 'calfL', 'ankleL'], 4: ['thighR', 'calfR', 'ankleR'],
+};
+const baseId = (id) => id.replace(/[LR]$/, '');
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -243,14 +250,16 @@ function prepare(meta, pos, reg, armw, legw, idx) {
   bandFound('waist', search(sp1 + 0.02, sp2t, 20, (y) => bandSlice(y), 'min'));
   band('belly', sp1);
   bandFound('hips', search(pelvisY - 0.1, pelvisY - 0.01, 9, (y) => bandSlice(y), 'max'));
-  limb('biceps', 1, search(aU * 0.55, aU * 0.56, 1, (s) => limbSlice(1, s), 'max'));
-  limb('forearm', 1, search(aU + aL * 0.12, aU + aL * 0.45, 10, (s) => limbSlice(1, s), 'max'));
-  limb('wrist', 1, search(aU + aL * 0.86, aU + aL * 0.97, 6, (s) => limbSlice(1, s), 'min'));
-  limb('thigh', 3, search(gT * 0.22, gT * 0.4, 8, (s) => limbSlice(3, s), 'max'));
-  limb('calf', 3, search(gT + gC * 0.15, gT + gC * 0.45, 10, (s) => limbSlice(3, s), 'max'));
-  limb('ankle', 3, search(gT + gC * 0.84, gT + gC * 0.95, 6, (s) => limbSlice(3, s), 'min'));
+  for (const [S, a, g] of [['L', 1, 3], ['R', 2, 4]]) {
+    limb('biceps' + S, a, search(aU * 0.55, aU * 0.56, 1, (s) => limbSlice(a, s), 'max'));
+    limb('forearm' + S, a, search(aU + aL * 0.12, aU + aL * 0.45, 10, (s) => limbSlice(a, s), 'max'));
+    limb('wrist' + S, a, search(aU + aL * 0.86, aU + aL * 0.97, 6, (s) => limbSlice(a, s), 'min'));
+    limb('thigh' + S, g, search(gT * 0.22, gT * 0.4, 8, (s) => limbSlice(g, s), 'max'));
+    limb('calf' + S, g, search(gT + gC * 0.15, gT + gC * 0.45, 10, (s) => limbSlice(g, s), 'max'));
+    limb('ankle' + S, g, search(gT + gC * 0.84, gT + gC * 0.95, 6, (s) => limbSlice(g, s), 'min'));
+  }
   // висота заміру стегна — там згасає пояс «обхват стегон» на ногах
-  const h0 = M.thigh.hull[0];
+  const h0 = M.thighL.hull[0];
   const thighY = Math.min(lerp(pos[h0[0] * 3 + 1], pos[h0[1] * 3 + 1], h0[2]), M.hips.y - 0.06);
 
   return {
@@ -268,7 +277,7 @@ function factors(model, sex, vals) {
   const k = {};
   for (const id of BODY_PARTS) {
     const v = Number(vals[id]);
-    const target = v > 0 ? v : B[id];
+    const target = v > 0 ? v : B[baseId(id)];
     k[id] = clamp(target / 100 / model.M[id].base, 0.55, 1.7);
   }
   return k;
@@ -292,10 +301,17 @@ function deform(model, k, out) {
   const kz = [[marks.thighY, 1], [M.hips.y, k.hips], [M.belly.y, k.belly], [M.waist.y, k.waist], [M.chest.y, k.chest],
     [M.neck.y, k.neck], [marks.neckTop, 1]].sort((a, b) => a[0] - b[0]);
   const { aU, aL, gT, gC } = marks;
-  const armP = [[0, (1 + k.biceps) / 2], [M.biceps.s, k.biceps], [aU, (k.biceps + k.forearm) / 2], [M.forearm.s, k.forearm],
-    [M.wrist.s, k.wrist], [aU + aL + 0.03, (1 + k.wrist) / 2], [marks.armLen, 1]];
-  const legP = [[0, 1], [M.thigh.s, k.thigh], [gT, k.thigh * 0.45 + k.calf * 0.55], [M.calf.s, k.calf],
-    [M.ankle.s, k.ankle], [gT + gC + 0.04, (1 + k.ankle) / 2], [marks.legLen, 1]];
+  const armP = (S) => {
+    const b = k['biceps' + S], f = k['forearm' + S], w = k['wrist' + S];
+    return [[0, (1 + b) / 2], [M['biceps' + S].s, b], [aU, (b + f) / 2], [M['forearm' + S].s, f],
+      [M['wrist' + S].s, w], [aU + aL + 0.03, (1 + w) / 2], [marks.armLen, 1]];
+  };
+  const legP = (S) => {
+    const t = k['thigh' + S], c = k['calf' + S], a = k['ankle' + S];
+    return [[0, 1], [M['thigh' + S].s, t], [gT, t * 0.45 + c * 0.55], [M['calf' + S].s, c],
+      [M['ankle' + S].s, a], [gT + gC + 0.04, (1 + a) / 2], [marks.legLen, 1]];
+  };
+  const prof = [null, armP('L'), armP('R'), legP('L'), legP('R')];
   // руки відсуваються, щоб ширші плечі/груди в них не врізались
   const tx = Math.max((profile(kx, M.shoulders.y) - 1) * marks.shX, (profile(kx, M.chest.y) - 1) * marks.shX * 0.75, 0);
 
@@ -304,7 +320,7 @@ function deform(model, k, out) {
     const sd = side[i];
     if (sd) {
       const arm = sd <= 2;
-      const kk = 1 + (profile(arm ? armP : legP, ls[i]) - 1) * (arm ? wA[i] : wL[i]);
+      const kk = 1 + (profile(prof[sd], ls[i]) - 1) * (arm ? wA[i] : wL[i]);
       const px = lp[i * 3], py = lp[i * 3 + 1], pz = lp[i * 3 + 2];
       x = px + (x - px) * kk; y = py + (y - py) * kk; z = pz + (z - pz) * kk;
     }
@@ -406,6 +422,32 @@ export async function mountBody3D(container, opts) {
   }
   buildMesh();
 
+  // «було»: силует першого заміру поверх нинішньої фігури
+  let ghostVals = null, ghost = null, ghostGeo = null, ghostPos = null;
+  const ghostMat = new T.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.4, depthWrite: false });
+  // те, що «було» меншим, сховано в тілі — показуємо ледь помітно крізь нього
+  const ghostInMat = new T.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.1, depthWrite: false, depthFunc: T.GreaterDepth });
+  function buildGhost() {
+    if (ghost) { fig.remove(ghost); fig.remove(ghost.userData.inner); ghostGeo.dispose(); ghost = null; }
+    if (!ghostVals) return;
+    ghostGeo = new T.BufferGeometry();
+    ghostPos = new Float32Array(model.n * 3);
+    deform(model, factors(model, sex, ghostVals), ghostPos);
+    // трохи всередину: де силует збігається з тілом, його не видно — лише різниця
+    ghostGeo.setAttribute('position', new T.BufferAttribute(ghostPos, 3));
+    ghostGeo.setIndex(new T.BufferAttribute(model.idx, 1));
+    ghostGeo.computeVertexNormals();
+    const nr = ghostGeo.attributes.normal.array;
+    for (let i = 0; i < ghostPos.length; i++) ghostPos[i] -= nr[i] * 0.004;
+    ghost = new T.Mesh(ghostGeo, ghostMat);
+    ghost.renderOrder = 2;
+    const inner = new T.Mesh(ghostGeo, ghostInMat);
+    inner.renderOrder = 3;
+    ghost.userData.inner = inner;
+    fig.add(ghost);
+    fig.add(inner);
+  }
+
   // кільця-«сантиметри»: лінія через вершини оболонки зрізу, трохи над шкірою
   const ringMat = {};
   const rings = {};
@@ -445,6 +487,12 @@ export async function mountBody3D(container, opts) {
       el.innerHTML = '<span class="b3d-lt"></span><span class="b3d-lv"></span>';
       el.querySelector('.b3d-lt').textContent = info.title;
       el.querySelector('.b3d-lv').textContent = info.value;
+      if (info.delta) {
+        const d = document.createElement('span');
+        d.className = 'b3d-ld ' + (info.delta > 0 ? 'up' : 'down');
+        d.textContent = (info.delta > 0 ? '▲' : '▼') + Math.abs(info.delta);
+        el.querySelector('.b3d-lv').appendChild(d);
+      }
       el.addEventListener('click', (e) => { e.stopPropagation(); opts.onPick && opts.onPick(id); });
       overlay.appendChild(el);
       const ln = document.createElementNS(svgNS, 'path');
@@ -462,7 +510,7 @@ export async function mountBody3D(container, opts) {
     H = Math.max(1, Math.round(r.height));
     renderer.setSize(W, H, false);
     camera.aspect = W / H;
-    const fitH = 2.02; // скільки метрів по висоті влазить у кадр
+    const fitH = 2.16; // скільки метрів по висоті влазить у кадр
     camera.fov = 2 * Math.atan(fitH / 2 / camera.position.z) * (180 / Math.PI);
     camera.updateProjectionMatrix();
     lines.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -486,7 +534,7 @@ export async function mountBody3D(container, opts) {
       }
       at[id] = best || [W / 2, H / 2];
     }
-    const gap = 56; // мітки ~40 px заввишки + проміжок
+    const gap = 54; // мітки ~38 px заввишки + проміжок
     for (const ids of [LEFT, BODY_PARTS.filter((x) => !LEFT.includes(x))]) {
       const order = ids.slice().sort((a, b) => at[a][1] - at[b][1]);
       let prev = -Infinity;
@@ -593,11 +641,11 @@ export async function mountBody3D(container, opts) {
     const M = model.M;
     let id;
     if (sd && (sd <= 2 ? model.wA[vi] : model.wL[vi]) > 0.5) {
-      const ids = sd <= 2 ? ARM_IDS : LEG_IDS;
+      const ids = LIMB_IDS[sd];
       id = ids.reduce((a, b) => (Math.abs(M[b].s - model.ls[vi]) < Math.abs(M[a].s - model.ls[vi]) ? b : a));
     } else {
       const y = model.pos[vi * 3 + 1];
-      id = LEFT.reduce((a, b) => (Math.abs(M[b].y - y) < Math.abs(M[a].y - y) ? b : a));
+      id = TORSO.reduce((a, b) => (Math.abs(M[b].y - y) < Math.abs(M[a].y - y) ? b : a));
     }
     if (opts.onPick) opts.onPick(id);
   }
@@ -616,6 +664,7 @@ export async function mountBody3D(container, opts) {
         morph = null;
         kNow = factors(model, sex, values);
         buildMesh();
+        buildGhost();
         buildRings();
         select(selected);
         return;
@@ -629,6 +678,7 @@ export async function mountBody3D(container, opts) {
     },
     select,
     setLabels(l) { makeLabels(l); select(selected); },
+    setGhost(v) { ghostVals = v ? { ...v } : null; buildGhost(); render(); },
     angle: () => angle,
     destroy() {
       if (raf) cancelAnimationFrame(raf);
@@ -637,6 +687,9 @@ export async function mountBody3D(container, opts) {
       Object.values(rings).forEach((m) => m.geometry.dispose());
       Object.values(ringMat).forEach((m) => m.dispose());
       mat.dispose();
+      ghostMat.dispose();
+      ghostInMat.dispose();
+      if (ghostGeo) ghostGeo.dispose();
       renderer.dispose();
       container.innerHTML = '';
     },

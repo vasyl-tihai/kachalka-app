@@ -86,6 +86,7 @@ let communityDemo = false;
 // екран замірів тіла: обрана метрика і дата запису
 let bodyMetric = 'chest';
 let bodyAngle = -0.35; // поворот 3D-фігури між заходами на екран
+let bodyCompare = false; // «було/стало» на екрані замірів
 let bodyDate = null;
 
 // активні «живі» компоненти, які треба знищувати при зміні екрана
@@ -131,7 +132,6 @@ function router() {
   calNeedsSync = true; // нова навігація → календар синхронізує місяць із вибраною датою
   workoutEditMode = false; // тренування завжди відкривається в режимі перегляду
   coachEdit = false; // кабінет відкривається в режимі перегляду профілю
-  kcalKeyEdit = false; // екран калорій — без форми ключа
   bodyDate = null; // екран замірів щоразу відкривається на сьогодні (вибір дати живе лише в межах екрана)
   let hash = location.hash || '#/today';
   // пробний період вийшов, підписки немає → усе веде на екран підписки
@@ -2706,6 +2706,12 @@ function renderSmart() {
 // =====================================================================
 //  ЕКРАН: ЗАМІРИ ТІЛА
 // =====================================================================
+// назва заміру: «Біцепс Л» / «Литка П» (short — коротка для міток)
+function metricName(m, short) {
+  const base = T(short ? m.short || m.label : m.label);
+  return m.side ? `${base} ${T(m.side === 'L' ? 'Л' : 'П')}` : base;
+}
+
 function renderBody() {
   if (!S.BODY_METRICS.some((m) => m.id === bodyMetric)) bodyMetric = 'chest';
   const sex = S.getSettings().sex === 'f' ? 'f' : 'm';
@@ -2718,16 +2724,19 @@ function renderBody() {
         <div class="appbar-title">${T('Заміри тіла')}</div></div>
     </header>
     <section class="b3d-card">
+      <button class="b3d-cmp ${bodyCompare ? 'on' : ''}" id="cmpBtn">${T('Було / стало')}</button>
       <div class="b3d-seg" id="sexSeg">
         <button data-sex="m" class="${sex === 'm' ? 'on' : ''}">${T('Чоловік')}</button>
         <button data-sex="f" class="${sex === 'f' ? 'on' : ''}">${T('Жінка')}</button>
       </div>
       <div class="b3d-stage" id="b3dStage"></div>
       <div class="b3d-hint" id="b3dHint">${T('Тягни, щоб повернути · тапни на частину тіла')}</div>
+      <div class="b3d-cmp-note" id="cmpNote"></div>
       <div class="b3d-extra" id="b3dExtra">${extra
-        .map((m) => `<button class="b3d-chip" data-m="${m.id}"><span>${esc(T(m.label))}</span><b></b></button>`)
+        .map((m) => `<button class="b3d-chip" data-m="${m.id}"><span>${esc(metricName(m))}</span><b></b></button>`)
         .join('')}</div>
     </section>
+    <div id="weightCard"></div>
     <div id="bodyDetails"></div>
   `;
 
@@ -2742,14 +2751,21 @@ function renderBody() {
     const l = {};
     BODY_PARTS.forEach((id) => {
       const m = S.BODY_METRICS.find((x) => x.id === id);
-      l[id] = { title: T(m.short || m.label), value: v[id] != null ? `${v[id]} ${T(m.unit)}` : '—' };
+      const lt = S.latestMeasurement(id);
+      l[id] = {
+        title: metricName(m, true),
+        value: v[id] != null ? `${v[id]} ${T(m.unit)}` : '—',
+        delta: lt && lt.count > 1 ? lt.delta : 0,
+      };
     });
     return l;
   };
   const paintExtra = (v) => {
     screenEl.querySelectorAll('.b3d-chip').forEach((b) => {
       const m = S.BODY_METRICS.find((x) => x.id === b.dataset.m);
-      b.querySelector('b').textContent = v[m.id] != null ? `${v[m.id]} ${T(m.unit)}` : '—';
+      const lt = S.latestMeasurement(m.id);
+      const d = lt && lt.count > 1 && lt.delta ? ` ${lt.delta > 0 ? '▲' : '▼'}${Math.abs(lt.delta)}` : '';
+      b.querySelector('b').textContent = (v[m.id] != null ? `${v[m.id]} ${T(m.unit)}` : '—') + d;
       b.classList.toggle('on', m.id === bodyMetric);
     });
   };
@@ -2796,7 +2812,7 @@ function renderBody() {
     const histList = dates
       .map((iso) => {
         const m = S.getMeasurement(iso);
-        const parts = S.BODY_METRICS.filter((mt) => m[mt.id] != null).map((mt) => `${esc(T(mt.short || mt.label))} ${m[mt.id]}${T(mt.unit)}`);
+        const parts = S.BODY_METRICS.filter((mt) => m[mt.id] != null).map((mt) => `${esc(metricName(mt, true))} ${m[mt.id]}${T(mt.unit)}`);
         return `<div class="bhist-row"><span class="bhist-date">${S.prettyDate(iso)}</span>
           <span class="bhist-vals">${parts.join(' · ')}</span>
           <button class="set-del" data-iso="${iso}" title="${T('Видалити')}">✕</button></div>`;
@@ -2806,7 +2822,7 @@ function renderBody() {
     box.innerHTML = `
       <section class="card b3d-editor">
         <div class="b3d-ed-head">
-          <span class="b3d-ed-title">${esc(T(metric.label))}</span>
+          <span class="b3d-ed-title">${esc(metricName(metric))}</span>
           <input type="date" id="bDate" value="${dateISO}" class="date-input b3d-date"/>
         </div>
         <div class="b3d-ed-row">
@@ -2817,7 +2833,7 @@ function renderBody() {
         <button class="btn primary" id="saveBody">${T('Зберегти')}</button>
       </section>
       <div class="chart-card">
-        <div class="card-label">${esc(T(metric.label))}, ${unit}</div>
+        <div class="card-label">${esc(metricName(metric))}, ${unit}</div>
         ${deltaHtml}
         ${lineChartSVG(rows)}
       </div>
@@ -2831,7 +2847,7 @@ function renderBody() {
       if (live.body3d && n > 0) live.body3d.update({ [metric.id]: n });
     };
     const step = (d) => {
-      const n = Number(valInp.value) || (latest ? latest.value : BODY_BASE[sex][metric.id]) || 0;
+      const n = Number(valInp.value) || (latest ? latest.value : BODY_BASE[sex][metric.base || metric.id]) || 0;
       valInp.value = Math.max(0, Math.round((n + d) * 10) / 10);
       preview();
     };
@@ -2842,8 +2858,9 @@ function renderBody() {
     dateInp.onchange = () => { bodyDate = dateInp.value || S.todayISO(); paintBodyDetails(); };
     const refresh = () => {
       const v = latestVals();
-      if (live.body3d) { live.body3d.setLabels(labelsFor(v)); live.body3d.update(v); }
+      if (live.body3d) { live.body3d.setLabels(labelsFor(v)); live.body3d.update(v); if (bodyCompare) live.body3d.setGhost(firstVals()); }
       paintExtra(v);
+      paintWeight();
       paintBodyDetails();
     };
     box.querySelector('#saveBody').onclick = () => {
@@ -2862,8 +2879,82 @@ function renderBody() {
     );
   }
 
+  // перші значення кожного заміру — силует «було»
+  function firstVals() {
+    const v = {};
+    S.BODY_METRICS.forEach((m) => { const h = S.measurementHistory(m.id); if (h.length) v[m.id] = h[0].value; });
+    return v;
+  }
+  const firstDate = () => { const d = S.measurementDates(); return d.length ? d[d.length - 1] : null; };
+  function paintCompare() {
+    const note = screenEl.querySelector('#cmpNote');
+    const btn = screenEl.querySelector('#cmpBtn');
+    btn.classList.toggle('on', bodyCompare);
+    note.textContent = bodyCompare && firstDate() ? `${T('Силует — перший замір')}: ${S.prettyDate(firstDate())}` : '';
+    if (live.body3d) live.body3d.setGhost(bodyCompare ? firstVals() : null);
+  }
+  screenEl.querySelector('#cmpBtn').onclick = () => {
+    if (!bodyCompare && S.measurementDates().length < 2) { toast(T('Потрібно щонайменше два заміри в різні дні')); return; }
+    bodyCompare = !bodyCompare;
+    paintCompare();
+  };
+
+  // картка ваги: старт → зараз → ціль
+  function paintWeight() {
+    const box = screenEl.querySelector('#weightCard');
+    const rows = S.measurementHistory('bodyWeight');
+    const target = Number(S.getSettings().targetWeight) || null;
+    const kg = T('кг');
+    const fmt = (x) => Math.round(x * 10) / 10;
+    let inner;
+    if (!rows.length) {
+      inner = `<p class="muted wc-empty">${T('Додай вагу — тапни «Вага тіла» під фігурою')}</p>`;
+    } else {
+      const start = rows[0].value, now = rows[rows.length - 1].value;
+      const d = fmt(now - start);
+      let bar = '';
+      if (target && target !== start) {
+        const prog = Math.max(0, Math.min(1, (start - now) / (start - target)));
+        const left = fmt(Math.abs(target - now));
+        const done = (start > target && now <= target) || (start < target && now >= target);
+        bar = `<div class="wc-bar"><i style="width:${Math.round(prog * 100)}%"></i></div>
+          <div class="wc-left">${done ? T('Ціль досягнуто!') : `${T('Залишилось')} ${left} ${kg}`} · ${Math.round(prog * 100)}%</div>`;
+      }
+      inner = `
+        <div class="wc-row">
+          <div><small>${T('Старт')}</small><b>${start}</b><span>${kg}</span></div>
+          <div><small>${T('Зараз')}</small><b>${now}</b><span>${kg}</span>${d ? `<em class="${d > 0 ? 'up' : 'down'}">${d > 0 ? '+' : ''}${d}</em>` : ''}</div>
+          <div><small>${T('Ціль')}</small><b>${target || '—'}</b><span>${target ? kg : ''}</span></div>
+        </div>
+        ${bar}
+        ${rows.length > 1 ? lineChartSVG(rows) : ''}`;
+    }
+    box.innerHTML = `
+      <section class="card wcard">
+        <div class="wc-head"><span class="card-label">${T('Вага тіла')}</span>
+          <button class="wc-target" id="wTargetBtn">🎯 ${target ? T('Змінити ціль') : T('Вказати ціль')}</button></div>
+        <div class="wc-edit" id="wTargetEdit" hidden>
+          <input type="number" inputmode="decimal" step="0.1" min="20" id="wTargetInp" value="${target || ''}" placeholder="${T('Цільова вага')}, ${kg}"/>
+          <button class="btn primary" id="wTargetSave">${T('Зберегти')}</button>
+        </div>
+        ${inner}
+      </section>`;
+    box.querySelector('#wTargetBtn').onclick = () => {
+      const ed = box.querySelector('#wTargetEdit');
+      ed.hidden = !ed.hidden;
+      if (!ed.hidden) box.querySelector('#wTargetInp').focus();
+    };
+    box.querySelector('#wTargetSave').onclick = () => {
+      const v = Number(box.querySelector('#wTargetInp').value);
+      S.updateSettings({ targetWeight: v > 0 ? Math.round(v * 10) / 10 : null });
+      toast(T('Ціль збережено'));
+      paintWeight();
+    };
+  }
+
   const vals = latestVals();
   paintExtra(vals);
+  paintWeight();
   paintBodyDetails();
 
   const stage = screenEl.querySelector('#b3dStage');
@@ -2880,6 +2971,7 @@ function renderBody() {
       // користувач міг піти з екрана, поки вантажився Three.js
       if (location.hash !== hash || !stage.isConnected) { b3d.destroy(); return; }
       live.body3d = b3d;
+      paintCompare();
     })
     .catch((err) => {
       console.warn('3D-фігура:', err);
@@ -2889,7 +2981,7 @@ function renderBody() {
       const ex = screenEl.querySelector('#b3dExtra');
       ex.insertAdjacentHTML('afterbegin', BODY_PARTS.map((id) => {
         const m = S.BODY_METRICS.find((x) => x.id === id);
-        return `<button class="b3d-chip" data-m="${id}"><span>${esc(T(m.short || m.label))}</span><b></b></button>`;
+        return `<button class="b3d-chip" data-m="${id}"><span>${esc(metricName(m, true))}</span><b></b></button>`;
       }).join(''));
       ex.querySelectorAll('.b3d-chip').forEach((b) => { b.onclick = () => selectMetric(b.dataset.m); });
       paintExtra(latestVals());
@@ -4403,7 +4495,6 @@ function renderFormcheck() {
 // =====================================================================
 //  ЕКРАН: КАЛОРІЇ ПО ФОТО
 // =====================================================================
-let kcalKeyEdit = false;
 // Картка стану на вкладці калорій: скільки фото лишилось і що з підпискою.
 function kcalStatusCard() {
   const q = BILL.photoQuota();
@@ -4450,8 +4541,6 @@ async function renderCalories() {
   const quota = BILL.photoQuota();
   // ключ користувача — обхід наших лімітів: він платить за запити сам
   const ownKey = !!key;
-  const canAnalyze = (ownKey || proxyOk) && (ownKey || BILL.canAnalyzePhoto());
-  const showKeyForm = kcalKeyEdit;
 
   const rows = list
     .map(
@@ -4466,38 +4555,11 @@ async function renderCalories() {
       <button class="icon-btn" id="backKcal">‹</button>
       <div class="appbar-titles"><div class="appbar-kicker">🍎 ${T('Калорії по фото')}</div>
         <div class="appbar-title">${S.prettyDate(iso)}</div></div>
-      <button class="icon-btn" id="keyBtn" title="${T('Ключ API (ChatGPT або Gemini)')}">🔑</button>
     </header>
 
     ${kcalStatusCard()}
 
-    ${showKeyForm
-      ? `<section class="card">
-          <div class="card-label">🔑 ${T('Свій ключ API')} <span class="muted">${T('для досвідчених')}</span></div>
-          <p class="muted hint">${T('Встав ключ OpenAI (ChatGPT) з platform.openai.com/api-keys — потрібен невеликий баланс на API, фото коштує копійки. Або безкоштовний ключ Google Gemini з aistudio.google.com/apikey. Застосунок сам розпізнає, який це ключ; зберігається він лише на цьому пристрої.')}</p>
-          <div class="btn-col" style="margin-top:12px">
-            <a class="btn ghost" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">🤖 OpenAI (ChatGPT): platform.openai.com/api-keys</a>
-            <a class="btn ghost" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">🌐 Gemini (${T('безкоштовно')}): aistudio.google.com/apikey</a>
-          </div>
-          <div class="field" style="margin-top:10px">
-            <input type="password" id="gemKey" value="${esc(key)}" placeholder="sk-… / AIza…" autocomplete="off"/>
-          </div>
-          <div class="btn-col" style="margin-top:10px">
-            <button class="btn primary" id="saveKey">${T('Зберегти ключ')}</button>
-          </div>
-        </section>`
-      : ''}
-
-    ${!canAnalyze && !ownKey && !proxyOk && !showKeyForm
-      ? `<section class="card">
-          <div class="card-label">📷 ${T('Аналіз фото')}</div>
-          <p class="muted hint">${T('Сервер розпізнавання ще не підключено. Можна поки працювати на власному ключі API.')}</p>
-          <button class="btn ghost" id="ownKeyBtn" style="margin-top:10px">🔑 ${T('Свій ключ API')}</button>
-        </section>`
-      : ''}
-
-    ${canAnalyze
-      ? `<section class="card">
+    <section class="card">
           <div class="card-label">📷 ${T('Нова страва')}</div>
           <p class="muted hint">${T('Сфотографуй страву — ШІ оцінить калорійність і БЖВ')}</p>
           <div class="btn-row">
@@ -4507,8 +4569,7 @@ async function renderCalories() {
           <input type="file" id="foodCam" accept="image/*" capture="environment" hidden/>
           <input type="file" id="foodGal" accept="image/*" hidden/>
           <div id="analyzeBox"></div>
-        </section>`
-      : ''}
+        </section>
 
     <section class="card">
       <div class="card-label">${T('Зʼїдено за день')}</div>
@@ -4519,18 +4580,6 @@ async function renderCalories() {
     </section>`;
 
   screenEl.querySelector('#backKcal').onclick = () => history.back();
-  screenEl.querySelector('#keyBtn').onclick = () => { kcalKeyEdit = !kcalKeyEdit; renderCalories(); };
-  const ownBtn = screenEl.querySelector('#ownKeyBtn');
-  if (ownBtn) ownBtn.onclick = () => { kcalKeyEdit = true; renderCalories(); };
-
-  const saveKeyBtn = screenEl.querySelector('#saveKey');
-  if (saveKeyBtn)
-    saveKeyBtn.onclick = () => {
-      S.updateSettings({ geminiKey: screenEl.querySelector('#gemKey').value.trim() });
-      kcalKeyEdit = false;
-      toast(T('Збережено'));
-      renderCalories();
-    };
 
   screenEl.querySelectorAll('.kcal-del').forEach((b) =>
     b.addEventListener('click', () => { S.deleteCalorieEntry(iso, b.dataset.id); renderCalories(); })
@@ -4539,6 +4588,10 @@ async function renderCalories() {
   const box = () => screenEl.querySelector('#analyzeBox');
   const analyze = async (file) => {
     if (!file || !box()) return;
+    if (!ownKey && !proxyOk) {
+      box().innerHTML = `<p class="muted center">⚠️ ${T('Розпізнавання тимчасово недоступне — спробуй трохи пізніше')}</p>`;
+      return;
+    }
     if (!ownKey && !BILL.canAnalyzePhoto()) {
       toast(`📷 ${T('Ліміт на сьогодні вичерпано — далі потрібна підписка')}`);
       return;

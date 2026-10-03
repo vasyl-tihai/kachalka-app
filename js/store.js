@@ -52,6 +52,10 @@ export function muscleLabel(id) {
 }
 
 // ----- метрики замірів тіла -----
+// обхвати рук і ніг міряються окремо зліва й справа (id + 'L' / 'R')
+export const LIMB_METRICS = ['biceps', 'forearm', 'wrist', 'thigh', 'calf', 'ankle'];
+const LIMB_LABELS = { biceps: 'Біцепс', forearm: 'Передпліччя', wrist: "Зап'ястя", thigh: 'Стегно (нога)', calf: 'Литка', ankle: 'Щиколотка' };
+const LIMB_SHORT = { thigh: 'Стегно' };
 export const BODY_METRICS = [
   { id: 'bodyWeight', label: 'Вага тіла', unit: 'кг' },
   { id: 'neck', label: 'Шия', unit: 'см' },
@@ -60,12 +64,9 @@ export const BODY_METRICS = [
   { id: 'waist', label: 'Талія', unit: 'см' },
   { id: 'belly', label: 'Живіт', unit: 'см' },
   { id: 'hips', label: 'Обхват стегон', short: 'Стегна', unit: 'см' },
-  { id: 'biceps', label: 'Біцепс', unit: 'см' },
-  { id: 'forearm', label: 'Передпліччя', unit: 'см' },
-  { id: 'wrist', label: "Зап'ястя", unit: 'см' },
-  { id: 'thigh', label: 'Стегно (нога)', short: 'Стегно', unit: 'см' },
-  { id: 'calf', label: 'Литка', unit: 'см' },
-  { id: 'ankle', label: 'Щиколотка', unit: 'см' },
+  ...LIMB_METRICS.flatMap((k) => ['L', 'R'].map((side) => ({
+    id: k + side, base: k, side, label: LIMB_LABELS[k], short: LIMB_SHORT[k], unit: 'см',
+  }))),
   { id: 'bodyFat', label: 'Жир', unit: '%' },
 ];
 
@@ -127,6 +128,7 @@ function defaultState() {
       flashColor: '#ff2f2f', // колір спалаху
       customSoundName: '', // назва завантаженого файлу звуку
       sex: 'm', // фігура на екрані замірів: m | f
+      targetWeight: null, // цільова вага, кг (картка ваги на екрані замірів)
     },
   };
 }
@@ -251,6 +253,14 @@ function normalizeState(raw) {
       if (raw0 == null || raw0 === '') continue; // порожнє/null — це «немає значення», а не 0
       const v = Number(raw0);
       if (!Number.isNaN(v)) clean[k] = v;
+    }
+    // раніше руки й ноги міряли з одного боку — тепер окремо ліва/права:
+    // старе значення стає обома сторонами, щоб історія не загубилась
+    for (const k of LIMB_METRICS) {
+      if (clean[k] == null) continue;
+      if (clean[k + 'L'] == null) clean[k + 'L'] = clean[k];
+      if (clean[k + 'R'] == null) clean[k + 'R'] = clean[k];
+      delete clean[k];
     }
     if (Object.keys(clean).length) meas[iso] = clean;
   }
