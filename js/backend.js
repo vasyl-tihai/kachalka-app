@@ -46,6 +46,13 @@ export async function signIn(email, password) {
   return data;
 }
 
+// лист для відновлення пароля (посилання веде назад у застосунок)
+export async function resetPassword(email) {
+  const sb = await client();
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  if (error) throw new Error(uaAuthError(error));
+}
+
 export async function signOut() {
   const sb = await client();
   if (sb) await sb.auth.signOut();

@@ -3407,12 +3407,11 @@ async function renderCommunity() {
     body().innerHTML = `
       <section class="card">
         <div class="card-label">👥 ${T('Спільнота')} КАЧАЛКИ</div>
-        <p class="muted">Публікуй фото з тренувань, дивись, як тренуються інші,
-        і записуйся на тренування до тренерів.</p>
-        <button class="btn primary" id="commLogin">Увійти / Створити акаунт</button>
-        <button class="btn ghost" id="commDemo" style="margin-top:8px">👀 Подивитися демо</button>
+        <p class="muted">${T('Публікуй фото з тренувань, дивись, як тренуються інші, і записуйся на тренування до тренерів.')}</p>
+        <div class="auth-box">${authCardHTML()}</div>
+        <button class="btn ghost" id="commDemo" style="margin-top:10px">👀 ${T('Подивитися демо')}</button>
       </section>`;
-    body().querySelector('#commLogin').onclick = () => go('#/coach');
+    bindAuthCard(body(), () => renderCommunity());
     body().querySelector('#commDemo').onclick = () => { communityDemo = true; renderCommunity(); };
     return;
   }
@@ -3737,6 +3736,71 @@ async function renderUserProfile(userId) {
   );
 }
 
+// ---------- вхід / реєстрація (Спільнота й кабінет) ----------
+// Google — одна кнопка; пошта — розгортається. onDone() — після успішного входу.
+function authCardHTML() {
+  return `
+    <button class="btn google" id="googleBtn"><span class="g-badge">G</span> ${T('Продовжити з Google')}</button>
+    <div class="or-line"><span>${T('або через пошту')}</span></div>
+    <div class="auth-mail">
+      <div class="field auth-new" hidden><label>${T("Ім'я")}</label><input type="text" id="cName" placeholder="${T('Як тебе звати')}" autocomplete="name"/></div>
+      <div class="field"><label>${T('Пошта')}</label><input type="email" id="cEmail" inputmode="email" autocomplete="email"/></div>
+      <div class="field"><label>${T('Пароль (від 6 символів)')}</label><input type="password" id="cPass" autocomplete="current-password"/></div>
+      <button class="btn primary" id="loginBtn">${T('Увійти')}</button>
+      <div class="auth-links">
+        <button class="link-btn" id="modeBtn">${T('Немає акаунта? Зареєструватися')}</button>
+        <button class="link-btn" id="forgotBtn">${T('Забули пароль?')}</button>
+      </div>
+    </div>
+    <p class="muted auth-msg" id="authMsg"></p>`;
+}
+function bindAuthCard(root, onDone) {
+  const $ = (q) => root.querySelector(q);
+  let signup = false;
+  const msg = (t2) => { const el = $('#authMsg'); if (el) el.textContent = t2; };
+  // мережеві збої (сервер ще не налаштований / немає інтернету) — зрозумілими словами
+  const fail = (e) => {
+    const m = String((e && e.message) || e);
+    msg('⚠️ ' + (/fetch|network|load failed|NAME_NOT/i.test(m) ? T('Сервер спільноти тимчасово недоступний — спробуй пізніше') : m));
+  };
+  $('#googleBtn').onclick = async () => {
+    msg(T('Відкриваю Google…'));
+    try { await BE.signInWithGoogle(); } catch (e) { fail(e); }
+  };
+  $('#modeBtn').onclick = () => {
+    signup = !signup;
+    $('.auth-new').hidden = !signup;
+    $('#loginBtn').textContent = signup ? T('Зареєструватися') : T('Увійти');
+    $('#modeBtn').textContent = signup ? T('Вже є акаунт? Увійти') : T('Немає акаунта? Зареєструватися');
+    $('#cPass').autocomplete = signup ? 'new-password' : 'current-password';
+    msg('');
+  };
+  $('#forgotBtn').onclick = async () => {
+    const email = $('#cEmail').value.trim();
+    if (!email) return msg(T('Вкажи пошту — надішлемо посилання для нового пароля'));
+    msg(T('Надсилаю…'));
+    try { await BE.resetPassword(email); msg('📧 ' + T('Перевір пошту — там посилання для нового пароля')); } catch (e) { fail(e); }
+  };
+  $('#loginBtn').onclick = async () => {
+    const name = $('#cName').value.trim();
+    const email = $('#cEmail').value.trim();
+    const pass = $('#cPass').value;
+    if (!email || !pass) return msg(T('Вкажи пошту і пароль'));
+    if (signup && pass.length < 6) return msg(T('Пароль — щонайменше 6 символів'));
+    msg(signup ? T('Реєструю…') : T('Входжу…'));
+    try {
+      if (signup) {
+        const data = await BE.signUp(email, pass, name);
+        if (data.session) onDone();
+        else msg('📧 ' + T('Перевір пошту й підтверди реєстрацію, потім натисни «Увійти».'));
+      } else {
+        await BE.signIn(email, pass);
+        onDone();
+      }
+    } catch (e) { fail(e); }
+  };
+}
+
 // =====================================================================
 //  ЕКРАН: КАБІНЕТ ТРЕНЕРА (бета) — акаунт на сервері
 // =====================================================================
@@ -3777,49 +3841,10 @@ async function renderCoach() {
   if (!session) {
     coachShell(`
       <section class="card">
-        <div class="card-label">Вхід або реєстрація</div>
-        <button class="btn google" id="googleBtn"><span class="g-badge">G</span> Увійти через Google</button>
-        <div class="or-line"><span>або через пошту</span></div>
-        <div class="field"><label>Ім'я (для нових)</label><input type="text" id="cName" placeholder="Як тебе звати"/></div>
-        <div class="field"><label>Пошта</label><input type="email" id="cEmail" inputmode="email" autocomplete="email"/></div>
-        <div class="field"><label>Пароль (від 6 символів)</label><input type="password" id="cPass" autocomplete="current-password"/></div>
-        <div class="btn-row">
-          <button class="btn primary" id="loginBtn">Увійти</button>
-          <button class="btn ghost" id="signupBtn">Зареєструватися</button>
-        </div>
-        <p class="muted" id="authMsg"></p>
+        <div class="card-label">${T('Вхід або реєстрація')}</div>
+        ${authCardHTML()}
       </section>`);
-    const msg = (t2) => { const el = screenEl.querySelector('#authMsg'); if (el) el.textContent = t2; };
-    screenEl.querySelector('#googleBtn').onclick = async () => {
-      msg('Відкриваю Google…');
-      try {
-        await BE.signInWithGoogle(); // перенаправить на сторінку Google
-      } catch (e) { msg('⚠️ ' + e.message); }
-    };
-    const getCreds = () => ({
-      name: screenEl.querySelector('#cName').value.trim(),
-      email: screenEl.querySelector('#cEmail').value.trim(),
-      pass: screenEl.querySelector('#cPass').value,
-    });
-    screenEl.querySelector('#loginBtn').onclick = async () => {
-      const { email, pass } = getCreds();
-      if (!email || !pass) return msg('Вкажи пошту і пароль');
-      msg('Входжу…');
-      try {
-        await BE.signIn(email, pass);
-        renderCoach();
-      } catch (e) { msg('⚠️ ' + e.message); }
-    };
-    screenEl.querySelector('#signupBtn').onclick = async () => {
-      const { name, email, pass } = getCreds();
-      if (!email || !pass) return msg('Вкажи пошту і пароль');
-      msg('Реєструю…');
-      try {
-        const data = await BE.signUp(email, pass, name);
-        if (data.session) renderCoach();
-        else msg('📧 Перевір пошту й підтверди реєстрацію, потім натисни «Увійти».');
-      } catch (e) { msg('⚠️ ' + e.message); }
-    };
+    bindAuthCard(screenEl, () => renderCoach());
     return;
   }
 
