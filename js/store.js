@@ -54,11 +54,18 @@ export function muscleLabel(id) {
 // ----- метрики замірів тіла -----
 export const BODY_METRICS = [
   { id: 'bodyWeight', label: 'Вага тіла', unit: 'кг' },
+  { id: 'neck', label: 'Шия', unit: 'см' },
+  { id: 'shoulders', label: 'Обхват плечей', short: 'Плечі', unit: 'см' },
   { id: 'chest', label: 'Груди', unit: 'см' },
   { id: 'waist', label: 'Талія', unit: 'см' },
+  { id: 'belly', label: 'Живіт', unit: 'см' },
   { id: 'hips', label: 'Обхват стегон', short: 'Стегна', unit: 'см' },
   { id: 'biceps', label: 'Біцепс', unit: 'см' },
+  { id: 'forearm', label: 'Передпліччя', unit: 'см' },
+  { id: 'wrist', label: "Зап'ястя", unit: 'см' },
   { id: 'thigh', label: 'Стегно (нога)', short: 'Стегно', unit: 'см' },
+  { id: 'calf', label: 'Литка', unit: 'см' },
+  { id: 'ankle', label: 'Щиколотка', unit: 'см' },
   { id: 'bodyFat', label: 'Жир', unit: '%' },
 ];
 

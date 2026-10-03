@@ -791,7 +791,7 @@ a.btn { display: block; text-align: center; text-decoration: none; box-sizing: b
 .b3d-seg { position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; background: var(--bg-card2); border: 1px solid var(--line); border-radius: 12px; padding: 3px; gap: 2px; }
 .b3d-seg button { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: .78rem; font-weight: 700; padding: 6px 10px; border-radius: 9px; cursor: pointer; }
 .b3d-seg button.on { background: var(--grad-primary, var(--blue)); color: var(--on-accent); }
-.b3d-stage { position: relative; height: 430px; margin-top: 4px; }
+.b3d-stage { position: relative; height: 500px; margin-top: 4px; }
 .b3d-stage.b3d-fallback { display: none; }
 .b3d-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; cursor: grab; }
 .b3d-canvas:active { cursor: grabbing; }
@@ -799,12 +799,12 @@ a.btn { display: block; text-align: center; text-decoration: none; box-sizing: b
 .b3d-lines { position: absolute; inset: 0; overflow: visible; }
 .b3d-ln { fill: none; stroke: var(--muted); stroke-width: 1; opacity: .55; }
 .b3d-ln.on { stroke: var(--blue); stroke-width: 1.5; opacity: 1; }
-.b3d-label { position: absolute; transform: translateY(-50%); pointer-events: auto; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; background: var(--bg-card2); border: 1px solid var(--line); border-radius: 12px; padding: 5px 9px; font: inherit; color: var(--txt); cursor: pointer; min-width: 62px; text-align: left; }
-.b3d-label.left { left: 8px; }
-.b3d-label.right { right: 8px; align-items: flex-end; text-align: right; }
+.b3d-label { position: absolute; transform: translateY(-50%); pointer-events: auto; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; background: var(--bg-card2); border: 1px solid var(--line); border-radius: 11px; padding: 3px 8px; font: inherit; color: var(--txt); cursor: pointer; min-width: 56px; text-align: left; }
+.b3d-label.left { left: 6px; }
+.b3d-label.right { right: 6px; align-items: flex-end; text-align: right; }
 .b3d-label.on { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue), 0 0 14px var(--blue-glow); }
-.b3d-lt { font-size: .68rem; font-weight: 700; color: var(--muted); text-transform: var(--label-tt); letter-spacing: var(--label-ls); }
-.b3d-lv { font-size: .92rem; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.b3d-lt { font-size: .62rem; font-weight: 700; color: var(--muted); text-transform: var(--label-tt); letter-spacing: var(--label-ls); }
+.b3d-lv { font-size: .84rem; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .b3d-label.on .b3d-lv { color: var(--blue-soft); }
 .b3d-hint { text-align: center; color: var(--muted); font-size: .75rem; margin: 2px 0 10px; }
 .b3d-extra { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }

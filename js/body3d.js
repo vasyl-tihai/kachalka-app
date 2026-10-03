@@ -1,7 +1,10 @@
 // body3d.js — 3D-фігура людини для екрана замірів.
-// Фігура збирається з плавних «трубок» з еліптичним перерізом (без готової моделі),
-// тож кожен обхват (груди, талія, стегна, біцепс, стегно) прямо задає товщину частини.
-// Three.js підвантажується лише тут (vendor/three), щоб не важчав старт застосунку.
+// Модель: Quaternius «Universal Base Characters» (CC0), руки опущені в A-позу й збережені
+// в models/body/{m,f}.bin скриптом Blender (позиції + регіон кожної вершини + ваги рук/ніг).
+// Обхвати міняють форму так: кінцівки — радіально від осі кістки, тулуб — від осі тіла
+// поясами по висоті. Базовий обхват моделі міряється «стрічкою» (опукла оболонка зрізу),
+// тож 40 см на біцепсі — це справді 40 см на моделі.
+// Three.js і модель підвантажуються лише на цьому екрані.
 
 let THREE = null;
 async function loadThree() {
@@ -9,260 +12,282 @@ async function loadThree() {
   return THREE;
 }
 
-// середні значення, від яких рахується фігура, якщо замірів ще немає
+// середні значення: ними фігура підганяється, поки своїх замірів немає
 export const BODY_BASE = {
-  m: { chest: 100, waist: 84, hips: 98, biceps: 33, thigh: 56, bodyWeight: 78, bodyFat: 18 },
-  f: { chest: 90, waist: 70, hips: 98, biceps: 27, thigh: 56, bodyWeight: 62, bodyFat: 26 },
+  m: { neck: 39, shoulders: 118, chest: 100, waist: 84, belly: 88, hips: 98, biceps: 33, forearm: 28, wrist: 17, thigh: 56, calf: 37, ankle: 23, bodyWeight: 78, bodyFat: 18 },
+  f: { neck: 33, shoulders: 102, chest: 90, waist: 70, belly: 80, hips: 98, biceps: 27, forearm: 24, wrist: 15, thigh: 56, calf: 35, ankle: 21, bodyWeight: 62, bodyFat: 26 },
 };
 
-// на яких частинах показуються мітки (решта метрик — кнопками під фігурою)
-export const BODY_PARTS = ['chest', 'waist', 'hips', 'biceps', 'thigh'];
+// заміри, що мають місце на фігурі (решта — кнопками під нею)
+export const BODY_PARTS = ['neck', 'shoulders', 'chest', 'waist', 'belly', 'hips', 'biceps', 'forearm', 'wrist', 'thigh', 'calf', 'ankle'];
+const LEFT = ['neck', 'shoulders', 'chest', 'waist', 'belly', 'hips'];
+const ARM_IDS = ['biceps', 'forearm', 'wrist'];
+const LEG_IDS = ['thigh', 'calf', 'ankle'];
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
-
-// периметр еліпса (Рамануджан) для співвідношення півосей k = a/b при b = 1
-function perimFactor(k) {
-  return Math.PI * (3 * (k + 1) - Math.sqrt((3 * k + 1) * (k + 3)));
-}
-// обхват у см → півосі еліпса в метрах (k — ширина/глибина)
-function ellipse(cm, k = 1) {
-  const b = cm / 100 / perimFactor(k);
-  return [b * k, b];
-}
-function cr(p0, p1, p2, p3, t) {
-  const t2 = t * t;
-  const t3 = t2 * t;
-  return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
-}
+const smooth = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
 
 // ---------------------------------------------------------------------
-//  Трубка: вузли {x,y,z,a,b} → гладка поверхня із заокругленими кінцями
+//  Завантаження й розбір моделі
 // ---------------------------------------------------------------------
-const RAD = 32; // точок у перерізі
-const SUB = 7; // кроків між вузлами
-const CAP = 6; // кілець на заокруглення кінця
+const MODELS = {};
+async function loadModel(sex) {
+  if (MODELS[sex]) return MODELS[sex];
+  const dir = new URL('../models/body/', import.meta.url);
+  const [meta, buf] = await Promise.all([
+    fetch(new URL(sex + '.json', dir)).then((r) => r.json()),
+    fetch(new URL(sex + '.bin', dir)).then((r) => r.arrayBuffer()),
+  ]);
+  const n = meta.vertices;
+  let off = 0;
+  const pos = new Float32Array(buf, off, n * 3); off += n * 12;
+  const reg = new Uint8Array(buf, off, n); off += n;
+  const armw = new Uint8Array(buf, off, n); off += n;
+  const legw = new Uint8Array(buf, off, n); off += n;
+  off += n; // вага голови — не потрібна
+  off += (4 - (off % 4)) % 4;
+  const idx = meta.index === 'H' ? new Uint16Array(buf, off, meta.triangles * 3) : new Uint32Array(buf, off, meta.triangles * 3);
+  MODELS[sex] = prepare(meta, pos, reg, armw, legw, idx);
+  return MODELS[sex];
+}
 
-function sampleNodes(nodes) {
-  const out = [];
-  const n = nodes.length;
-  const at = (i) => nodes[clamp(i, 0, n - 1)];
-  for (let i = 0; i < n - 1; i++) {
-    const steps = i === n - 2 ? SUB + 1 : SUB;
-    for (let s = 0; s < steps; s++) {
-      const t = s / SUB;
-      const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
-      const o = {};
-      for (const k of ['x', 'y', 'z', 'a', 'b']) o[k] = cr(p0[k], p1[k], p2[k], p3[k], t);
-      o.a = Math.max(o.a, 0.004);
-      o.b = Math.max(o.b, 0.004);
-      out.push(o);
+// опукла оболонка (монотонний ланцюг) → [індекси вершин оболонки, периметр]
+function hull(pts) {
+  if (pts.length < 3) return [pts.map((p) => p[2]), 0];
+  pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const p of pts) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+  const h = lo.slice(0, -1).concat(up.slice(0, -1));
+  let per = 0;
+  for (let i = 0; i < h.length; i++) { const a = h[i], b = h[(i + 1) % h.length]; per += Math.hypot(a[0] - b[0], a[1] - b[1]); }
+  return [h.map((p) => p[2]), per];
+}
+
+function prepare(meta, pos, reg, armw, legw, idx) {
+  const n = meta.vertices;
+  const B = meta.bones;
+  const bh = (k) => B[k].h, bt = (k) => B[k].t;
+
+  // ланцюги кінцівок: точки осі, довжини, параметр s (м від початку)
+  const chain = (pts) => {
+    const segs = [];
+    let s = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+      const L = Math.hypot(d[0], d[1], d[2]) || 1e-6;
+      segs.push({ a, d: [d[0] / L, d[1] / L, d[2] / L], L, s0: s });
+      s += L;
     }
-  }
-  return out;
-}
-
-function ringCount(nodeCount) {
-  return (nodeCount - 1) * SUB + 1 + CAP * 2;
-}
-
-// заповнює масив позицій (довжина ringCount*RAD*3)
-function fillTube(T, pos, nodes) {
-  const rings = sampleNodes(nodes);
-  const full = [];
-  const tan = (i) => {
-    const a = rings[Math.max(0, i - 1)];
-    const b = rings[Math.min(rings.length - 1, i + 1)];
-    const v = new T.Vector3(b.x - a.x, b.y - a.y, b.z - a.z);
-    return v.lengthSq() < 1e-12 ? new T.Vector3(0, -1, 0) : v.normalize();
+    return { segs, len: s };
   };
-  // заокруглений початок
-  const t0 = tan(0);
-  for (let c = CAP; c >= 1; c--) {
-    const ang = (c / CAP) * (Math.PI / 2);
-    const r = rings[0];
-    const d = Math.sin(ang) * Math.min(r.a, r.b);
-    full.push({ x: r.x - t0.x * d, y: r.y - t0.y * d, z: r.z - t0.z * d, a: r.a * Math.cos(ang) + 1e-4, b: r.b * Math.cos(ang) + 1e-4, t: t0 });
-  }
-  rings.forEach((r, i) => full.push({ ...r, t: tan(i) }));
-  const tl = tan(rings.length - 1);
-  for (let c = 1; c <= CAP; c++) {
-    const ang = (c / CAP) * (Math.PI / 2);
-    const r = rings[rings.length - 1];
-    const d = Math.sin(ang) * Math.min(r.a, r.b);
-    full.push({ x: r.x + tl.x * d, y: r.y + tl.y * d, z: r.z + tl.z * d, a: r.a * Math.cos(ang) + 1e-4, b: r.b * Math.cos(ang) + 1e-4, t: tl });
-  }
-  const Z = new T.Vector3(0, 0, 1);
-  const W = new T.Vector3();
-  const D = new T.Vector3();
-  let k = 0;
-  for (const r of full) {
-    W.crossVectors(r.t, Z);
-    if (W.lengthSq() < 1e-8) W.set(1, 0, 0);
-    W.normalize();
-    if (W.x < 0) W.negate(); // ширина завжди вздовж +X, інакше переріз перекручується
-    D.crossVectors(W, r.t).normalize();
-    if (D.z < 0) D.negate();
-    for (let j = 0; j < RAD; j++) {
-      const th = (j / RAD) * Math.PI * 2;
-      const c = Math.cos(th) * r.a;
-      const s = Math.sin(th) * r.b;
-      pos[k++] = r.x + W.x * c + D.x * s;
-      pos[k++] = r.y + W.y * c + D.y * s;
-      pos[k++] = r.z + W.z * c + D.z * s;
-    }
-  }
-}
-
-function makeTube(T, nodes, material) {
-  const rc = ringCount(nodes.length);
-  const pos = new Float32Array(rc * RAD * 3);
-  fillTube(T, pos, nodes);
-  const idx = [];
-  for (let i = 0; i < rc - 1; i++) {
-    for (let j = 0; j < RAD; j++) {
-      const a = i * RAD + j;
-      const b = i * RAD + ((j + 1) % RAD);
-      const c = (i + 1) * RAD + j;
-      const d = (i + 1) * RAD + ((j + 1) % RAD);
-      idx.push(a, c, b, b, c, d);
-    }
-  }
-  const g = new T.BufferGeometry();
-  g.setAttribute('position', new T.BufferAttribute(pos, 3));
-  g.setIndex(idx);
-  g.computeVertexNormals();
-  const mesh = new T.Mesh(g, material);
-  // нормалі мають дивитися назовні: перевіряємо одну вершину посередині й за потреби
-  // перевертаємо трикутники (напрям обходу залежить від напрямку трубки)
-  const mid = Math.floor(rc / 2) * RAD;
-  const n = new T.Vector3().fromBufferAttribute(g.attributes.normal, mid);
-  const ctr = new T.Vector3();
-  for (let j = 0; j < RAD; j++) ctr.add(new T.Vector3().fromBufferAttribute(g.attributes.position, mid + j));
-  ctr.divideScalar(RAD);
-  const v = new T.Vector3().fromBufferAttribute(g.attributes.position, mid).sub(ctr);
-  if (n.dot(v) < 0) {
-    for (let i = 0; i < idx.length; i += 3) { const t = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = t; }
-    g.setIndex(idx);
-    g.computeVertexNormals();
-  }
-  mesh.userData.update = (nn) => {
-    fillTube(T, pos, nn);
-    g.attributes.position.needsUpdate = true;
-    g.computeVertexNormals();
-    g.computeBoundingSphere();
+  const chains = {
+    armL: chain([bh('upperarm_l'), bh('lowerarm_l'), bh('hand_l'), bt('middle_04_leaf_l')]),
+    armR: chain([bh('upperarm_r'), bh('lowerarm_r'), bh('hand_r'), bt('middle_04_leaf_r')]),
+    legL: chain([bh('thigh_l'), bh('calf_l'), bh('foot_l'), bt('ball_leaf_l')]),
+    legR: chain([bh('thigh_r'), bh('calf_r'), bh('foot_r'), bt('ball_leaf_r')]),
   };
-  return mesh;
+  const sideNames = [null, 'armL', 'armR', 'legL', 'legR'];
+
+  // для кожної вершини — проєкція на вісь своєї кінцівки
+  const side = new Uint8Array(n);
+  const ls = new Float32Array(n);
+  const lp = new Float32Array(n * 3);
+  const wA = new Float32Array(n), wL = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    wA[i] = armw[i] / 255;
+    wL[i] = legw[i] / 255;
+    const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+    let sd = 0;
+    if (wA[i] > 0.01) sd = x >= 0 ? 1 : 2;
+    else if (wL[i] > 0.01) sd = x >= 0 ? 3 : 4;
+    side[i] = sd;
+    if (!sd) continue;
+    const ch = chains[sideNames[sd]];
+    let best = Infinity, bs = 0, bp = null;
+    for (const g of ch.segs) {
+      const t = clamp((x - g.a[0]) * g.d[0] + (y - g.a[1]) * g.d[1] + (z - g.a[2]) * g.d[2], 0, g.L);
+      const p = [g.a[0] + g.d[0] * t, g.a[1] + g.d[1] * t, g.a[2] + g.d[2] * t];
+      const dd = (x - p[0]) ** 2 + (y - p[1]) ** 2 + (z - p[2]) ** 2;
+      if (dd < best) { best = dd; bs = g.s0 + t; bp = p; }
+    }
+    ls[i] = bs;
+    lp[i * 3] = bp[0]; lp[i * 3 + 1] = bp[1]; lp[i * 3 + 2] = bp[2];
+  }
+
+  // вісь тулуба: середня глибина (z) по висоті
+  const yMax = meta.height + 0.05;
+  const bins = Math.ceil(yMax / 0.01) + 1;
+  const zs = new Float32Array(bins), zc = new Float32Array(bins);
+  for (let i = 0; i < n; i++) {
+    if (wA[i] > 0.5) continue;
+    const b = clamp(Math.round(pos[i * 3 + 1] / 0.01), 0, bins - 1);
+    zs[b] += pos[i * 3 + 2]; zc[b] += 1;
+  }
+  const raw = new Float32Array(bins);
+  let last = 0;
+  for (let b = 0; b < bins; b++) { if (zc[b]) last = zs[b] / zc[b]; raw[b] = last; }
+  // згладити (±8 см), інакше вісь іде сходинками й на тілі з'являються складки
+  const zAxis = new Float32Array(bins);
+  for (let b = 0; b < bins; b++) {
+    let sum = 0, cnt = 0;
+    for (let j = -8; j <= 8; j++) { const q = b + j; if (q >= 0 && q < bins) { sum += raw[q]; cnt++; } }
+    zAxis[b] = sum / cnt;
+  }
+  const vz = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const fb = clamp(pos[i * 3 + 1] / 0.01, 0, bins - 1.001);
+    const b0 = Math.floor(fb);
+    vz[i] = lerp(zAxis[b0], zAxis[b0 + 1], fb - b0);
+  }
+
+  // зрізи: пояс тулуба на висоті y / кінцівка на відстані s
+  // точний переріз: перетин ребер трикутників із площиною. Точка зрізу = [i, j, t] —
+  // між вершинами i та j, тож після деформації кільце рахується з нових позицій
+  const cut = (field, v0, keep, to2d) => {
+    const pts = [];
+    const edge = (i, j) => {
+      const fi = field(i), fj = field(j);
+      if ((fi - v0) * (fj - v0) >= 0 || !keep(i) || !keep(j)) return;
+      const t = (v0 - fi) / (fj - fi);
+      const P = [lerp(pos[i * 3], pos[j * 3], t), lerp(pos[i * 3 + 1], pos[j * 3 + 1], t), lerp(pos[i * 3 + 2], pos[j * 3 + 2], t)];
+      const q = to2d(P);
+      pts.push([q[0], q[1], [i, j, t]]);
+    };
+    for (let f = 0; f < idx.length; f += 3) {
+      const A = idx[f], Bv = idx[f + 1], C = idx[f + 2];
+      edge(A, Bv); edge(Bv, C); edge(C, A);
+    }
+    return hull(pts);
+  };
+  const bandSlice = (y, withArms) =>
+    cut((i) => pos[i * 3 + 1], y, withArms ? () => true : (i) => wA[i] < 0.5, (P) => [P[0], P[2]]);
+  const limbSlice = (sd, s) => {
+    const ch = chains[sideNames[sd]];
+    const g = ch.segs.find((q) => s >= q.s0 && s <= q.s0 + q.L) || ch.segs[ch.segs.length - 1];
+    // базис, перпендикулярний до кістки
+    const d = g.d;
+    let u = Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    const dot = u[0] * d[0] + u[1] * d[1] + u[2] * d[2];
+    u = [u[0] - d[0] * dot, u[1] - d[1] * dot, u[2] - d[2] * dot];
+    const ul = Math.hypot(u[0], u[1], u[2]);
+    u = u.map((c) => c / ul);
+    const w = [d[1] * u[2] - d[2] * u[1], d[2] * u[0] - d[0] * u[2], d[0] * u[1] - d[1] * u[0]];
+    const o = [g.a[0] + d[0] * (s - g.s0), g.a[1] + d[1] * (s - g.s0), g.a[2] + d[2] * (s - g.s0)];
+    const wt = sd <= 2 ? wA : wL;
+    return cut((i) => ls[i], s, (i) => side[i] === sd && wt[i] > 0.5, (P) => {
+      const r = [P[0] - o[0], P[1] - o[1], P[2] - o[2]];
+      return [r[0] * u[0] + r[1] * u[1] + r[2] * u[2], r[0] * w[0] + r[1] * w[1] + r[2] * w[2]];
+    });
+  };
+  const search = (from, to, steps, fn, pick) => {
+    let best = null;
+    for (let k = 0; k <= steps; k++) {
+      const v = lerp(from, to, k / steps);
+      const [h, per] = fn(v);
+      if (h.length < 8) continue;
+      if (!best || (pick === 'max' ? per > best.per : per < best.per)) best = { v, h, per };
+    }
+    return best;
+  };
+
+  const arm = chains.armL, leg = chains.legL;
+  const aU = arm.segs[0].L, aL = arm.segs[1].L;
+  const gT = leg.segs[0].L, gC = leg.segs[1].L;
+  const pelvisY = bh('pelvis')[1];
+  const sp1 = bh('spine_01')[1], sp2t = bt('spine_02')[1];
+  const sp3h = bh('spine_03')[1], sp3t = bt('spine_03')[1];
+  const neckY = lerp(bh('neck_01')[1], bt('neck_01')[1], 0.6);
+  const shY = bh('upperarm_l')[1] - 0.015;
+
+  const M = {};
+  const band = (id, y, withArms = false) => { const [h, per] = bandSlice(y, withArms); M[id] = { id, kind: 'band', y, hull: h, base: per }; };
+  const bandFound = (id, r) => { M[id] = { id, kind: 'band', y: r.v, hull: r.h, base: r.per }; };
+  const limb = (id, sd, r) => { M[id] = { id, kind: 'limb', side: sd, s: r.v, hull: r.h, base: r.per }; };
+
+  band('neck', neckY);
+  band('shoulders', shY, true);
+  band('chest', lerp(sp3h, sp3t, 0.2));
+  bandFound('waist', search(sp1 + 0.02, sp2t, 20, (y) => bandSlice(y), 'min'));
+  band('belly', sp1);
+  bandFound('hips', search(pelvisY - 0.1, pelvisY - 0.01, 9, (y) => bandSlice(y), 'max'));
+  limb('biceps', 1, search(aU * 0.55, aU * 0.56, 1, (s) => limbSlice(1, s), 'max'));
+  limb('forearm', 1, search(aU + aL * 0.12, aU + aL * 0.45, 10, (s) => limbSlice(1, s), 'max'));
+  limb('wrist', 1, search(aU + aL * 0.86, aU + aL * 0.97, 6, (s) => limbSlice(1, s), 'min'));
+  limb('thigh', 3, search(gT * 0.22, gT * 0.4, 8, (s) => limbSlice(3, s), 'max'));
+  limb('calf', 3, search(gT + gC * 0.15, gT + gC * 0.45, 10, (s) => limbSlice(3, s), 'max'));
+  limb('ankle', 3, search(gT + gC * 0.84, gT + gC * 0.95, 6, (s) => limbSlice(3, s), 'min'));
+  // висота заміру стегна — там згасає пояс «обхват стегон» на ногах
+  const h0 = M.thigh.hull[0];
+  const thighY = Math.min(lerp(pos[h0[0] * 3 + 1], pos[h0[1] * 3 + 1], h0[2]), M.hips.y - 0.06);
+
+  return {
+    meta, n, pos, idx, side, ls, lp, wA, wL, vz, M,
+    marks: { neckTop: bt('neck_01')[1] + 0.02, thighY, shX: Math.abs(bh('upperarm_l')[0]), aU, aL, gT, gC,
+      armLen: arm.len, legLen: leg.len },
+  };
 }
 
 // ---------------------------------------------------------------------
-//  Пропорції: заміри → вузли всіх частин тіла
+//  Деформація: заміри (см) → нові позиції вершин
 // ---------------------------------------------------------------------
-function build(sex, vals) {
+function factors(model, sex, vals) {
   const B = BODY_BASE[sex];
-  const v = {};
-  for (const k of Object.keys(B)) {
-    const x = Number(vals[k]);
-    v[k] = x > 0 ? clamp(x, B[k] * 0.6, B[k] * 1.8) : B[k];
+  const k = {};
+  for (const id of BODY_PARTS) {
+    const v = Number(vals[id]);
+    const target = v > 0 ? v : B[id];
+    k[id] = clamp(target / 100 / model.M[id].base, 0.55, 1.7);
   }
-  const f = sex === 'f';
-  // вага й жир трохи міняють частини, які окремо не міряються
-  const wf = clamp(Math.sqrt(v.bodyWeight / B.bodyWeight), 0.85, 1.3);
-  const belly = clamp((v.bodyFat - B.bodyFat) / 100, -0.06, 0.2);
-
-  const [hipA, hipB] = ellipse(v.hips, f ? 1.42 : 1.34);
-  const [waA, waB] = ellipse(v.waist, f ? 1.34 : 1.3);
-  const [chA, chB] = ellipse(v.chest, f ? 1.3 : 1.45);
-  const under = f ? v.chest * 0.86 : lerp(v.waist, v.chest, 0.6);
-  const [unA, unB] = ellipse(under, f ? 1.3 : 1.4);
-  const shA = chA * (f ? 1.0 : 1.1);
-  const shB = chB * 0.82;
-  const neck = (f ? 32 : 38) * wf;
-  const [nA, nB] = ellipse(neck, 1.05);
-
-  const torso = [
-    { x: 0, y: 0.8, z: 0, a: hipA * 0.86, b: hipB * 0.82 },
-    { x: 0, y: 0.9, z: -0.005, a: hipA, b: hipB },
-    { x: 0, y: 1.02, z: belly * 0.25, a: waA, b: waB * (1 + belly * 0.6) },
-    { x: 0, y: 1.15, z: belly * 0.1, a: unA, b: unB },
-    { x: 0, y: 1.27, z: f ? 0.006 : 0.004, a: chA, b: chB },
-    { x: 0, y: 1.38, z: -0.008, a: shA, b: shB },
-    { x: 0, y: 1.445, z: -0.012, a: shA * 0.8, b: shB * 0.76 },
-    { x: 0, y: 1.49, z: -0.01, a: nA * 1.5, b: nB * 1.25 },
-  ];
-  const neckN = [
-    { x: 0, y: 1.47, z: -0.008, a: nA, b: nB },
-    { x: 0, y: 1.56, z: 0, a: nA * 0.95, b: nB * 0.95 },
-    { x: 0, y: 1.62, z: 0.005, a: nA * 0.9, b: nB * 0.9 },
-  ];
-
-  const bR = v.biceps / 100 / (2 * Math.PI);
-  const fore = ((f ? 24 : 29) * wf) / 100 / (2 * Math.PI);
-  const wrist = ((f ? 15 : 17.5) * Math.sqrt(wf)) / 100 / (2 * Math.PI);
-  const sx = shA - bR * 0.15;
-  const arm = (s) => [
-    { x: s * (sx - 0.015), y: 1.425, z: -0.01, a: bR * 1.18, b: bR * 1.08 },
-    { x: s * (sx + 0.012), y: 1.37, z: -0.008, a: bR * 1.08, b: bR * 1.02 },
-    { x: s * (sx + 0.03), y: 1.27, z: -0.004, a: bR, b: bR * 1.04 },
-    { x: s * (sx + 0.05), y: 1.14, z: -0.01, a: bR * 0.72, b: bR * 0.72 },
-    { x: s * (sx + 0.075), y: 1.03, z: 0.008, a: fore * 1.05, b: fore * 0.9 },
-    { x: s * (sx + 0.105), y: 0.87, z: 0.024, a: wrist * 1.15, b: wrist * 0.85 },
-  ];
-
-  const tR = v.thigh / 100 / (2 * Math.PI);
-  const knee = ((f ? 36 : 38) * wf) / 100 / (2 * Math.PI);
-  const calf = ((f ? 36 : 38) * wf) / 100 / (2 * Math.PI);
-  const ankle = ((f ? 21 : 23) * Math.sqrt(wf)) / 100 / (2 * Math.PI);
-  const hx = Math.max(hipA * 0.5, tR * 0.92);
-  const leg = (s) => [
-    { x: s * hx, y: 0.86, z: 0, a: tR * 1.06, b: tR * 1.04 },
-    { x: s * hx * 0.97, y: 0.74, z: 0.004, a: tR, b: tR },
-    { x: s * hx * 0.9, y: 0.6, z: 0.006, a: tR * 0.8, b: tR * 0.82 },
-    { x: s * hx * 0.82, y: 0.48, z: 0.004, a: knee, b: knee },
-    { x: s * hx * 0.8, y: 0.36, z: -0.008, a: calf * 1.02, b: calf * 1.06 },
-    { x: s * hx * 0.78, y: 0.2, z: -0.004, a: calf * 0.72, b: calf * 0.72 },
-    { x: s * hx * 0.78, y: 0.08, z: 0, a: ankle, b: ankle },
-  ];
-
-  return {
-    sex, v,
-    torso, neck: neckN,
-    armL: arm(1), armR: arm(-1),
-    legL: leg(1), legR: leg(-1),
-    head: { y: 1.7, r: f ? 0.092 : 0.097 },
-    bust: f ? clamp(0.034 + (v.chest - under) / 100 * 0.22, 0.03, 0.07) : 0,
-    chest: { a: chA, b: chB, z: f ? 0.006 : 0.004 },
-    rings: {
-      chest: { y: 1.27, x: 0, z: f ? 0.006 : 0.004, a: chA, b: chB },
-      waist: { y: 1.02, x: 0, z: belly * 0.25, a: waA, b: waB * (1 + belly * 0.6) },
-      hips: { y: 0.9, x: 0, z: -0.005, a: hipA, b: hipB },
-      biceps: { y: 1.27, x: sx + 0.03, z: -0.004, a: bR, b: bR * 1.04 },
-      thigh: { y: 0.74, x: hx * 0.97, z: 0.004, a: tR, b: tR },
-    },
-  };
+  return k;
 }
 
-// плавний перехід між двома наборами вузлів
-function mixShape(a, b, t) {
-  const mixNodes = (p, q) => p.map((n, i) => ({
-    x: lerp(n.x, q[i].x, t), y: lerp(n.y, q[i].y, t), z: lerp(n.z, q[i].z, t),
-    a: lerp(n.a, q[i].a, t), b: lerp(n.b, q[i].b, t),
-  }));
-  const rings = {};
-  for (const k of Object.keys(b.rings)) {
-    const p = a.rings[k], q = b.rings[k];
-    rings[k] = { y: lerp(p.y, q.y, t), x: lerp(p.x, q.x, t), z: lerp(p.z, q.z, t), a: lerp(p.a, q.a, t), b: lerp(p.b, q.b, t) };
+// профіль k уздовж осі з контрольних точок [[t, k], …] — плавні переходи
+function profile(points, t) {
+  if (t <= points[0][0]) return points[0][1];
+  for (let i = 0; i < points.length - 1; i++) {
+    const [t0, k0] = points[i], [t1, k1] = points[i + 1];
+    if (t <= t1) return lerp(k0, k1, smooth((t - t0) / (t1 - t0 || 1)));
   }
-  return {
-    ...b,
-    torso: mixNodes(a.torso, b.torso), neck: mixNodes(a.neck, b.neck),
-    armL: mixNodes(a.armL, b.armL), armR: mixNodes(a.armR, b.armR),
-    legL: mixNodes(a.legL, b.legL), legR: mixNodes(a.legR, b.legR),
-    head: { y: lerp(a.head.y, b.head.y, t), r: lerp(a.head.r, b.head.r, t) },
-    bust: lerp(a.bust, b.bust, t),
-    chest: { a: lerp(a.chest.a, b.chest.a, t), b: lerp(a.chest.b, b.chest.b, t), z: lerp(a.chest.z, b.chest.z, t) },
-    rings,
-  };
+  return points[points.length - 1][1];
+}
+
+function deform(model, k, out) {
+  const { n, pos, side, ls, lp, wA, wL, vz, M, marks } = model;
+  // пояси тулуба (знизу вгору); X і Z окремо — плечі міняють лише ширину
+  const kx = [[marks.thighY, 1], [M.hips.y, k.hips], [M.belly.y, k.belly], [M.waist.y, k.waist], [M.chest.y, k.chest],
+    [M.shoulders.y, k.shoulders], [M.neck.y, k.neck], [marks.neckTop, 1]].sort((a, b) => a[0] - b[0]);
+  const kz = [[marks.thighY, 1], [M.hips.y, k.hips], [M.belly.y, k.belly], [M.waist.y, k.waist], [M.chest.y, k.chest],
+    [M.neck.y, k.neck], [marks.neckTop, 1]].sort((a, b) => a[0] - b[0]);
+  const { aU, aL, gT, gC } = marks;
+  const armP = [[0, (1 + k.biceps) / 2], [M.biceps.s, k.biceps], [aU, (k.biceps + k.forearm) / 2], [M.forearm.s, k.forearm],
+    [M.wrist.s, k.wrist], [aU + aL + 0.03, (1 + k.wrist) / 2], [marks.armLen, 1]];
+  const legP = [[0, 1], [M.thigh.s, k.thigh], [gT, k.thigh * 0.45 + k.calf * 0.55], [M.calf.s, k.calf],
+    [M.ankle.s, k.ankle], [gT + gC + 0.04, (1 + k.ankle) / 2], [marks.legLen, 1]];
+  // руки відсуваються, щоб ширші плечі/груди в них не врізались
+  const tx = Math.max((profile(kx, M.shoulders.y) - 1) * marks.shX, (profile(kx, M.chest.y) - 1) * marks.shX * 0.75, 0);
+
+  for (let i = 0; i < n; i++) {
+    let x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+    const sd = side[i];
+    if (sd) {
+      const arm = sd <= 2;
+      const kk = 1 + (profile(arm ? armP : legP, ls[i]) - 1) * (arm ? wA[i] : wL[i]);
+      const px = lp[i * 3], py = lp[i * 3 + 1], pz = lp[i * 3 + 2];
+      x = px + (x - px) * kk; y = py + (y - py) * kk; z = pz + (z - pz) * kk;
+    }
+    const f = 1 - wA[i];
+    if (f > 0) {
+      const yb = pos[i * 3 + 1];
+      x *= 1 + (profile(kx, yb) - 1) * f;
+      z = vz[i] + (z - vz[i]) * (1 + (profile(kz, yb) - 1) * f);
+    }
+    if (wA[i] > 0) x += (pos[i * 3] >= 0 ? 1 : -1) * tx * wA[i];
+    out[i * 3] = x; out[i * 3 + 1] = y; out[i * 3 + 2] = z;
+  }
 }
 
 function cssVar(name, fallback) {
@@ -280,128 +305,92 @@ function cssVar(name, fallback) {
  */
 export async function mountBody3D(container, opts) {
   const T = await loadThree();
+  let sex = opts.sex === 'f' ? 'f' : 'm';
+  let model = await loadModel(sex);
+
   const canvas = document.createElement('canvas');
   canvas.className = 'b3d-canvas';
-  container.appendChild(canvas);
   const overlay = document.createElement('div');
   overlay.className = 'b3d-overlay';
-  container.appendChild(overlay);
   const svgNS = 'http://www.w3.org/2000/svg';
   const lines = document.createElementNS(svgNS, 'svg');
   lines.setAttribute('class', 'b3d-lines');
   overlay.appendChild(lines);
 
-  let renderer;
-  try {
-    renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
-  } catch (e) {
-    canvas.remove();
-    overlay.remove();
-    throw e;
-  }
+  const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+  container.appendChild(canvas);
+  container.appendChild(overlay);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = T.SRGBColorSpace;
 
   const scene = new T.Scene();
-  const camera = new T.PerspectiveCamera(24, 1, 0.1, 20);
-  camera.position.set(0, 0.98, 4.6);
+  const camera = new T.PerspectiveCamera(24, 1, 0.1, 30);
+  camera.position.set(0, 0.95, 5);
   camera.lookAt(0, 0.9, 0);
 
   const accent = new T.Color(cssVar('--blue', '#5b9bff'));
   const txt = new T.Color(cssVar('--txt', '#eef1f6'));
   const card = new T.Color(cssVar('--bg-card', '#0d0d10'));
-  const skin = txt.clone().lerp(card, 0.42);
   const light = card.getHSL({}).l > 0.5;
+  const skin = light ? new T.Color('#c9ccd3') : txt.clone().lerp(card, 0.38);
 
-  scene.add(new T.HemisphereLight(0xffffff, light ? 0x9a9a9a : 0x202028, light ? 1.4 : 1.15));
-  const key = new T.DirectionalLight(0xffffff, light ? 1.5 : 1.9);
-  key.position.set(1.6, 2.6, 2.4);
+  scene.add(new T.HemisphereLight(0xffffff, light ? 0x8c8c94 : 0x1a1a22, light ? 1.25 : 1.05));
+  const key = new T.DirectionalLight(0xffffff, light ? 1.7 : 2.1);
+  key.position.set(1.4, 2.4, 2.6);
   scene.add(key);
-  const rim = new T.DirectionalLight(accent.getHex(), light ? 0.5 : 1.3);
-  rim.position.set(-2.2, 1.6, -2.4);
+  const fill = new T.DirectionalLight(0xffffff, 0.35);
+  fill.position.set(-2, 1, 1.5);
+  scene.add(fill);
+  const rim = new T.DirectionalLight(accent.getHex(), light ? 0.5 : 1.0);
+  rim.position.set(-1.8, 1.8, -2.6);
   scene.add(rim);
 
-  const mat = new T.MeshStandardMaterial({ color: skin, roughness: 0.62, metalness: 0.04 });
+  const mat = new T.MeshStandardMaterial({ color: skin, roughness: 0.58, metalness: 0.03 });
   const fig = new T.Group();
   scene.add(fig);
 
-  let sex = opts.sex === 'f' ? 'f' : 'm';
   let values = { ...(opts.values || {}) };
-  let shape = build(sex, values);
-
-  const parts = {
-    torso: makeTube(T, shape.torso, mat),
-    neck: makeTube(T, shape.neck, mat),
-    armL: makeTube(T, shape.armL, mat),
-    armR: makeTube(T, shape.armR, mat),
-    legL: makeTube(T, shape.legL, mat),
-    legR: makeTube(T, shape.legR, mat),
-  };
-  parts.torso.userData.metric = 'torso';
-  parts.armL.userData.metric = 'biceps';
-  parts.armR.userData.metric = 'biceps';
-  parts.legL.userData.metric = 'thigh';
-  parts.legR.userData.metric = 'thigh';
-  Object.values(parts).forEach((m) => fig.add(m));
-
-  const sphere = new T.SphereGeometry(1, 32, 20);
-  const head = new T.Mesh(sphere, mat);
-  fig.add(head);
-  const hands = [new T.Mesh(sphere, mat), new T.Mesh(sphere, mat)];
-  const feet = [new T.Mesh(sphere, mat), new T.Mesh(sphere, mat)];
-  const bust = [new T.Mesh(sphere, mat), new T.Mesh(sphere, mat)];
-  bust.forEach((b) => { b.userData.metric = 'chest'; });
-  [...hands, ...feet, ...bust].forEach((m) => fig.add(m));
-
-  // кільця-«сантиметри» в місцях замірів
-  const ringGeo = new T.TorusGeometry(1, 0.022, 8, 64);
-  const rings = {};
-  for (const id of BODY_PARTS) {
-    const m = new T.Mesh(ringGeo, new T.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.3, depthTest: true }));
-    m.rotation.x = Math.PI / 2;
-    m.scale.set(1, 1, 0.22); // товщина кільця по вертикалі ~5 мм
-    const holder = new T.Group();
-    holder.add(m);
-    fig.add(holder);
-    rings[id] = { holder, mesh: m };
+  let geo, mesh, outPos;
+  let kNow = factors(model, sex, values);
+  function buildMesh() {
+    if (mesh) { fig.remove(mesh); geo.dispose(); }
+    geo = new T.BufferGeometry();
+    outPos = new Float32Array(model.n * 3);
+    deform(model, kNow, outPos);
+    geo.setAttribute('position', new T.BufferAttribute(outPos, 3));
+    geo.setIndex(new T.BufferAttribute(model.idx, 1));
+    geo.computeVertexNormals();
+    mesh = new T.Mesh(geo, mat);
+    fig.add(mesh);
   }
+  buildMesh();
 
-  function placeExtras(s) {
-    head.position.set(0, s.head.y, 0.008);
-    head.scale.set(s.head.r * 0.84, s.head.r * 1.1, s.head.r * 0.96);
-    [s.armL, s.armR].forEach((a, i) => {
-      const w = a[a.length - 1];
-      hands[i].position.set(w.x + (i ? -0.006 : 0.006), w.y - 0.075, w.z + 0.006);
-      hands[i].scale.set(0.026, 0.07, 0.036);
-    });
-    [s.legL, s.legR].forEach((l, i) => {
-      const an = l[l.length - 1];
-      feet[i].position.set(an.x, 0.035, an.z + 0.055);
-      feet[i].scale.set(0.042, 0.034, 0.115);
-    });
-    bust.forEach((b, i) => {
-      b.visible = s.bust > 0;
-      if (!b.visible) return;
-      const r = s.bust;
-      b.position.set((i ? -1 : 1) * s.chest.a * 0.42, 1.25, s.chest.z + s.chest.b - r * 0.95);
-      b.scale.set(r * 1.15, r * 0.95, r * 0.75);
-    });
+  // кільця-«сантиметри»: лінія через вершини оболонки зрізу, трохи над шкірою
+  const ringMat = {};
+  const rings = {};
+  function ringPoints(id) {
+    const m = model.M[id];
+    const pts = m.hull.map(([i, j, t]) => new T.Vector3(
+      lerp(outPos[i * 3], outPos[j * 3], t), lerp(outPos[i * 3 + 1], outPos[j * 3 + 1], t), lerp(outPos[i * 3 + 2], outPos[j * 3 + 2], t)));
+    const c = pts.reduce((a, p) => a.add(p), new T.Vector3()).divideScalar(pts.length || 1);
+    pts.forEach((p) => p.sub(c).multiplyScalar(1.03).add(c));
+    return pts;
+  }
+  function buildRings() {
     for (const id of BODY_PARTS) {
-      const r = s.rings[id];
-      const h = rings[id].holder;
-      h.position.set(r.x, r.y, r.z);
-      h.scale.set(r.a + 0.006, 1, r.b + 0.006);
+      if (rings[id]) { fig.remove(rings[id]); rings[id].geometry.dispose(); delete rings[id]; }
+      const pts = ringPoints(id);
+      if (pts.length < 3) continue;
+      const curve = new T.CatmullRomCurve3(pts, true, 'centripetal');
+      const g = new T.TubeGeometry(curve, 72, 0.0028, 6, true);
+      if (!ringMat[id]) ringMat[id] = new T.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.3 });
+      rings[id] = new T.Mesh(g, ringMat[id]);
+      fig.add(rings[id]);
     }
   }
-
-  function applyShape(s) {
-    for (const k of Object.keys(parts)) parts[k].userData.update(s[k]);
-    placeExtras(s);
-  }
-  applyShape(shape);
+  buildRings();
 
   // --- мітки з лініями ---
-  const LEFT = ['chest', 'waist', 'hips'];
   const labelEls = {};
   let selected = opts.selected || null;
   function makeLabels(l) {
@@ -412,7 +401,7 @@ export async function mountBody3D(container, opts) {
       const el = document.createElement('button');
       el.type = 'button';
       el.className = 'b3d-label ' + (LEFT.includes(id) ? 'left' : 'right') + (id === selected ? ' on' : '');
-      el.innerHTML = `<span class="b3d-lt"></span><span class="b3d-lv"></span>`;
+      el.innerHTML = '<span class="b3d-lt"></span><span class="b3d-lv"></span>';
       el.querySelector('.b3d-lt').textContent = info.title;
       el.querySelector('.b3d-lv').textContent = info.value;
       el.addEventListener('click', (e) => { e.stopPropagation(); opts.onPick && opts.onPick(id); });
@@ -432,10 +421,8 @@ export async function mountBody3D(container, opts) {
     H = Math.max(1, Math.round(r.height));
     renderer.setSize(W, H, false);
     camera.aspect = W / H;
-    // фігура має влазити по висоті й лишати поля для міток з боків
-    const fitH = 2.05;
-    const fov = 2 * Math.atan(fitH / 2 / camera.position.z) * (180 / Math.PI);
-    camera.fov = fov;
+    const fitH = 2.02; // скільки метрів по висоті влазить у кадр
+    camera.fov = 2 * Math.atan(fitH / 2 / camera.position.z) * (180 / Math.PI);
     camera.updateProjectionMatrix();
     lines.setAttribute('viewBox', `0 0 ${W} ${H}`);
     lines.setAttribute('width', W);
@@ -443,44 +430,39 @@ export async function mountBody3D(container, opts) {
   }
 
   const tmp = new T.Vector3();
-  function project(x, y, z) {
-    tmp.set(x, y, z).applyMatrix4(fig.matrixWorld).project(camera);
-    return [(tmp.x * 0.5 + 0.5) * W, (-tmp.y * 0.5 + 0.5) * H, tmp.z];
+  function project(v) {
+    tmp.copy(v).applyMatrix4(fig.matrixWorld).project(camera);
+    return [(tmp.x * 0.5 + 0.5) * W, (-tmp.y * 0.5 + 0.5) * H];
   }
-
   function layoutLabels() {
-    const slotsY = {};
+    const at = {};
     for (const id of BODY_PARTS) {
-      const r = shape.rings[id];
       const left = LEFT.includes(id);
-      // точка кільця, найближча до свого боку екрана
       let best = null;
-      for (let j = 0; j < 24; j++) {
-        const th = (j / 24) * Math.PI * 2;
-        const p = project(r.x + Math.cos(th) * r.a, r.y, r.z + Math.sin(th) * r.b);
-        if (!best || (left ? p[0] < best[0] : p[0] > best[0])) best = p;
+      for (const p of ringPoints(id)) {
+        const q = project(p);
+        if (!best || (left ? q[0] < best[0] : q[0] > best[0])) best = q;
       }
-      slotsY[id] = best;
+      at[id] = best || [W / 2, H / 2];
     }
-    // розсунути мітки по вертикалі, щоб не налазили
-    for (const side of [LEFT, BODY_PARTS.filter((x) => !LEFT.includes(x))]) {
-      const ids = side.slice().sort((a, b) => slotsY[a][1] - slotsY[b][1]);
+    const gap = 38;
+    for (const ids of [LEFT, BODY_PARTS.filter((x) => !LEFT.includes(x))]) {
+      const order = ids.slice().sort((a, b) => at[a][1] - at[b][1]);
       let prev = -Infinity;
-      for (const id of ids) {
-        let y = Math.max(slotsY[id][1], prev + 46);
-        slotsY[id].ly = y;
-        prev = y;
-      }
+      for (const id of order) { at[id].ly = Math.max(at[id][1], prev + gap, 18); prev = at[id].ly; }
+      // якщо низ вилазить за край — підтягнути колонку вгору
+      const over = prev - (H - 18);
+      if (over > 0) order.forEach((id) => { at[id].ly -= over; });
     }
     for (const id of BODY_PARTS) {
       const { el, ln } = labelEls[id];
-      const [ax, ay] = slotsY[id];
-      const ly = slotsY[id].ly;
+      const [ax, ay] = at[id];
+      const ly = at[id].ly;
       const left = LEFT.includes(id);
       el.style.top = `${ly}px`;
-      const lw = el.offsetWidth || 70;
-      const lx = left ? 8 + lw : W - 8 - lw;
-      const mx = left ? lx + 10 : lx - 10;
+      const lw = el.offsetWidth || 64;
+      const lx = left ? 6 + lw : W - 6 - lw;
+      const mx = left ? lx + 8 : lx - 8;
       ln.setAttribute('d', `M${lx} ${ly} L${mx} ${ly} L${ax} ${ay} m-2.5 0 a2.5 2.5 0 1 0 5 0 a2.5 2.5 0 1 0 -5 0`);
     }
   }
@@ -491,41 +473,44 @@ export async function mountBody3D(container, opts) {
     layoutLabels();
   }
 
-  // --- вибір частини ---
   function select(id) {
     selected = id;
     for (const k of BODY_PARTS) {
       const on = k === id;
-      rings[k].mesh.material.opacity = on ? 1 : 0.28;
+      if (ringMat[k]) ringMat[k].opacity = on ? 1 : 0.3;
       labelEls[k].el.classList.toggle('on', on);
       labelEls[k].ln.classList.toggle('on', on);
     }
     render();
   }
 
-  // --- обертання пальцем ---
-  let angle = typeof opts.angle === 'number' ? opts.angle : -0.35;
-  let vel = 0;
-  let raf = 0;
-  let morph = null;
+  // --- обертання пальцем, плавна зміна форми ---
+  let angle = typeof opts.angle === 'number' ? opts.angle : -0.3;
+  let vel = 0, raf = 0, morph = null;
   fig.rotation.y = angle;
+
+  function applyK(k) {
+    kNow = k;
+    deform(model, kNow, outPos);
+    geo.attributes.position.needsUpdate = true;
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    buildRings();
+    select(selected);
+  }
   function tick() {
     raf = 0;
     let more = false;
-    if (!dragging && Math.abs(vel) > 0.0004) {
-      angle += vel;
-      vel *= 0.92;
-      more = true;
-    }
+    if (!dragging && Math.abs(vel) > 0.0004) { angle += vel; vel *= 0.92; more = true; }
+    fig.rotation.y = angle;
     if (morph) {
       const t = clamp((performance.now() - morph.t0) / 320, 0, 1);
       const e = 1 - Math.pow(1 - t, 3);
-      shape = mixShape(morph.from, morph.to, e);
-      applyShape(shape);
-      if (t >= 1) { shape = morph.to; morph = null; } else more = true;
-    }
-    fig.rotation.y = angle;
-    render();
+      const k = {};
+      for (const id of BODY_PARTS) k[id] = lerp(morph.from[id], morph.to[id], e);
+      if (t >= 1) morph = null; else more = true;
+      applyK(k);
+    } else render();
     if (more) kick();
   }
   function kick() { if (!raf) raf = requestAnimationFrame(tick); }
@@ -533,11 +518,8 @@ export async function mountBody3D(container, opts) {
   let dragging = false, sx0 = 0, sy0 = 0, lastX = 0, moved = 0;
   const ray = new T.Raycaster();
   canvas.addEventListener('pointerdown', (e) => {
-    dragging = true;
-    moved = 0;
-    sx0 = lastX = e.clientX;
-    sy0 = e.clientY;
-    vel = 0;
+    dragging = true; moved = 0; vel = 0;
+    sx0 = lastX = e.clientX; sy0 = e.clientY;
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener('pointermove', (e) => {
@@ -546,31 +528,36 @@ export async function mountBody3D(container, opts) {
     lastX = e.clientX;
     moved = Math.max(moved, Math.abs(e.clientX - sx0), Math.abs(e.clientY - sy0));
     const d = dx * 0.012;
-    angle += d;
-    vel = d;
+    angle += d; vel = d;
     fig.rotation.y = angle;
     render();
   });
-  const end = (e) => {
+  canvas.addEventListener('pointerup', (e) => {
     if (!dragging) return;
     dragging = false;
     if (moved < 6) { vel = 0; pick(e); } else kick();
-  };
-  canvas.addEventListener('pointerup', end);
+  });
   canvas.addEventListener('pointercancel', () => { dragging = false; });
 
+  // тап по тілу → найближчий замір того ж регіону
   function pick(e) {
     const r = canvas.getBoundingClientRect();
     const p = new T.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(p, camera);
-    const hits = ray.intersectObjects([...Object.values(parts), ...bust], false);
-    if (!hits.length) return;
-    let id = hits[0].object.userData.metric;
-    if (id === 'torso') {
-      const y = fig.worldToLocal(hits[0].point.clone()).y;
-      id = y > 1.17 ? 'chest' : y > 0.96 ? 'waist' : 'hips';
+    const hit = ray.intersectObject(mesh, false)[0];
+    if (!hit) return;
+    const vi = hit.face.a;
+    const sd = model.side[vi];
+    const M = model.M;
+    let id;
+    if (sd && (sd <= 2 ? model.wA[vi] : model.wL[vi]) > 0.5) {
+      const ids = sd <= 2 ? ARM_IDS : LEG_IDS;
+      id = ids.reduce((a, b) => (Math.abs(M[b].s - model.ls[vi]) < Math.abs(M[a].s - model.ls[vi]) ? b : a));
+    } else {
+      const y = model.pos[vi * 3 + 1];
+      id = LEFT.reduce((a, b) => (Math.abs(M[b].y - y) < Math.abs(M[a].y - y) ? b : a));
     }
-    if (id && opts.onPick) opts.onPick(id);
+    if (opts.onPick) opts.onPick(id);
   }
 
   const ro = new ResizeObserver(() => { resize(); render(); });
@@ -579,17 +566,23 @@ export async function mountBody3D(container, opts) {
   select(selected);
 
   return {
-    update(nextValues, nextSex) {
-      if (nextSex) sex = nextSex === 'f' ? 'f' : 'm';
+    async update(nextValues, nextSex) {
       values = { ...values, ...nextValues };
-      const to = build(sex, values);
-      if (to.sex !== shape.sex) { morph = null; shape = to; applyShape(shape); render(); return; }
-      morph = { from: shape, to, t0: performance.now() };
+      if (nextSex && (nextSex === 'f' ? 'f' : 'm') !== sex) {
+        sex = nextSex === 'f' ? 'f' : 'm';
+        model = await loadModel(sex);
+        morph = null;
+        kNow = factors(model, sex, values);
+        buildMesh();
+        buildRings();
+        select(selected);
+        return;
+      }
+      const to = factors(model, sex, values);
+      morph = { from: { ...kNow }, to, t0: performance.now() };
       kick();
-      // якщо кадрів анімації немає (фонова вкладка) — одразу кінцева форма
-      setTimeout(() => {
-        if (morph && morph.to === to) { morph = null; shape = to; applyShape(shape); render(); }
-      }, 500);
+      // без кадрів анімації (фонова вкладка) — одразу кінцева форма
+      setTimeout(() => { if (morph && morph.to === to) { morph = null; applyK(to); } }, 500);
     },
     select,
     setLabels(l) { makeLabels(l); select(selected); },
@@ -597,12 +590,13 @@ export async function mountBody3D(container, opts) {
     destroy() {
       if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
-      Object.values(parts).forEach((m) => m.geometry.dispose());
-      sphere.dispose();
-      ringGeo.dispose();
+      if (geo) geo.dispose();
+      Object.values(rings).forEach((m) => m.geometry.dispose());
+      Object.values(ringMat).forEach((m) => m.dispose());
       mat.dispose();
       renderer.dispose();
       container.innerHTML = '';
     },
   };
 }
+
