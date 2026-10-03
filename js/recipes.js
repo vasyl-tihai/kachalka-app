@@ -43,9 +43,6 @@ export function youtubeId(url) {
   const m = String(url).match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/))([\w-]{11})/);
   return m ? m[1] : null;
 }
-export function videoSearchUrl(name) {
-  return 'https://www.youtube.com/results?search_query=' + encodeURIComponent(name);
-}
 
 // ---------- фото власних рецептів (IndexedDB, не localStorage) ----------
 const DB_NAME = 'kachalka-recipes';

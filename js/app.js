@@ -82,7 +82,6 @@ let extraSetArmed = false;
 // (велика кнопка «Почати підхід» потрібна лише для найпершого підходу тренування)
 let autoStartWork = false;
 // демо-режим спільноти: показує вигаданих людей і дописи (нічого не пише на сервер)
-let communityDemo = false;
 
 // екран замірів тіла: обрана метрика і дата запису
 let bodyMetric = 'chest';
@@ -119,12 +118,12 @@ const routes = [
   { re: /^#\/history(?:\/(.+))?$/, render: renderHistory },
   { re: /^#\/settings$/, render: renderSettings },
   { re: /^#\/coach$/, render: renderCoach },
-  { re: /^#\/community$/, render: renderCommunity },
+  { re: /^#\/community$/, render: renderCommunityHub },
   { re: /^#\/user\/(.+)$/, render: renderUserProfile },
   { re: /^#\/client\/(.+)$/, render: renderClientManage },
   { re: /^#\/chat\/(.+)$/, render: renderChat },
   { re: /^#\/calories$/, render: renderCalories },
-  { re: /^#\/recipes$/, render: renderRecipes },
+  { re: /^#\/recipes$/, render: () => { commSeg = 'recipes'; return renderRecipes(); } },
   { re: /^#\/recipe-new$/, render: () => renderRecipeEdit(null) },
   { re: /^#\/recipe-edit\/(.+)$/, render: renderRecipeEdit },
   { re: /^#\/today$/, render: renderToday },
@@ -220,10 +219,9 @@ function updateTabbar(hash) {
       : hash.startsWith(b.dataset.hash) ||
       (b.dataset.hash === '#/today' && (hash === '#/' || hash === '#/calories')) ||
       (b.dataset.hash === '#/workouts' && hash.startsWith('#/workout')) ||
-      (b.dataset.hash === '#/formcheck' && hash.startsWith('#/recipe')) ||
       (b.dataset.hash === '#/progress' && (hash.startsWith('#/history') || hash.startsWith('#/body'))) ||
       (b.dataset.hash === '#/community' &&
-        (hash.startsWith('#/user') || hash.startsWith('#/coach') || hash.startsWith('#/chat') || hash.startsWith('#/client')));
+        (hash.startsWith('#/user') || hash.startsWith('#/recipe') || hash.startsWith('#/coach') || hash.startsWith('#/chat') || hash.startsWith('#/client')));
     b.classList.toggle('active', active);
   });
   // ховаємо таб-бар на повноекранних екранах (підхід, камера)
@@ -3424,6 +3422,78 @@ function postDate(ts) {
   return `${d.getDate()} ${names.monthsShort[d.getMonth()]} · ${hh}:${mm}`;
 }
 
+// розділ вкладки «Спільнота»: Рецепти (стрічка як у TikTok) | Стрічка (дописи з фото) | Люди
+let commSeg = 'recipes';
+const CSEGS = [['recipes', 'Рецепти'], ['feed', 'Стрічка'], ['people', 'Люди']];
+function commSegHTML(cls) {
+  return `<div class="${cls}">${CSEGS.map(([id, l]) =>
+    `<button class="${commSeg === id ? 'on' : ''}" data-seg="${id}">${T(l)}</button>`).join('')}</div>`;
+}
+function bindCommSeg(root) {
+  root.querySelectorAll('[data-seg]').forEach((b) => (b.onclick = () => {
+    if (commSeg === b.dataset.seg) return;
+    commSeg = b.dataset.seg;
+    recipeAt = null;
+    if (location.hash !== '#/community') go('#/community');
+    else renderCommunityHub();
+  }));
+}
+function renderCommunityHub() {
+  return commSeg === 'recipes' ? renderRecipes() : renderCommunity();
+}
+
+// лайки — поки без сервера, лише на цьому пристрої
+const LIKES_KEY = 'kachalka-likes';
+function likedSet() {
+  try { return new Set(JSON.parse(localStorage.getItem(LIKES_KEY) || '[]')); } catch { return new Set(); }
+}
+function toggleLike(id) {
+  const s = likedSet();
+  const on = !s.has(id);
+  if (on) s.add(id); else s.delete(id);
+  try { localStorage.setItem(LIKES_KEY, JSON.stringify([...s])); } catch { /* приватний режим — лайк живе до перезавантаження */ }
+  return on;
+}
+
+// позначка біля імені: офіційний акаунт КАЧАЛКИ або приклад профілю
+function personBadge(a) {
+  if (a.official) return `<span class="badge-off" title="${T('Офіційний акаунт')}">✔</span>`;
+  if (a.sample) return `<span class="badge-sample">${T('Приклад профілю')}</span>`;
+  return '';
+}
+function roleLabel(p) {
+  return p.role === 'trainer' ? `🧑‍🏫 ${T('Тренер')}` : p.role === 'kitchen' ? `🍳 ${T('Рецепти')}` : `🏋️ ${T('Атлет')}`;
+}
+
+function postCardHTML(p, meId, liked) {
+  const a = p.author || {};
+  const mine = meId && p.author_id === meId;
+  const on = liked.has(p.id);
+  const fb = p.fallback ? ` onerror="this.onerror=null;this.src='${p.fallback}'"` : '';
+  return `<section class="card post-card">
+    <div class="post-head">
+      <button class="post-user" data-u="${esc(p.author_id)}">${avatarHtml(a)}</button>
+      <button class="post-author" data-u="${esc(p.author_id)}">${esc(T(a.name || 'Без імені'))}${personBadge(a)}</button>
+      <span class="post-date muted">${postDate(p.created_at)}</span>
+      ${mine ? `<button class="set-del post-del" data-id="${p.id}" data-path="${esc(p.photo_path || '')}" title="${T('Видалити')}">✕</button>` : ''}
+    </div>
+    <img class="post-img" src="${esc(p.photo_url)}" alt="" loading="lazy"${fb}/>
+    <div class="post-acts">
+      <button class="post-act ${on ? 'on' : ''}" data-like="${esc(p.id)}">${on ? '♥' : '♡'}</button>
+      <button class="post-act" data-share="${esc(p.id)}">↗</button>
+    </div>
+    ${p.caption ? `<p class="post-cap">${esc(p.official || a.official || a.sample ? T(p.caption) : p.caption)}</p>` : ''}
+  </section>`;
+}
+
+function personRowHTML(p) {
+  return `<button class="pick-row fc-row person-row" data-u="${esc(p.id)}">
+    ${avatarHtml(p)}
+    <span class="pick-name">${esc(T(p.name || 'Без імені'))}${personBadge(p)}${p.city ? ` <span class="muted">· ${esc(T(p.city))}</span>` : ''}</span>
+    <span class="fc-pat">${roleLabel(p)}</span>
+  </button>`;
+}
+
 async function renderCommunity() {
   screenEl.innerHTML = `
     <header class="appbar">
@@ -3433,100 +3503,105 @@ async function renderCommunity() {
       </div>
       <button class="icon-btn" id="myCab" title="${T('Мій кабінет')}">👤</button>
     </header>
-    <div id="commBody"><section class="card"><p class="muted">Завантаження…</p></section></div>`;
+    ${commSegHTML('cseg')}
+    <div id="commBody"><section class="card"><p class="muted">${T('Завантаження…')}</p></section></div>`;
   screenEl.querySelector('#myCab').onclick = () => go('#/coach');
-  const body = () => screenEl.querySelector('#commBody');
+  bindCommSeg(screenEl);
+  const seg = commSeg;
+  const alive = () => location.hash === '#/community' && commSeg === seg;
 
-  if (communityDemo) return renderCommunityDemo();
-
-  if (!BE.configured) {
-    body().innerHTML = `<section class="card"><p class="muted">Сервер ще не підключено (див. backend/SUPABASE_SETUP.md).</p></section>`;
-    return;
+  const { demoData } = await import('./demo.js');
+  const D = demoData();
+  let session = null, posts = [], people = [], shared = null, loadErr = null;
+  if (BE.configured) {
+    try { session = await BE.getSession(); } catch { /* нижче — запрошення увійти */ }
+    if (session) {
+      try {
+        [posts, people, shared] = await Promise.all([
+          BE.listPosts(),
+          BE.listPeople(),
+          BE.mySharedTraining().catch(() => null),
+        ]);
+      } catch (e) { loadErr = e; }
+    }
   }
-  let session = null;
-  try { session = await BE.getSession(); } catch { /* нижче — запрошення увійти */ }
-  if (location.hash !== '#/community') return;
-
-  if (!session) {
-    body().innerHTML = `
-      <section class="card">
-        <div class="card-label">👥 ${T('Спільнота')} КАЧАЛКИ</div>
-        <p class="muted">${T('Публікуй фото з тренувань, дивись, як тренуються інші, і записуйся на тренування до тренерів.')}</p>
-        <div class="auth-box">${authCardHTML()}</div>
-        <button class="btn ghost" id="commDemo" style="margin-top:10px">👀 ${T('Подивитися демо')}</button>
-      </section>`;
-    bindAuthCard(body(), () => renderCommunity());
-    body().querySelector('#commDemo').onclick = () => { communityDemo = true; renderCommunity(); };
-    return;
-  }
-
-  let posts = [], people = [], shared = null;
-  try {
-    [posts, people, shared] = await Promise.all([
-      BE.listPosts(),
-      BE.listPeople(),
-      BE.mySharedTraining().catch(() => null),
-    ]);
-  } catch (e) {
-    if (location.hash !== '#/community') return;
-    body().innerHTML = `<section class="card"><p class="muted">⚠️ ${esc(e.message)}</p>
-      <p class="muted">Якщо це перший запуск спільноти — власнику треба застосувати
-      <b>backend/patch-3-social.sql</b> у Supabase.</p></section>`;
-    return;
-  }
-  if (location.hash !== '#/community') return;
-  const meId = session.user.id;
+  if (!alive()) return;
+  const meId = session ? session.user.id : null;
   // якщо ділюся тренуваннями — тихо освіжити знімок останніх 14 днів
   if (shared) BE.shareTraining(S.exportRecentLogs(14)).catch(() => {});
 
-  const postCard = (p) => {
-    const a = p.author || {};
-    const mine = p.author_id === meId;
-    return `<section class="card post-card">
-      <div class="post-head">
-        <button class="post-user" data-u="${p.author_id}">${avatarHtml(a)}</button>
-        <button class="post-author" data-u="${p.author_id}">${esc(a.name || 'Без імені')}</button>
-        <span class="post-date muted">${postDate(p.created_at)}</span>
-        ${mine ? `<button class="set-del post-del" data-id="${p.id}" data-path="${esc(p.photo_path || '')}" title="${T('Видалити')}">✕</button>` : ''}
-      </div>
-      <img class="post-img" src="${esc(p.photo_url)}" alt="" loading="lazy"/>
-      ${p.caption ? `<p class="post-cap">${esc(p.caption)}</p>` : ''}
+  // верх: публікація (є вхід) / запрошення увійти / сервер ще не підключено
+  let top = '';
+  if (session) {
+    top = seg === 'feed' ? `
+      <section class="card">
+        <div class="wt-head">
+          <span class="card-label wt-label">📸 ${T('Фото з тренувань')}</span>
+          <button class="wt-current" id="addPost">＋ ${T('Додати фото')}</button>
+        </div>
+      </section>
+      <label class="card share-row">
+        <input type="checkbox" id="shareTr" ${shared ? 'checked' : ''}/>
+        <span>🏋️ ${T('Ділитися моїми тренуваннями')}</span>
+      </label>` : '';
+  } else if (BE.configured) {
+    top = `<section class="card">
+      <p class="muted">${T('Публікуй фото з тренувань, дивись, як тренуються інші, і записуйся на тренування до тренерів.')}</p>
+      <div class="auth-box">${authCardHTML()}</div>
     </section>`;
-  };
-  const personRow = (p) => `
-    <button class="pick-row fc-row person-row" data-u="${p.id}">
-      ${avatarHtml(p)}
-      <span class="pick-name">${esc(p.name || 'Без імені')}${p.city ? ` <span class="muted">· ${esc(p.city)}</span>` : ''}</span>
-      ${p.role === 'trainer' ? `<span class="fc-pat">🧑‍🏫 Тренер</span>` : ''}
-    </button>`;
+  } else {
+    top = `<section class="card comm-note"><p class="muted">${T('Публікувати свої фото можна буде після входу — сервер спільноти ще підключається. Поки тут дописи КАЧАЛКИ і приклади профілів.')}</p></section>`;
+  }
+  if (loadErr) top += `<section class="card"><p class="muted">⚠️ ${esc(loadErr.message)}</p></section>`;
 
-  body().innerHTML = `
-    <section class="card">
-      <div class="wt-head">
-        <span class="card-label wt-label">📸 ${T('Фото з тренувань')}</span>
-        <button class="wt-current" id="addPost">＋ ${T('Додати фото')}</button>
-      </div>
-    </section>
-    <label class="card share-row">
-      <input type="checkbox" id="shareTr" ${shared ? 'checked' : ''}/>
-      <span>🏋️ ${T('Ділитися моїми тренуваннями')}</span>
-    </label>
-    <div class="feed">${posts.length ? posts.map(postCard).join('') : `<p class="muted center">${T('Ще немає дописів — будь першим!')}</p>`}</div>
-    <section class="card">
-      <div class="card-label">${T('Люди')}</div>
-      <div class="pick-list">
-        ${people.filter((p) => p.id !== meId).map(personRow).join('') || `<p class="muted">Поки нікого немає.</p>`}
-      </div>
-    </section>
-    <button class="btn ghost" id="commDemo">👀 Подивитися демо (як виглядатиме з людьми)</button>`;
-  body().querySelector('#commDemo').onclick = () => { communityDemo = true; renderCommunity(); };
+  const liked = likedSet();
+  const realPeople = people.filter((p) => p.id !== meId);
+  const official = D.people.filter((p) => p.official);
+  const samples = D.people.filter((p) => p.sample);
+  let content;
+  if (seg === 'feed') {
+    const all = [...posts, ...D.posts].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    content = `<div class="feed">${all.map((p) => postCardHTML(p, meId, liked)).join('')}</div>`;
+  } else {
+    content = `
+      <section class="card">
+        <div class="card-label">${T('Офіційні акаунти')}</div>
+        <div class="pick-list">${official.map(personRowHTML).join('')}</div>
+      </section>
+      ${realPeople.length ? `<section class="card">
+        <div class="card-label">${T('Люди')}</div>
+        <div class="pick-list">${realPeople.map(personRowHTML).join('')}</div>
+      </section>` : ''}
+      <section class="card">
+        <div class="card-label">${T('Приклади профілів')}</div>
+        <p class="muted small">${T('Так виглядатимуть сторінки тренерів і атлетів. Приклади зникнуть, коли зареєструються справжні люди.')}</p>
+        <div class="pick-list">${samples.map(personRowHTML).join('')}</div>
+      </section>`;
+  }
+  const body = screenEl.querySelector('#commBody');
+  body.innerHTML = top + content;
+  if (!session && BE.configured) bindAuthCard(body, () => renderCommunity());
 
   // переходи на сторінку людини (з допису або списку)
-  body().querySelectorAll('[data-u]').forEach((el) =>
+  body.querySelectorAll('[data-u]').forEach((el) =>
     el.addEventListener('click', () => go('#/user/' + el.dataset.u))
   );
+  const byPost = (id) => posts.find((p) => p.id === id) || D.posts.find((p) => p.id === id);
+  body.querySelectorAll('[data-like]').forEach((b) => (b.onclick = () => {
+    const on = toggleLike(b.dataset.like);
+    b.classList.toggle('on', on);
+    b.textContent = on ? '♥' : '♡';
+  }));
+  body.querySelectorAll('[data-share]').forEach((b) => (b.onclick = () => {
+    const p = byPost(b.dataset.share);
+    if (!p) return;
+    const a = p.author || {};
+    const text = `${T(a.name || '')}: ${a.official || a.sample ? T(p.caption || '') : p.caption || ''}\n\n— КАЧАЛКА`;
+    if (navigator.share) navigator.share({ text }).catch(() => {});
+    else navigator.clipboard.writeText(text).then(() => toast(T('Скопійовано')), () => {});
+  }));
   // видалити свій допис
-  body().querySelectorAll('.post-del').forEach((b) =>
+  body.querySelectorAll('.post-del').forEach((b) =>
     b.addEventListener('click', async (e) => {
       e.stopPropagation();
       if (!confirm('Видалити цей допис?')) return;
@@ -3538,7 +3613,8 @@ async function renderCommunity() {
     })
   );
   // перемикач «ділитися тренуваннями»
-  body().querySelector('#shareTr').onchange = async (e) => {
+  const shareTr = body.querySelector('#shareTr');
+  if (shareTr) shareTr.onchange = async (e) => {
     try {
       if (e.target.checked) {
         await BE.shareTraining(S.exportRecentLogs(14));
@@ -3553,7 +3629,8 @@ async function renderCommunity() {
     }
   };
   // новий допис: фото + підпис
-  body().querySelector('#addPost').onclick = () => {
+  const addPost = body.querySelector('#addPost');
+  if (addPost) addPost.onclick = () => {
     openModal(T('Додати фото'), `
       <div class="field"><label>Фото</label>
         <input type="file" id="postFile" accept="image/*"/></div>
@@ -3576,45 +3653,7 @@ async function renderCommunity() {
   };
 }
 
-// ---- ДЕМО спільноти: вигадані люди й дописи (нічого не пише на сервер) ----
-async function renderCommunityDemo() {
-  const body = screenEl.querySelector('#commBody');
-  const { demoData } = await import('./demo.js');
-  if (location.hash !== '#/community' || !communityDemo) return;
-  const D = demoData();
-
-  const postCard = (p) => `
-    <section class="card post-card">
-      <div class="post-head">
-        <button class="post-user" data-u="${p.author_id}">${avatarHtml(p.author)}</button>
-        <button class="post-author" data-u="${p.author_id}">${esc(p.author.name)}</button>
-        <span class="post-date muted">${postDate(p.created_at)}</span>
-      </div>
-      <img class="post-img" src="${p.photo_url}" alt="" loading="lazy"/>
-      ${p.caption ? `<p class="post-cap">${esc(p.caption)}</p>` : ''}
-    </section>`;
-  const personRow = (p) => `
-    <button class="pick-row fc-row person-row" data-u="${p.id}">
-      ${avatarHtml(p)}
-      <span class="pick-name">${esc(p.name)} <span class="muted">· ${esc(p.city)}</span></span>
-      ${p.role === 'trainer' ? `<span class="fc-pat">🧑‍🏫 Тренер</span>` : ''}
-    </button>`;
-
-  body.innerHTML = `
-    <div class="demo-banner">👀 Це демо — так виглядатиме спільнота з людьми
-      <button class="mini" id="demoOff">Вийти</button></div>
-    <div class="feed">${D.posts.map(postCard).join('')}</div>
-    <section class="card">
-      <div class="card-label">${T('Люди')}</div>
-      <div class="pick-list">${D.people.map(personRow).join('')}</div>
-    </section>`;
-  body.querySelector('#demoOff').onclick = () => { communityDemo = false; renderCommunity(); };
-  body.querySelectorAll('[data-u]').forEach((el) =>
-    el.addEventListener('click', () => go('#/user/' + el.dataset.u))
-  );
-}
-
-// демо-сторінка людини (профіль/тренування/слоти з demo.js)
+// сторінка офіційного акаунта / прикладу профілю (дані з demo.js, без сервера)
 async function renderDemoUser(userId) {
   const { demoData } = await import('./demo.js');
   if (!location.hash.startsWith('#/user/')) return;
@@ -3622,7 +3661,7 @@ async function renderDemoUser(userId) {
   const prof = D.byId[userId];
   if (!prof) return go('#/community');
   const titleEl = screenEl.querySelector('#uTitle');
-  if (titleEl) titleEl.textContent = prof.name;
+  if (titleEl) titleEl.textContent = T(prof.name);
   const uBody = screenEl.querySelector('#uBody');
   const posts = D.posts.filter((p) => p.author_id === userId);
   const sharedTr = D.shared[userId];
@@ -3630,8 +3669,8 @@ async function renderDemoUser(userId) {
   const slotRow = (s) => {
     const d = new Date(s.starts_at);
     const when = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    return `<div class="slot-row"><span>🕒 ${when} · ${s.duration_min} хв</span>
-      <button class="mini ok demo-book">${T('Записатися')}</button></div>`;
+    return `<div class="slot-row"><span>🕒 ${when} · ${s.duration_min} ${T('хв')}</span>
+      <button class="mini ok demo-act">${T('Записатися')}</button></div>`;
   };
   let trainHtml = '';
   if (sharedTr) {
@@ -3640,40 +3679,42 @@ async function renderDemoUser(userId) {
       <div class="card-label">🏋️ ${T('Останні тренування')}</div>
       <div class="bhist">
         ${days.map((iso) => {
-          const txt = sharedTr.data[iso].map((it) => `${esc(it.name)} ${it.sets.length}×`).join(', ');
+          const txt = sharedTr.data[iso].map((it) => `${esc(T(it.name))} ${it.sets.length}×`).join(', ');
           return `<div class="bhist-row"><span class="bhist-date">${S.prettyDate(iso)}</span>
             <span class="bhist-vals">${txt}</span></div>`;
         }).join('')}
       </div>
     </section>`;
   }
+  const kitchen = prof.role === 'kitchen';
   uBody.innerHTML = `
-    <div class="demo-banner">👀 Демо-профіль</div>
+    ${prof.sample ? `<div class="demo-banner">👀 ${T('Приклад профілю — так виглядатиме сторінка справжньої людини')}</div>` : ''}
     <section class="card profile-card">
       <div class="profile-head">
         ${avatarHtml(prof, true)}
         <div>
-          <div class="profile-name">${esc(prof.name)}</div>
-          <div class="profile-role">${prof.role === 'trainer' ? '🧑‍🏫 Тренер' : '🏋️ Атлет'} · ${esc(prof.city)}</div>
+          <div class="profile-name">${esc(T(prof.name))}${personBadge(prof)}</div>
+          <div class="profile-role">${roleLabel(prof)}${prof.city ? ` · ${esc(T(prof.city))}` : ''}</div>
         </div>
       </div>
-      ${D.bios[userId] ? `<p class="profile-bio">${esc(D.bios[userId])}</p>` : ''}
-      <div class="btn-row"><button class="btn ghost demo-chat">💬 Написати</button></div>
+      ${D.bios[userId] ? `<p class="profile-bio">${esc(T(D.bios[userId]))}</p>` : ''}
+      <div class="btn-row">
+        ${kitchen ? `<button class="btn primary" id="toRecipes">📖 ${T('Відкрити рецепти')}</button>`
+          : `<button class="btn ghost demo-act">＋ ${T('Стежити')}</button>`}
+      </div>
     </section>
-    ${prof.role === 'trainer' ? `<section class="card">
+    ${slots.length ? `<section class="card">
       <div class="card-label">📅 ${T('Записатися на тренування')}</div>
       <div class="slot-list">${slots.map(slotRow).join('')}</div>
     </section>` : ''}
     ${trainHtml}
-    ${posts.length ? `<div class="card-label side-label">📸 ${T('Фото з тренувань')}</div>
-      <div class="feed">${posts.map((p) => `<section class="card post-card">
-        <div class="post-head"><span class="post-date muted">${postDate(p.created_at)}</span></div>
-        <img class="post-img" src="${p.photo_url}" alt=""/>
-        ${p.caption ? `<p class="post-cap">${esc(p.caption)}</p>` : ''}
-      </section>`).join('')}</div>` : ''}
+    ${posts.length ? `<div class="pgrid">${posts.map((p) =>
+      `<img src="${esc(p.photo_url)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${p.fallback}'"/>`).join('')}</div>` : ''}
   `;
-  uBody.querySelectorAll('.demo-book, .demo-chat').forEach((b) =>
-    b.addEventListener('click', () => toast('👀 Це демо-профіль — тут буде справжня дія'))
+  const toR = uBody.querySelector('#toRecipes');
+  if (toR) toR.onclick = () => { commSeg = 'recipes'; go('#/community'); };
+  uBody.querySelectorAll('.demo-act').forEach((b) =>
+    b.addEventListener('click', () => toast(prof.sample ? T('Це приклад профілю — тут буде справжня дія') : T('Стрічка підписок з’явиться разом із сервером спільноти')))
   );
 }
 
@@ -3689,7 +3730,7 @@ async function renderUserProfile(userId) {
     </header>
     <div id="uBody"><section class="card"><p class="muted">Завантаження…</p></section></div>`;
   screenEl.querySelector('#backBtn').onclick = () => go('#/community');
-  if (userId.startsWith('demo-')) return renderDemoUser(userId); // демо-профілі — без сервера
+  if (/^(demo-|sample-|kachalka-)/.test(userId)) return renderDemoUser(userId); // вітрина — без сервера
   if (!BE.configured) return go('#/community');
   const session = await BE.getSession().catch(() => null);
   if (!session) return go('#/community');
@@ -4551,17 +4592,11 @@ function renderFormcheck() {
         <span class="pick-name">${T('Калорії по фото')}</span>
         <span class="fc-pat">${kcalToday} ${T('ккал')} ›</span>
       </button>
-      <button class="pick-row fc-row" id="fcRecipes">
-        <span class="pick-ico">📖</span>
-        <span class="pick-name">${T('Рецепти')}</span>
-        <span class="fc-pat">${T('стрічка')} ›</span>
-      </button>
     </div>
 
     <p class="muted side">🏋️ ${T('Аналіз техніки')} — ${T('Обери вправу — камера стежитиме за технікою, підкаже глибину і порахує повторення')}</p>
     <div class="pick-list">${rows || `<p class="muted center">${T('Немає тренувань — додай у вкладці «Тренування»')}</p>`}</div>`;
   screenEl.querySelector('#fcCalories').onclick = () => go('#/calories');
-  screenEl.querySelector('#fcRecipes').onclick = () => go('#/recipes');
   screenEl.querySelectorAll('.fc-row[data-id]').forEach((b) =>
     b.addEventListener('click', () => go('#/camera/' + b.dataset.id))
   );
@@ -4594,18 +4629,20 @@ function recipeCardHTML(r) {
   const yt = r.own ? RC.youtubeId(r.video) : null;
   const fav = S.isRecipeFav(r.id);
   const bg = r.bg || ['#2b2b3d', '#15151e'];
-  const media = r.photo
-    ? `<img class="rc-photo" data-photo="${esc(r.id)}" alt=""/>`
-    : '';
+  // власне фото — з IndexedDB; вбудований рецепт — img/recipes/<id>.webp (немає файлу — лишається емодзі)
+  const media = r.own
+    ? (r.photo ? `<img class="rc-photo" data-photo="${esc(r.id)}" alt=""/>` : '')
+    : `<img class="rc-photo" src="img/recipes/${esc(r.id)}.webp" loading="lazy" alt="" onerror="this.remove()"/>`;
   const tags = [r.time ? `⏱ ${r.time} ${T('хв')}` : '', T(RCAT1[r.cat] || ''), r.goal !== 'any' ? T(RGOAL[r.goal]) : '', r.own ? `👤 ${T('Мій')}` : '']
     .filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join('');
   return `<article class="rcard" data-id="${esc(r.id)}" ${yt ? `data-yt="${yt}"` : ''}>
     <div class="rc-bg" style="background:linear-gradient(160deg, ${bg[0]}, ${bg[1]})">
-      ${r.photo || yt ? '' : `<span class="rc-emoji">${r.emoji || '🍽'}</span><span class="rc-pattern">${(r.emoji || '🍽').repeat(18)}</span>`}
+      ${(r.own && r.photo) || yt ? '' : `<span class="rc-emoji">${r.emoji || '🍽'}</span><span class="rc-pattern">${(r.emoji || '🍽').repeat(18)}</span>`}
       ${media}<div class="rc-video"></div>
     </div>
     <div class="rc-shade"></div>
     <div class="rc-info">
+      ${r.own ? '' : `<div class="rc-author"><span class="rc-ava">👨‍🍳</span>${T('Кухня КАЧАЛКИ')}</div>`}
       <div class="rc-tags">${tags}</div>
       <h2 class="rc-name">${esc(r.name)}</h2>
       ${r.kcal ? `<div class="rc-macros"><b>${r.kcal}</b> ${T('ккал')} · ${T('Б')} ${r.p} · ${T('Ж')} ${r.f} · ${T('В')} ${r.c}</div>` : ''}
@@ -4615,7 +4652,7 @@ function recipeCardHTML(r) {
     <div class="rc-rail">
       <button class="rc-act ${fav ? 'on' : ''}" data-act="fav"><span>${fav ? '♥' : '♡'}</span><small>${T('Зберегти')}</small></button>
       <button class="rc-act" data-act="open"><span>📖</span><small>${T('Рецепт')}</small></button>
-      <button class="rc-act" data-act="video"><span>▶</span><small>${T('Відео')}</small></button>
+      ${r.video ? `<button class="rc-act" data-act="video"><span>▶</span><small>${T('Відео')}</small></button>` : ''}
       <button class="rc-act" data-act="kcal"><span>＋</span><small>${T('В калорії')}</small></button>
       <button class="rc-act" data-act="share"><span>↗</span><small>${T('Поділитися')}</small></button>
     </div>
@@ -4624,10 +4661,11 @@ function recipeCardHTML(r) {
 
 async function renderRecipes() {
   await RC.loadTexts(S.getSettings().lang || 'uk');
-  if (location.hash !== '#/recipes') return;
+  if (location.hash !== '#/recipes' && !(location.hash === '#/community' && commSeg === 'recipes')) return;
   const list = recipeList();
-  const tabs = [['feed', 'Для тебе'], ['fav', 'Обране'], ['mine', 'Мої']];
-  const chips = [['all', 'Усі'], ...Object.entries(RCAT), ...Object.entries(RGOAL)];
+  // fav / mine — окремі добірки, решта — фільтри стрічки «Для тебе»
+  const chips = [['all', 'Усі'], ['fav', '♡ Обране'], ['mine', '👤 Мої'], ...Object.entries(RCAT), ...Object.entries(RGOAL)];
+  const chipOn = (id) => (id === 'fav' || id === 'mine' ? recipeTab === id : recipeTab === 'feed' && recipeFilter === id);
   let empty = '';
   if (!list.length) {
     empty = recipeTab === 'fav'
@@ -4642,21 +4680,25 @@ async function renderRecipes() {
       <div class="rfeed" id="rfeed">${list.map(recipeCardHTML).join('')}${empty}</div>
       <div class="rf-top">
         <div class="rf-row">
-          <button class="rf-ico" id="rfBack" aria-label="${T('Назад')}">‹</button>
-          <div class="rf-tabs">${tabs.map(([id, l]) => `<button class="${recipeTab === id ? 'on' : ''}" data-tab="${id}">${T(l)}</button>`).join('')}</div>
+          <span class="rf-ico rf-ghost"></span>
+          ${commSegHTML('rf-tabs')}
           <button class="rf-ico rf-add" id="rfAdd" aria-label="${T('Додати свій рецепт')}">＋</button>
         </div>
-        <div class="rf-chips">${chips.map(([id, l]) => `<button class="${recipeFilter === id ? 'on' : ''}" data-f="${id}">${T(l)}</button>`).join('')}</div>
+        <div class="rf-chips">${chips.map(([id, l]) => `<button class="${chipOn(id) ? 'on' : ''}" data-f="${id}">${T(l)}</button>`).join('')}</div>
       </div>
     </div>`;
 
   const feed = screenEl.querySelector('#rfeed');
-  screenEl.querySelector('#rfBack').onclick = () => go('#/formcheck');
+  bindCommSeg(screenEl);
   screenEl.querySelector('#rfAdd').onclick = () => go('#/recipe-new');
   const addEmpty = screenEl.querySelector('#rfAddEmpty');
   if (addEmpty) addEmpty.onclick = () => go('#/recipe-new');
-  screenEl.querySelectorAll('.rf-tabs button').forEach((b) => (b.onclick = () => { recipeTab = b.dataset.tab; recipeAt = null; renderRecipes(); }));
-  screenEl.querySelectorAll('.rf-chips button').forEach((b) => (b.onclick = () => { recipeFilter = b.dataset.f; recipeAt = null; renderRecipes(); }));
+  screenEl.querySelectorAll('.rf-chips button').forEach((b) => (b.onclick = () => {
+    const f = b.dataset.f;
+    if (f === 'fav' || f === 'mine') { recipeTab = f; recipeFilter = 'all'; } else { recipeTab = 'feed'; recipeFilter = f; }
+    recipeAt = null;
+    renderRecipes();
+  }));
 
   // фото власних рецептів — з IndexedDB
   screenEl.querySelectorAll('img[data-photo]').forEach(async (img) => {
@@ -4711,7 +4753,7 @@ function recipeAction(act, r, btn) {
     if (!on && recipeTab === 'fav') renderRecipes();
   } else if (act === 'open') openRecipeSheet(r);
   else if (act === 'video') {
-    window.open(r.video || RC.videoSearchUrl(`${r.name} ${T('рецепт')}`), '_blank', 'noopener');
+    if (r.video) window.open(r.video, '_blank', 'noopener');
   } else if (act === 'kcal') {
     if (!r.kcal) { toast(T('У рецепті не вказано калорійність')); return; }
     S.addCalorieEntry(S.todayISO(), { name: r.name, kcal: r.kcal, prot: r.p, fat: r.f, carb: r.c });
@@ -4741,8 +4783,8 @@ function openRecipeSheet(r) {
       ${r.steps && r.steps.length ? `<div class="card-label">${T('Приготування')}</div>
         <ol class="rs-steps">${r.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
       <div class="btn-col">
-        <button class="btn primary" data-act="video">▶ ${T('Дивитися відео')}</button>
-        <button class="btn ghost" data-act="kcal">＋ ${T('Додати в калорії дня')}</button>
+        ${r.video ? `<button class="btn primary" data-act="video">▶ ${T('Дивитися відео')}</button>` : ''}
+        <button class="btn ${r.video ? 'ghost' : 'primary'}" data-act="kcal">＋ ${T('Додати в калорії дня')}</button>
         ${r.own ? `<div class="btn-row"><button class="btn ghost" id="rsEdit">✏️ ${T('Редагувати')}</button>
           <button class="btn ghost" id="rsDel">🗑 ${T('Видалити')}</button></div>` : ''}
       </div>

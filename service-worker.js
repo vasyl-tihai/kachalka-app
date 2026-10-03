@@ -3,7 +3,9 @@
 //   • код застосунку (навігація, *.js, *.css) — network-first: свіжа версія підтягується
 //     при кожному онлайн-запуску, а офлайн працює з кешу;
 //   • іконки/шрифти/маніфест — cache-first (рідко змінюються), із докешуванням у рантаймі.
-const CACHE = 'kachalka-v50';
+const CACHE = 'kachalka-v51';
+// фото рецептів: окремий кеш, який не стирається при кожному оновленні версії
+const IMG_CACHE = 'kachalka-recipe-img-v1';
 const ASSETS = [
   './',
   './index.html',
@@ -78,7 +80,7 @@ self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== IMG_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -99,8 +101,8 @@ async function networkFirst(req) {
   }
 }
 
-async function cacheFirst(req) {
-  const cache = await caches.open(CACHE);
+async function cacheFirst(req, name = CACHE) {
+  const cache = await caches.open(name);
   const hit = await cache.match(req);
   if (hit) return hit;
   try {
@@ -119,5 +121,6 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== location.origin) return; // чужі домени не перехоплюємо
 
   const isAppShell = req.mode === 'navigate' || /\.(?:js|css)$/.test(url.pathname);
+  if (url.pathname.includes('/img/recipes/')) return e.respondWith(cacheFirst(req, IMG_CACHE));
   e.respondWith(isAppShell ? networkFirst(req) : cacheFirst(req));
 });
