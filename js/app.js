@@ -2881,7 +2881,8 @@ function renderBody() {
       if (location.hash !== hash || !stage.isConnected) { b3d.destroy(); return; }
       live.body3d = b3d;
     })
-    .catch(() => {
+    .catch((err) => {
+      console.warn('3D-фігура:', err);
       // без WebGL — звичайний список частин тіла замість фігури
       stage.classList.add('b3d-fallback');
       screenEl.querySelector('#b3dHint').textContent = T('3D-фігура недоступна на цьому пристрої');

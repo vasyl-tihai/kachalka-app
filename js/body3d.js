@@ -40,16 +40,45 @@ async function loadModel(sex) {
     fetch(new URL(sex + '.bin', dir)).then((r) => r.arrayBuffer()),
   ]);
   const n = meta.vertices;
-  let off = 0;
-  const pos = new Float32Array(buf, off, n * 3); off += n * 12;
-  const reg = new Uint8Array(buf, off, n); off += n;
-  const armw = new Uint8Array(buf, off, n); off += n;
-  const legw = new Uint8Array(buf, off, n); off += n;
-  off += n; // вага голови — не потрібна
-  off += (4 - (off % 4)) % 4;
-  const idx = meta.index === 'H' ? new Uint16Array(buf, off, meta.triangles * 3) : new Uint32Array(buf, off, meta.triangles * 3);
-  MODELS[sex] = prepare(meta, pos, reg, armw, legw, idx);
-  return MODELS[sex];
+  const L = meta.layout;
+  const pos = new Float32Array(buf, L.pos, n * 3);
+  const uv = new Float32Array(buf, L.uv, n * 2);
+  const reg = new Uint8Array(buf, L.region, n);
+  const armw = new Uint8Array(buf, L.armw, n);
+  const legw = new Uint8Array(buf, L.legw, n);
+  const idx = meta.index === 'H' ? new Uint16Array(buf, L.index, meta.triangles * 3) : new Uint32Array(buf, L.index, meta.triangles * 3);
+  const model = prepare(meta, pos, reg, armw, legw, idx);
+  model.uv = uv;
+  model.twins = twins(pos, n);
+  // карта нормалей з рельєфом м'язів (з того ж набору Quaternius)
+  model.normalMap = await new Promise((res) => {
+    new THREE.TextureLoader().load(new URL(sex + '_normal.webp', dir).href, res, undefined, () => res(null));
+  });
+  MODELS[sex] = model;
+  return model;
+}
+
+// вершини-двійники на швах UV (та сама точка) — їм треба однакова нормаль, інакше видно шов
+function twins(pos, n) {
+  const map = new Map();
+  const groups = [];
+  for (let i = 0; i < n; i++) {
+    const k = `${Math.round(pos[i * 3] * 1e4)},${Math.round(pos[i * 3 + 1] * 1e4)},${Math.round(pos[i * 3 + 2] * 1e4)}`;
+    const g = map.get(k);
+    if (g) g.push(i); else map.set(k, [i]);
+  }
+  for (const g of map.values()) if (g.length > 1) groups.push(g);
+  return groups;
+}
+function weldNormals(geo, groups) {
+  const nr = geo.attributes.normal.array;
+  for (const g of groups) {
+    let x = 0, y = 0, z = 0;
+    for (const i of g) { x += nr[i * 3]; y += nr[i * 3 + 1]; z += nr[i * 3 + 2]; }
+    const l = Math.hypot(x, y, z) || 1;
+    for (const i of g) { nr[i * 3] = x / l; nr[i * 3 + 1] = y / l; nr[i * 3 + 2] = z / l; }
+  }
+  geo.attributes.normal.needsUpdate = true;
 }
 
 // опукла оболонка (монотонний ланцюг) → [індекси вершин оболонки, периметр]
@@ -341,11 +370,20 @@ export async function mountBody3D(container, opts) {
   const fill = new T.DirectionalLight(0xffffff, 0.35);
   fill.position.set(-2, 1, 1.5);
   scene.add(fill);
-  const rim = new T.DirectionalLight(accent.getHex(), light ? 0.5 : 1.0);
-  rim.position.set(-1.8, 1.8, -2.6);
+  const rim = new T.DirectionalLight(accent.getHex(), light ? 0.4 : 0.7);
+  rim.position.set(-2, 1.2, -3.2);
   scene.add(rim);
 
-  const mat = new T.MeshStandardMaterial({ color: skin, roughness: 0.58, metalness: 0.03 });
+  const mat = new T.MeshStandardMaterial({ color: skin, roughness: 0.55, metalness: 0.03 });
+  // рельєф м'язів: що менше жиру, то чіткіший (без даних — помірний)
+  function setRelief() {
+    const tex = model.normalMap;
+    if (tex) { tex.colorSpace = T.NoColorSpace; tex.anisotropy = 4; }
+    if (mat.normalMap !== tex) { mat.normalMap = tex; mat.needsUpdate = true; }
+    const fat = Number(values.bodyFat) || BODY_BASE[sex].bodyFat;
+    const r = clamp(1.9 - (fat - 8) * 0.065, 0.25, 1.9);
+    mat.normalScale.set(r, r);
+  }
   const fig = new T.Group();
   scene.add(fig);
 
@@ -358,8 +396,11 @@ export async function mountBody3D(container, opts) {
     outPos = new Float32Array(model.n * 3);
     deform(model, kNow, outPos);
     geo.setAttribute('position', new T.BufferAttribute(outPos, 3));
+    geo.setAttribute('uv', new T.BufferAttribute(model.uv, 2));
     geo.setIndex(new T.BufferAttribute(model.idx, 1));
     geo.computeVertexNormals();
+    weldNormals(geo, model.twins);
+    setRelief();
     mesh = new T.Mesh(geo, mat);
     fig.add(mesh);
   }
@@ -494,6 +535,7 @@ export async function mountBody3D(container, opts) {
     deform(model, kNow, outPos);
     geo.attributes.position.needsUpdate = true;
     geo.computeVertexNormals();
+    weldNormals(geo, model.twins);
     geo.computeBoundingSphere();
     buildRings();
     select(selected);
@@ -578,6 +620,7 @@ export async function mountBody3D(container, opts) {
         select(selected);
         return;
       }
+      setRelief();
       const to = factors(model, sex, values);
       morph = { from: { ...kNow }, to, t0: performance.now() };
       kick();

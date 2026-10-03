@@ -1,7 +1,18 @@
 {
 "vertices": 7281,
+"welded": 7281,
 "triangles": 12566,
 "index": "H",
+"orig": "H",
+"layout": {
+"pos": 0,
+"uv": 87372,
+"orig": 145620,
+"region": 160184,
+"armw": 167468,
+"legw": 174752,
+"index": 182036
+},
 "height": 1.8196,
 "bones": {
 "root": {

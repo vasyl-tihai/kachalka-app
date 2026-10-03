@@ -67,31 +67,48 @@ for v in me0.vertices:
     legw[v.index] = min(255, round(255 * (acc.get('legL', 0) + acc.get('legR', 0)) / tot))
     headw[v.index] = min(255, round(255 * acc.get('Head'.lower() if False else 'head', 0) / tot))
 
-# --- застосувати позу до геометрії (порядок вершин не змінюється) ---
+# --- застосувати позу; вершини розщеплюються по швах UV (для карти нормалей) ---
 dg = bpy.context.evaluated_depsgraph_get()
 ev = body.evaluated_get(dg)
 me = ev.to_mesh()
 assert len(me.vertices) == nv
 me.calc_loop_triangles()
-pos = []
-for v in me.vertices:
-    w = body.matrix_world @ v.co
-    pos += [w.x, w.z, -w.y]
-tris = []
+uvd = me.uv_layers.active.data
+key2new, orig, uvs, tris = {}, [], [], []
 for t in me.loop_triangles:
-    a, b, c = t.vertices
-    tris += [a, b, c]  # після заміни осей обхід лишається правильним (поворот, не дзеркало)
+    for li in t.loops:
+        v = me.loops[li].vertex_index
+        u = uvd[li].uv
+        k = (v, round(u[0], 5), round(u[1], 5))
+        if k not in key2new:
+            key2new[k] = len(orig)
+            orig.append(v)
+            uvs += [u[0], u[1]]
+        tris.append(key2new[k])
+N = len(orig)
+pos = []
+for v in orig:
+    w = body.matrix_world @ me.vertices[v].co
+    pos += [w.x, w.z, -w.y]
 ev.to_mesh_clear()
 
+ifmt = 'H' if N < 65536 else 'I'
+ofmt = 'H' if nv < 65536 else 'I'
+lay = {}
 with open(out_bin, 'wb') as f:
-    f.write(struct.pack('<%df' % len(pos), *pos))
-    f.write(bytes(reg)); f.write(bytes(armw)); f.write(bytes(legw)); f.write(bytes(headw))
-    pad = (4 - (nv * 4) % 4) % 4
-    f.write(b'\0' * pad)
-    fmt = 'H' if nv < 65536 else 'I'
-    f.write(struct.pack('<%d%s' % (len(tris), fmt), *tris))
+    def put(name, fmt, data):
+        while f.tell() % 4: f.write(b'\0')
+        lay[name] = f.tell()
+        f.write(struct.pack('<%d%s' % (len(data), fmt), *data))
+    put('pos', 'f', pos)
+    put('uv', 'f', uvs)
+    put('orig', ofmt, orig)
+    put('region', 'B', [reg[v] for v in orig])
+    put('armw', 'B', [armw[v] for v in orig])
+    put('legw', 'B', [legw[v] for v in orig])
+    put('index', ifmt, tris)
 
 ys = [pos[i + 1] for i in range(0, len(pos), 3)]
-json.dump({'vertices': nv, 'triangles': len(tris) // 3, 'index': fmt, 'height': round(max(ys) - min(ys), 4),
-           'bones': marks}, open(out_json, 'w'), indent=0)
-print('EXPORTED', nv, len(tris) // 3, round(max(ys), 3))
+json.dump({'vertices': N, 'welded': nv, 'triangles': len(tris) // 3, 'index': ifmt, 'orig': ofmt, 'layout': lay,
+           'height': round(max(ys) - min(ys), 4), 'bones': marks}, open(out_json, 'w'), indent=0)
+print('EXPORTED', N, nv, len(tris) // 3, round(max(ys), 3))
