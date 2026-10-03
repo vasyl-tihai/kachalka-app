@@ -9,6 +9,7 @@ import { getLandmarker, drawPose } from './pose.js';
 import * as FC from './formcheck.js';
 import { t as T, setLang, LANGS, plural as PL, dateNames } from './i18n.js';
 import { mountBody3D, BODY_PARTS, BODY_BASE } from './body3d.js';
+import * as RC from './recipes.js';
 import { exIconHTML, patternIconHTML } from './exicons.js';
 import * as FX from './fx.js';
 import * as BE from './backend.js';
@@ -123,6 +124,9 @@ const routes = [
   { re: /^#\/client\/(.+)$/, render: renderClientManage },
   { re: /^#\/chat\/(.+)$/, render: renderChat },
   { re: /^#\/calories$/, render: renderCalories },
+  { re: /^#\/recipes$/, render: renderRecipes },
+  { re: /^#\/recipe-new$/, render: () => renderRecipeEdit(null) },
+  { re: /^#\/recipe-edit\/(.+)$/, render: renderRecipeEdit },
   { re: /^#\/today$/, render: renderToday },
 ];
 
@@ -216,6 +220,7 @@ function updateTabbar(hash) {
       : hash.startsWith(b.dataset.hash) ||
       (b.dataset.hash === '#/today' && (hash === '#/' || hash === '#/calories')) ||
       (b.dataset.hash === '#/workouts' && hash.startsWith('#/workout')) ||
+      (b.dataset.hash === '#/formcheck' && hash.startsWith('#/recipe')) ||
       (b.dataset.hash === '#/progress' && (hash.startsWith('#/history') || hash.startsWith('#/body'))) ||
       (b.dataset.hash === '#/community' &&
         (hash.startsWith('#/user') || hash.startsWith('#/coach') || hash.startsWith('#/chat') || hash.startsWith('#/client')));
@@ -4507,14 +4512,307 @@ function renderFormcheck() {
         <span class="pick-name">${T('Калорії по фото')}</span>
         <span class="fc-pat">${kcalToday} ${T('ккал')} ›</span>
       </button>
+      <button class="pick-row fc-row" id="fcRecipes">
+        <span class="pick-ico">📖</span>
+        <span class="pick-name">${T('Рецепти')}</span>
+        <span class="fc-pat">${T('стрічка')} ›</span>
+      </button>
     </div>
 
     <p class="muted side">🏋️ ${T('Аналіз техніки')} — ${T('Обери вправу — камера стежитиме за технікою, підкаже глибину і порахує повторення')}</p>
     <div class="pick-list">${rows || `<p class="muted center">${T('Немає тренувань — додай у вкладці «Тренування»')}</p>`}</div>`;
   screenEl.querySelector('#fcCalories').onclick = () => go('#/calories');
+  screenEl.querySelector('#fcRecipes').onclick = () => go('#/recipes');
   screenEl.querySelectorAll('.fc-row[data-id]').forEach((b) =>
     b.addEventListener('click', () => go('#/camera/' + b.dataset.id))
   );
+}
+
+// =====================================================================
+//  ЕКРАН: РЕЦЕПТИ — стрічка як у TikTok (Сканер → Їжа → Рецепти)
+// =====================================================================
+let recipeTab = 'feed'; // feed | fav | mine
+let recipeFilter = 'all'; // all | breakfast | main | snack | shake | mass | cut
+let recipeAt = null; // id картки, на якій зупинились (повернення з форми/шторки)
+const RCAT = { breakfast: 'Сніданки', main: 'Основні страви', snack: 'Перекуси', shake: 'Шейки й десерти' };
+const RCAT1 = { breakfast: 'Сніданок', main: 'Основна страва', snack: 'Перекус', shake: 'Шейк / десерт' };
+const RGOAL = { mass: '💪 Маса', cut: '🔥 Сушка' };
+
+function recipeList() {
+  const lang = S.getSettings().lang || 'uk';
+  let list = RC.allRecipes(lang);
+  if (recipeTab === 'fav') {
+    const fav = S.recipeFavs();
+    list = fav.map((id) => list.find((r) => r.id === id)).filter(Boolean);
+  } else if (recipeTab === 'mine') list = list.filter((r) => r.own);
+  else list = RC.feedOrder(list);
+  if (recipeFilter in RGOAL) list = list.filter((r) => r.goal === recipeFilter || r.goal === 'any');
+  else if (recipeFilter !== 'all') list = list.filter((r) => r.cat === recipeFilter);
+  return list;
+}
+
+function recipeCardHTML(r) {
+  const yt = r.own ? RC.youtubeId(r.video) : null;
+  const fav = S.isRecipeFav(r.id);
+  const bg = r.bg || ['#2b2b3d', '#15151e'];
+  const media = r.photo
+    ? `<img class="rc-photo" data-photo="${esc(r.id)}" alt=""/>`
+    : '';
+  const tags = [r.time ? `⏱ ${r.time} ${T('хв')}` : '', T(RCAT1[r.cat] || ''), r.goal !== 'any' ? T(RGOAL[r.goal]) : '', r.own ? `👤 ${T('Мій')}` : '']
+    .filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join('');
+  return `<article class="rcard" data-id="${esc(r.id)}" ${yt ? `data-yt="${yt}"` : ''}>
+    <div class="rc-bg" style="background:linear-gradient(160deg, ${bg[0]}, ${bg[1]})">
+      ${r.photo || yt ? '' : `<span class="rc-emoji">${r.emoji || '🍽'}</span><span class="rc-pattern">${(r.emoji || '🍽').repeat(18)}</span>`}
+      ${media}<div class="rc-video"></div>
+    </div>
+    <div class="rc-shade"></div>
+    <div class="rc-info">
+      <div class="rc-tags">${tags}</div>
+      <h2 class="rc-name">${esc(r.name)}</h2>
+      ${r.kcal ? `<div class="rc-macros"><b>${r.kcal}</b> ${T('ккал')} · ${T('Б')} ${r.p} · ${T('Ж')} ${r.f} · ${T('В')} ${r.c}</div>` : ''}
+      ${r.ing && r.ing.length ? `<p class="rc-ing">${esc(r.ing.map((x) => x.split(' — ')[0]).join(', '))}</p>` : ''}
+      <button class="rc-more" data-act="open">${T('Рецепт')} ›</button>
+    </div>
+    <div class="rc-rail">
+      <button class="rc-act ${fav ? 'on' : ''}" data-act="fav"><span>${fav ? '♥' : '♡'}</span><small>${T('Зберегти')}</small></button>
+      <button class="rc-act" data-act="open"><span>📖</span><small>${T('Рецепт')}</small></button>
+      <button class="rc-act" data-act="video"><span>▶</span><small>${T('Відео')}</small></button>
+      <button class="rc-act" data-act="kcal"><span>＋</span><small>${T('В калорії')}</small></button>
+      <button class="rc-act" data-act="share"><span>↗</span><small>${T('Поділитися')}</small></button>
+    </div>
+  </article>`;
+}
+
+async function renderRecipes() {
+  await RC.loadTexts(S.getSettings().lang || 'uk');
+  if (location.hash !== '#/recipes') return;
+  const list = recipeList();
+  const tabs = [['feed', 'Для тебе'], ['fav', 'Обране'], ['mine', 'Мої']];
+  const chips = [['all', 'Усі'], ...Object.entries(RCAT), ...Object.entries(RGOAL)];
+  let empty = '';
+  if (!list.length) {
+    empty = recipeTab === 'fav'
+      ? `<div class="rf-empty"><div class="rf-empty-ico">♡</div><p>${T('Тисни ♡ на рецепті — він з’явиться тут')}</p></div>`
+      : recipeTab === 'mine'
+        ? `<div class="rf-empty"><div class="rf-empty-ico">👩‍🍳</div><p>${T('Тут будуть твої рецепти — з фото, інгредієнтами й відео')}</p>
+            <button class="btn primary" id="rfAddEmpty">＋ ${T('Додати свій рецепт')}</button></div>`
+        : `<div class="rf-empty"><div class="rf-empty-ico">🍽</div><p>${T('Нічого не знайдено — зміни фільтр')}</p></div>`;
+  }
+  screenEl.innerHTML = `
+    <div class="rfeed-wrap">
+      <div class="rfeed" id="rfeed">${list.map(recipeCardHTML).join('')}${empty}</div>
+      <div class="rf-top">
+        <div class="rf-row">
+          <button class="rf-ico" id="rfBack" aria-label="${T('Назад')}">‹</button>
+          <div class="rf-tabs">${tabs.map(([id, l]) => `<button class="${recipeTab === id ? 'on' : ''}" data-tab="${id}">${T(l)}</button>`).join('')}</div>
+          <button class="rf-ico rf-add" id="rfAdd" aria-label="${T('Додати свій рецепт')}">＋</button>
+        </div>
+        <div class="rf-chips">${chips.map(([id, l]) => `<button class="${recipeFilter === id ? 'on' : ''}" data-f="${id}">${T(l)}</button>`).join('')}</div>
+      </div>
+    </div>`;
+
+  const feed = screenEl.querySelector('#rfeed');
+  screenEl.querySelector('#rfBack').onclick = () => go('#/formcheck');
+  screenEl.querySelector('#rfAdd').onclick = () => go('#/recipe-new');
+  const addEmpty = screenEl.querySelector('#rfAddEmpty');
+  if (addEmpty) addEmpty.onclick = () => go('#/recipe-new');
+  screenEl.querySelectorAll('.rf-tabs button').forEach((b) => (b.onclick = () => { recipeTab = b.dataset.tab; recipeAt = null; renderRecipes(); }));
+  screenEl.querySelectorAll('.rf-chips button').forEach((b) => (b.onclick = () => { recipeFilter = b.dataset.f; recipeAt = null; renderRecipes(); }));
+
+  // фото власних рецептів — з IndexedDB
+  screenEl.querySelectorAll('img[data-photo]').forEach(async (img) => {
+    const url = await RC.photoUrl(img.dataset.photo);
+    if (url) img.src = url; else img.remove();
+  });
+
+  // відео YouTube грає без звуку лише на видимій картці
+  const io = new IntersectionObserver((ents) => {
+    ents.forEach((e) => {
+      const card = e.target;
+      if (e.isIntersecting) recipeAt = card.dataset.id;
+      const yt = card.dataset.yt;
+      if (!yt) return;
+      const box = card.querySelector('.rc-video');
+      if (e.isIntersecting && !box.firstChild) {
+        box.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${yt}?autoplay=1&mute=1&playsinline=1&loop=1&playlist=${yt}&controls=0&rel=0" allow="autoplay; encrypted-media" title="video"></iframe>`;
+      } else if (!e.isIntersecting) box.innerHTML = '';
+    });
+  }, { root: feed, threshold: 0.6 });
+  feed.querySelectorAll('.rcard').forEach((c) => io.observe(c));
+  live.camera = { destroy: () => io.disconnect() }; // прибирається при зміні екрана
+
+  if (recipeAt) {
+    const c = feed.querySelector(`.rcard[data-id="${CSS.escape(recipeAt)}"]`);
+    if (c) feed.scrollTop = c.offsetTop;
+  }
+
+  const byId = (id) => list.find((r) => r.id === id);
+  feed.querySelectorAll('.rcard').forEach((card) => {
+    const r = byId(card.dataset.id);
+    card.querySelectorAll('[data-act]').forEach((b) => {
+      b.onclick = () => recipeAction(b.dataset.act, r, b);
+    });
+    // подвійний тап по картці — в обране, як у TikTok
+    let last = 0;
+    card.querySelector('.rc-bg').addEventListener('click', () => {
+      const now = Date.now();
+      if (now - last < 320) {
+        if (!S.isRecipeFav(r.id)) recipeAction('fav', r, card.querySelector('[data-act="fav"]'));
+        card.classList.remove('rc-pop'); void card.offsetWidth; card.classList.add('rc-pop');
+      }
+      last = now;
+    });
+  });
+}
+
+function recipeAction(act, r, btn) {
+  if (act === 'fav') {
+    const on = S.toggleRecipeFav(r.id);
+    if (btn) { btn.classList.toggle('on', on); btn.querySelector('span').textContent = on ? '♥' : '♡'; }
+    if (!on && recipeTab === 'fav') renderRecipes();
+  } else if (act === 'open') openRecipeSheet(r);
+  else if (act === 'video') {
+    window.open(r.video || RC.videoSearchUrl(`${r.name} ${T('рецепт')}`), '_blank', 'noopener');
+  } else if (act === 'kcal') {
+    if (!r.kcal) { toast(T('У рецепті не вказано калорійність')); return; }
+    S.addCalorieEntry(S.todayISO(), { name: r.name, kcal: r.kcal, prot: r.p, fat: r.f, carb: r.c });
+    toast(`＋ ${r.kcal} ${T('ккал')} — ${T('додано в калорії дня')}`);
+  } else if (act === 'share') {
+    const text = `${r.name}\n${r.kcal ? `${r.kcal} ${T('ккал')} · ${T('Б')} ${r.p} · ${T('Ж')} ${r.f} · ${T('В')} ${r.c}\n` : ''}\n${(r.ing || []).map((x) => '• ' + x).join('\n')}\n\n${(r.steps || []).map((x, i) => `${i + 1}. ${x}`).join('\n')}\n\n— КАЧАЛКА`;
+    if (navigator.share) navigator.share({ title: r.name, text }).catch(() => {});
+    else navigator.clipboard.writeText(text).then(() => toast(T('Рецепт скопійовано')), () => {});
+  }
+}
+
+// шторка знизу з повним рецептом
+function openRecipeSheet(r) {
+  document.querySelector('.rsheet-ov')?.remove();
+  const ov = document.createElement('div');
+  ov.className = 'rsheet-ov';
+  ov.innerHTML = `
+    <div class="rsheet">
+      <div class="rsheet-grip"></div>
+      <h3>${esc(r.name)}</h3>
+      ${r.kcal ? `<div class="rs-macros">
+        <div><b>${r.kcal}</b><small>${T('ккал')}</small></div><div><b>${r.p}</b><small>${T('білки')}</small></div>
+        <div><b>${r.f}</b><small>${T('жири')}</small></div><div><b>${r.c}</b><small>${T('вуглеводи')}</small></div></div>` : ''}
+      ${r.time ? `<p class="muted">⏱ ${r.time} ${T('хв')} · ${T('на 1 порцію')}</p>` : ''}
+      ${r.ing && r.ing.length ? `<div class="card-label">${T('Інгредієнти')}</div>
+        <ul class="rs-ing">${r.ing.map((x) => `<li><label><input type="checkbox"/> <span>${esc(x)}</span></label></li>`).join('')}</ul>` : ''}
+      ${r.steps && r.steps.length ? `<div class="card-label">${T('Приготування')}</div>
+        <ol class="rs-steps">${r.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
+      <div class="btn-col">
+        <button class="btn primary" data-act="video">▶ ${T('Дивитися відео')}</button>
+        <button class="btn ghost" data-act="kcal">＋ ${T('Додати в калорії дня')}</button>
+        ${r.own ? `<div class="btn-row"><button class="btn ghost" id="rsEdit">✏️ ${T('Редагувати')}</button>
+          <button class="btn ghost" id="rsDel">🗑 ${T('Видалити')}</button></div>` : ''}
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  requestAnimationFrame(() => ov.classList.add('open'));
+  const close = () => { ov.classList.remove('open'); setTimeout(() => ov.remove(), 250); };
+  ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+  ov.querySelectorAll('[data-act]').forEach((b) => (b.onclick = () => recipeAction(b.dataset.act, r, null)));
+  const ed = ov.querySelector('#rsEdit');
+  if (ed) ed.onclick = () => { ov.remove(); go('#/recipe-edit/' + encodeURIComponent(r.id)); };
+  const del = ov.querySelector('#rsDel');
+  if (del) del.onclick = async () => {
+    if (!confirm(T('Видалити цей рецепт?'))) return;
+    S.deleteOwnRecipe(r.id);
+    RC.forgetPhoto(r.id);
+    await RC.delPhoto(r.id).catch(() => {});
+    ov.remove();
+    toast(T('Рецепт видалено'));
+    renderRecipes();
+  };
+}
+
+// форма: новий / редагувати свій рецепт
+async function renderRecipeEdit(idEnc) {
+  const id = idEnc ? decodeURIComponent(idEnc) : null;
+  const r = id ? S.ownRecipes().find((x) => x.id === id) : null;
+  if (id && !r) { go('#/recipes'); return; }
+  const v = r || { name: '', cat: 'main', goal: 'any', time: '', kcal: '', p: '', f: '', c: '', ing: [], steps: [], video: '' };
+  const num = (x) => (x ? x : '');
+  let newPhoto = null; // Blob, якщо обрали нове фото
+  let dropPhoto = false;
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backBtn">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">📖 ${T('Рецепти')}</div>
+        <div class="appbar-title">${r ? T('Редагувати рецепт') : T('Новий рецепт')}</div></div>
+    </header>
+    <section class="card">
+      <div class="re-photo" id="rePhoto"><span>📷 ${T('Додати фото страви')}</span><img alt="" hidden/></div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn ghost" id="reCam">📷 ${T('Камера')}</button>
+        <button class="btn ghost" id="reGal">🖼 ${T('З галереї')}</button>
+      </div>
+      <input type="file" id="reCamIn" accept="image/*" capture="environment" hidden/>
+      <input type="file" id="reGalIn" accept="image/*" hidden/>
+    </section>
+    <section class="card">
+      <div class="field"><label>${T('Назва')} *</label><input type="text" id="reName" maxlength="120" value="${esc(v.name)}" placeholder="${T('Наприклад: Курка теріякі з рисом')}"/></div>
+      <div class="re-grid2">
+        <div class="field"><label>${T('Категорія')}</label><select id="reCat">${Object.entries(RCAT1).map(([k, l]) => `<option value="${k}" ${v.cat === k ? 'selected' : ''}>${T(l)}</option>`).join('')}</select></div>
+        <div class="field"><label>${T('Мета')}</label><select id="reGoal">
+          <option value="any" ${v.goal === 'any' ? 'selected' : ''}>${T('Будь-яка')}</option>
+          <option value="mass" ${v.goal === 'mass' ? 'selected' : ''}>${T('💪 Маса')}</option>
+          <option value="cut" ${v.goal === 'cut' ? 'selected' : ''}>${T('🔥 Сушка')}</option></select></div>
+      </div>
+      <div class="card-label" style="margin-top:6px">${T('На 1 порцію')}</div>
+      <div class="re-grid5">
+        <div class="field"><label>${T('ккал')}</label><input type="number" inputmode="numeric" id="reK" value="${num(v.kcal)}"/></div>
+        <div class="field"><label>${T('Б')}, г</label><input type="number" inputmode="numeric" id="reP" value="${num(v.p)}"/></div>
+        <div class="field"><label>${T('Ж')}, г</label><input type="number" inputmode="numeric" id="reF" value="${num(v.f)}"/></div>
+        <div class="field"><label>${T('В')}, г</label><input type="number" inputmode="numeric" id="reC" value="${num(v.c)}"/></div>
+        <div class="field"><label>⏱ ${T('хв')}</label><input type="number" inputmode="numeric" id="reT" value="${num(v.time)}"/></div>
+      </div>
+      <div class="field"><label>${T('Інгредієнти')} <span class="muted">${T('(кожен з нового рядка)')}</span></label>
+        <textarea id="reIng" rows="5" placeholder="${T('Куряче філе — 200 г')}">${esc(v.ing.join('\n'))}</textarea></div>
+      <div class="field"><label>${T('Приготування')} <span class="muted">${T('(кожен крок з нового рядка)')}</span></label>
+        <textarea id="reSteps" rows="5">${esc(v.steps.join('\n'))}</textarea></div>
+      <div class="field"><label>${T('Посилання на відео')} <span class="muted">YouTube / TikTok / Instagram</span></label>
+        <input type="url" id="reVideo" value="${esc(v.video)}" placeholder="https://youtube.com/shorts/…"/></div>
+      <button class="btn primary" id="reSave">${T('Зберегти рецепт')}</button>
+    </section>`;
+
+  screenEl.querySelector('#backBtn').onclick = () => history.back();
+  const prev = screenEl.querySelector('#rePhoto img');
+  const showPrev = (url) => { prev.src = url; prev.hidden = false; screenEl.querySelector('#rePhoto span').hidden = true; };
+  if (r && r.photo) RC.photoUrl(r.id).then((u) => u && showPrev(u));
+  const pick = async (inp) => {
+    const f = inp.files[0];
+    if (!f) return;
+    try { newPhoto = await RC.compressPhoto(f); dropPhoto = false; showPrev(URL.createObjectURL(newPhoto)); }
+    catch { toast(T('Не вдалося відкрити фото')); }
+  };
+  const cam = screenEl.querySelector('#reCamIn'), gal = screenEl.querySelector('#reGalIn');
+  screenEl.querySelector('#reCam').onclick = () => cam.click();
+  screenEl.querySelector('#reGal').onclick = () => gal.click();
+  cam.onchange = () => pick(cam);
+  gal.onchange = () => pick(gal);
+
+  screenEl.querySelector('#reSave').onclick = async () => {
+    const val = (q) => screenEl.querySelector(q).value;
+    const name = val('#reName').trim();
+    if (!name) { toast(T('Вкажи назву рецепта')); return; }
+    const saved = S.saveOwnRecipe({
+      id: r ? r.id : null, name, cat: val('#reCat'), goal: val('#reGoal'),
+      kcal: val('#reK'), p: val('#reP'), f: val('#reF'), c: val('#reC'), time: val('#reT'),
+      ing: val('#reIng'), steps: val('#reSteps'), video: val('#reVideo').trim(),
+      photo: newPhoto ? true : r ? r.photo && !dropPhoto : false,
+    });
+    if (newPhoto) {
+      try { await RC.putPhoto(saved.id, newPhoto); RC.forgetPhoto(saved.id); }
+      catch { toast(T('Фото не збереглося — забагато даних на пристрої')); }
+    }
+    toast(T('Рецепт збережено'));
+    recipeTab = 'mine';
+    recipeFilter = 'all';
+    recipeAt = saved.id;
+    go('#/recipes');
+  };
 }
 
 // =====================================================================

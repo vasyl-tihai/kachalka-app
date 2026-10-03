@@ -116,6 +116,7 @@ function defaultState() {
     measurements: {}, // { 'YYYY-MM-DD': { metricId: число } } — заміри тіла
     progression: {}, // { exerciseId: { programId, goal, testMax, level, day, … } } — програми власної ваги
     calories: {}, // { 'YYYY-MM-DD': [ {id, name, kcal, prot, fat, carb} ] } — журнал їжі за фото
+    recipes: { fav: [], own: [] }, // обрані id рецептів і власні рецепти (фото — в IndexedDB)
     settings: {
       restSeconds: 60,
       restStep: 30,
@@ -134,6 +135,21 @@ function defaultState() {
 }
 
 // ----- нормалізація стану (захист від битих/чужих даних) -----
+function normalizeRecipe(r) {
+  const num = (v) => Math.max(0, Math.round(Number(v) || 0));
+  const lines = (a) => (Array.isArray(a) ? a : String(a || '').split('\n')).map((x) => String(x).trim()).filter(Boolean).slice(0, 40);
+  return {
+    id: String(r.id), own: true,
+    name: String(r.name || '').slice(0, 120),
+    cat: ['breakfast', 'main', 'snack', 'shake'].includes(r.cat) ? r.cat : 'main',
+    goal: ['mass', 'cut', 'any'].includes(r.goal) ? r.goal : 'any',
+    time: num(r.time), kcal: num(r.kcal), p: num(r.p), f: num(r.f), c: num(r.c),
+    ing: lines(r.ing), steps: lines(r.steps),
+    video: /^https?:\/\//.test(r.video || '') ? String(r.video).slice(0, 300) : '',
+    photo: !!r.photo,
+    created: Number(r.created) || Date.now(),
+  };
+}
 function normalizeExercise(e, i) {
   return {
     id: e && e.id ? e.id : uid(),
@@ -266,6 +282,13 @@ function normalizeState(raw) {
   }
   s.measurements = meas;
 
+  // рецепти: обране й власні (нове поле — старі копії його не мають)
+  const rr = raw.recipes && typeof raw.recipes === 'object' ? raw.recipes : {};
+  s.recipes = {
+    fav: Array.isArray(rr.fav) ? rr.fav.filter((x) => typeof x === 'string') : [],
+    own: Array.isArray(rr.own) ? rr.own.filter((r) => r && r.id && r.name).map(normalizeRecipe) : [],
+  };
+
   // журнал калорій (нове поле — старі копії його не мають)
   const cal = {};
   const rawCal =
@@ -356,6 +379,31 @@ export function updateSettings(patch) {
 export function caloriesForDay(iso) {
   return state.calories[iso] || [];
 }
+// --- рецепти ---
+export function recipeFavs() { return state.recipes.fav.slice(); }
+export function isRecipeFav(id) { return state.recipes.fav.includes(id); }
+export function toggleRecipeFav(id) {
+  const f = state.recipes.fav;
+  const i = f.indexOf(id);
+  if (i >= 0) f.splice(i, 1); else f.unshift(id);
+  saveNow();
+  return i < 0;
+}
+export function ownRecipes() { return state.recipes.own.slice().sort((a, b) => b.created - a.created); }
+export function saveOwnRecipe(r) {
+  const clean = normalizeRecipe({ ...r, id: r.id || 'my-' + uid() });
+  const i = state.recipes.own.findIndex((x) => x.id === clean.id);
+  if (i >= 0) state.recipes.own[i] = { ...clean, created: state.recipes.own[i].created };
+  else state.recipes.own.push(clean);
+  saveNow();
+  return clean;
+}
+export function deleteOwnRecipe(id) {
+  state.recipes.own = state.recipes.own.filter((r) => r.id !== id);
+  state.recipes.fav = state.recipes.fav.filter((x) => x !== id);
+  saveNow();
+}
+
 export function addCalorieEntry(iso, entry) {
   const list = state.calories[iso] || (state.calories[iso] = []);
   list.push({
