@@ -642,6 +642,22 @@ a.btn { display: block; text-align: center; text-decoration: none; box-sizing: b
 .kcal-nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kcal-del { color: var(--muted); }
 .kcal-total { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.kcal-g { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; font-weight: 600; color: var(--muted); }
+.kcal-g input, .bc-manual input {
+  font: inherit; font-weight: 700; color: var(--txt); background: var(--bg-card2);
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 0;
+}
+.kcal-g input { width: 110px; text-align: center; }
+.bc-scan { width: 100%; margin-top: 4px; }
+.bc-manual { display: flex; gap: 8px; margin-top: 10px; }
+.bc-manual input { flex: 1 1 auto; width: 100%; letter-spacing: 1px; }
+.bc-manual .btn { flex: 0 0 auto; width: auto; padding-left: 20px; padding-right: 20px; }
+.bc-src { font-size: .78rem; }
+.bc-overlay { position: fixed; inset: 0; z-index: 200; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.bc-overlay video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.bc-frame { position: relative; width: 78%; max-width: 360px; aspect-ratio: 16 / 9; border: 3px solid #C6F84E; border-radius: 16px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .45); }
+.bc-tip { position: relative; color: #fff; font-weight: 700; margin: 18px 24px 0; text-align: center; text-shadow: 0 1px 4px #000; }
+.bc-close { position: absolute; bottom: calc(28px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); min-width: 160px; color: #fff; border-color: rgba(255, 255, 255, .5); background: rgba(0, 0, 0, .4); }
 
 /* світлова сигналізація в кінці відпочинку (2.6с) */
 #alarmFlash { position: fixed; inset: 0; z-index: 80; pointer-events: none; opacity: 0; background: #ff2f2f; }

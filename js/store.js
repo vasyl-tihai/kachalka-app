@@ -115,7 +115,7 @@ function defaultState() {
     schedule: {}, // { '0'..'6' (день тижня, 0=Нд): [workoutId] } — тижневий план
     measurements: {}, // { 'YYYY-MM-DD': { metricId: число } } — заміри тіла
     progression: {}, // { exerciseId: { programId, goal, testMax, level, day, … } } — програми власної ваги
-    calories: {}, // { 'YYYY-MM-DD': [ {id, name, kcal, prot, fat, carb} ] } — журнал їжі за фото
+    calories: {}, // { 'YYYY-MM-DD': [ {id, name, kcal, prot, fat, carb, g?} ] } — журнал їжі (фото / штрихкод); g — вага, г
     recipes: { fav: [], own: [] }, // обрані id рецептів і власні рецепти (фото — в IndexedDB)
     settings: {
       restSeconds: 60,
@@ -305,6 +305,7 @@ function normalizeState(raw) {
         prot: Number(e.prot) || 0,
         fat: Number(e.fat) || 0,
         carb: Number(e.carb) || 0,
+        ...(Number(e.g) > 0 ? { g: Math.round(Number(e.g)) } : {}),
       }));
     if (clean.length) cal[iso] = clean;
   }
@@ -413,6 +414,7 @@ export function addCalorieEntry(iso, entry) {
     prot: Math.max(0, Math.round(Number(entry.prot) || 0)),
     fat: Math.max(0, Math.round(Number(entry.fat) || 0)),
     carb: Math.max(0, Math.round(Number(entry.carb) || 0)),
+    ...(Number(entry.g) > 0 ? { g: Math.round(Number(entry.g)) } : {}),
   });
   save();
 }

@@ -53,6 +53,9 @@
       посилання (стаття, YouTube, TikTok) надсилається на наш сервер, він відкриває сторінку
       за посиланням і передає текст або фото OpenAI, щоб скласти рецепт. Ні фото, ні посилання
       на сервері не зберігаються — результат лягає лише у твою форму на пристрої.</li>
+    <li><b>Продукт за штрихкодом</b>: номер штрихкоду (лише цифри, без фото й інших даних)
+      надсилається у відкриту базу продуктів Open Food Facts, щоб отримати калорійність і БЖВ.
+      Зображення з камери під час сканування обробляється на пристрої й нікуди не надсилається.</li>
     <li><b>Відео в рецептах</b>: якщо до свого рецепта ти додаєш посилання на YouTube,
       ролик показується через youtube-nocookie.com; кнопка «Відео» відкриває YouTube.
       Що при цьому бачить YouTube — регулює політика Google.</li>
@@ -99,7 +102,9 @@
         name and what you post are stored on our server (Supabase); Google sign-in shares
         only your email and name. Recipe auto-import (only when you start it) sends the
         recipe photo or link to our server, which reads the page and asks OpenAI to build the
-        recipe; neither is stored. A YouTube link you add to your own recipe is played via
+        recipe; neither is stored. When you look up a product by barcode, only the barcode number
+        is sent to the open Open Food Facts database (the camera image is processed on the device).
+        A YouTube link you add to your own recipe is played via
         youtube-nocookie.com.</li>
       <li><b>Camera:</b> the form-analysis feature runs pose detection on the device; video
         is never uploaded or recorded.</li>

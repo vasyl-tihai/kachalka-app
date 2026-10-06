@@ -16,6 +16,7 @@ import * as FX from './fx.js';
 import * as BE from './backend.js';
 import { APP_VERSION } from './version.js';
 import * as CAL from './calories.js';
+import * as BC from './barcode.js';
 
 // мова інтерфейсу — із налаштувань (до першого рендеру)
 setLang(S.getSettings().lang);
@@ -5023,7 +5024,7 @@ async function renderCalories() {
 
   const rows = list
     .map(
-      (e) => `<div class="kcal-row"><span class="kcal-nm">${esc(e.name)}</span>
+      (e) => `<div class="kcal-row"><span class="kcal-nm">${esc(e.name)}${e.g ? ` <span class="muted">· ${e.g} ${T('г')}</span>` : ''}</span>
         <b>${e.kcal} ${T('ккал')}</b>
         <button class="icon-btn kcal-del" data-id="${e.id}">✕</button></div>`
     )
@@ -5032,7 +5033,7 @@ async function renderCalories() {
   screenEl.innerHTML = `
     <header class="appbar">
       <button class="icon-btn" id="backKcal">‹</button>
-      <div class="appbar-titles"><div class="appbar-kicker">🍎 ${T('Калорії по фото')}</div>
+      <div class="appbar-titles"><div class="appbar-kicker">🍎 ${T('Калорії')}</div>
         <div class="appbar-title">${S.prettyDate(iso)}</div></div>
     </header>
 
@@ -5049,6 +5050,17 @@ async function renderCalories() {
           <input type="file" id="foodGal" accept="image/*" hidden/>
           <div id="analyzeBox"></div>
         </section>
+
+    <section class="card">
+      <div class="card-label">🏷 ${T('Продукт за штрихкодом')}</div>
+      <p class="muted hint">${T('Відскануй штрихкод на упаковці — калорії й БЖВ підтягнуться з бази продуктів')}</p>
+      ${BC.scanSupported() ? `<button class="btn ghost bc-scan" id="bcScan">▥ ${T('Сканувати штрихкод')}</button>` : ''}
+      <div class="bc-manual">
+        <input id="bcCode" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="${T('Цифри штрихкоду')}"/>
+        <button class="btn ghost" id="bcFind">${T('Знайти')}</button>
+      </div>
+      <div id="bcBox"></div>
+    </section>
 
     <section class="card">
       <div class="card-label">${T('Зʼїдено за день')}</div>
@@ -5086,25 +5098,62 @@ async function renderCalories() {
           <p class="muted center">${T('Не схоже на їжу — спробуй інше фото')}</p>`;
         return;
       }
+      // ШІ оцінює порцію в грамах — від неї рахуємо «на 100 г», щоб вагу можна було виправити
+      const portion = Math.round(Number(r.portion) || 0);
+      const per100 = portion
+        ? { kcal: r.kcal * 100 / portion, prot: r.prot * 100 / portion, fat: r.fat * 100 / portion, carb: r.carb * 100 / portion }
+        : null;
       box().innerHTML = `
         <img class="food-prev" src="${url}" alt=""/>
-        <div class="kcal-res">
-          <div class="kcal-name">${esc(r.name)}${r.portion ? ` <span class="muted">· ${T('порція')} ~${r.portion} г</span>` : ''}</div>
-          <div class="kcal-big">${r.kcal} ${T('ккал')}</div>
-          <div class="muted">${T('Б')} ${r.prot} г · ${T('Ж')} ${r.fat} г · ${T('В')} ${r.carb} г</div>
-        </div>
-        <div class="btn-col" style="margin-top:10px">
-          <button class="btn primary" id="addKcal">➕ ${T('Додати в день')}</button>
-        </div>`;
-      box().querySelector('#addKcal').onclick = () => {
-        S.addCalorieEntry(iso, r);
+        ${kcalResultHTML(r.name, r, portion)}`;
+      bindKcalResult(box(), per100, (v, g) => {
+        S.addCalorieEntry(iso, { ...r, ...v, g });
         toast(T('Збережено'));
         renderCalories();
-      };
+      });
     } catch (e) {
       if (box()) box().innerHTML = `<p class="muted center">⚠️ ${esc(T(CAL.errorMessage(e)))}</p>`;
     }
   };
+  // ---------- штрихкод ----------
+  const bcBox = () => screenEl.querySelector('#bcBox');
+  const findProduct = async (raw) => {
+    const code = BC.cleanCode(raw);
+    if (!code) { toast(T('Штрихкод — від 8 до 14 цифр')); return; }
+    if (!bcBox()) return;
+    bcBox().innerHTML = `<p class="muted center">🔎 ${T('Шукаю продукт…')}</p>`;
+    try {
+      const p = await BC.lookupProduct(code, S.getSettings().lang);
+      if (!bcBox()) return;
+      if (!p) {
+        bcBox().innerHTML = `<p class="muted center">${T('Продукту немає в базі — спробуй інший штрихкод або сфотографуй страву')}</p>`;
+        return;
+      }
+      if (!p.hasData) {
+        bcBox().innerHTML = `<p class="muted center"><b>${esc(p.name)}</b><br/>${T('У базі немає калорійності цього продукту')}</p>`;
+        return;
+      }
+      const g = p.serving || 100;
+      const title = p.brand && !p.name.includes(p.brand) ? `${p.name} · ${p.brand}` : p.name;
+      bcBox().innerHTML = `
+        ${kcalResultHTML(title, BC.forGrams(p.per100, g), g)}
+        <p class="muted hint">${T('На 100 г')}: ${Math.round(p.per100.kcal)} ${T('ккал')} · ${T('Б')} ${Math.round(p.per100.prot)} · ${T('Ж')} ${Math.round(p.per100.fat)} · ${T('В')} ${Math.round(p.per100.carb)} ${T('г')}
+          <br/><span class="bc-src">${T('Дані: Open Food Facts')}</span></p>`;
+      bindKcalResult(bcBox(), p.per100, (v, grams) => {
+        S.addCalorieEntry(iso, { name: title, ...v, g: grams });
+        toast(T('Збережено'));
+        renderCalories();
+      });
+    } catch (e) {
+      if (bcBox()) bcBox().innerHTML = `<p class="muted center">⚠️ ${T('Не вдалося перевірити штрихкод — потрібен інтернет')}</p>`;
+    }
+  };
+  const codeIn = screenEl.querySelector('#bcCode');
+  screenEl.querySelector('#bcFind').onclick = () => findProduct(codeIn.value);
+  codeIn.onkeydown = (e) => { if (e.key === 'Enter') findProduct(codeIn.value); };
+  const scanBtn = screenEl.querySelector('#bcScan');
+  if (scanBtn) scanBtn.onclick = () => openBarcodeScanner((code) => { codeIn.value = code; findProduct(code); });
+
   const cam = screenEl.querySelector('#foodCam');
   const gal = screenEl.querySelector('#foodGal');
   if (cam) {
@@ -5113,6 +5162,67 @@ async function renderCalories() {
     cam.onchange = () => analyze(cam.files[0]);
     gal.onchange = () => analyze(gal.files[0]);
   }
+}
+
+// результат «страва / продукт»: назва, калорії, БЖВ і поле ваги (якщо відомо, від чого рахувати)
+function kcalResultHTML(name, v, g) {
+  return `<div class="kcal-res">
+      <div class="kcal-name">${esc(name)}</div>
+      <div class="kcal-big"><span class="kr-kcal">${v.kcal}</span> ${T('ккал')}</div>
+      <div class="muted">${T('Б')} <span class="kr-p">${v.prot}</span> ${T('г')} · ${T('Ж')} <span class="kr-f">${v.fat}</span> ${T('г')} · ${T('В')} <span class="kr-c">${v.carb}</span> ${T('г')}</div>
+    </div>
+    ${g ? `<label class="kcal-g"><span>${T('Вага, г')}</span>
+      <input class="kr-g" type="number" inputmode="numeric" min="1" max="5000" value="${g}"/></label>` : ''}
+    <div class="btn-col" style="margin-top:10px">
+      <button class="btn primary kr-add">➕ ${T('Додати в день')}</button>
+    </div>`;
+}
+// per100 = null → вагу не змінити (ШІ не оцінив порцію), додаємо як є
+function bindKcalResult(root, per100, onAdd) {
+  const gIn = root.querySelector('.kr-g');
+  const cur = () => {
+    const g = gIn ? Math.max(0, Math.round(Number(gIn.value) || 0)) : 0;
+    if (!per100 || !g) return { g, v: null };
+    return { g, v: BC.forGrams(per100, g) };
+  };
+  if (gIn && per100) {
+    gIn.oninput = () => {
+      const { v } = cur();
+      if (!v) return;
+      root.querySelector('.kr-kcal').textContent = v.kcal;
+      root.querySelector('.kr-p').textContent = v.prot;
+      root.querySelector('.kr-f').textContent = v.fat;
+      root.querySelector('.kr-c').textContent = v.carb;
+    };
+  }
+  root.querySelector('.kr-add').onclick = () => {
+    const { g, v } = cur();
+    if (gIn && !g) { toast(T('Вкажи вагу в грамах')); return; }
+    onAdd(v || {}, g);
+  };
+}
+
+// повноекранний сканер штрихкоду (камера + рамка); onCode(code) — коли знайшли
+function openBarcodeScanner(onCode) {
+  const ov = document.createElement('div');
+  ov.className = 'bc-overlay';
+  ov.innerHTML = `<video playsinline muted></video><div class="bc-frame"></div>
+    <p class="bc-tip">${T('Наведи камеру на штрихкод на упаковці')}</p>
+    <button class="btn ghost bc-close">${T('Закрити')}</button>`;
+  document.body.appendChild(ov);
+  const sc = BC.startScan(ov.querySelector('video'));
+  const close = () => { sc.stop(); ov.remove(); window.removeEventListener('hashchange', close); };
+  window.addEventListener('hashchange', close);
+  ov.querySelector('.bc-close').onclick = close;
+  sc.done.then((code) => {
+    if (navigator.vibrate) navigator.vibrate(60);
+    close();
+    onCode(code);
+  }).catch((e) => {
+    if (!document.body.contains(ov)) return; // закрили самі
+    close();
+    if (String(e && e.message) !== 'cancelled') toast(T('Камера недоступна — введи цифри штрихкоду вручну'));
+  });
 }
 
 // =====================================================================
