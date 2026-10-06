@@ -4613,7 +4613,7 @@ function renderAI(toForm) {
     <div class="pick-list aih-list">
       ${item('aiKcal', '🍎', T('Калорії'), T('Фото страви або штрихкод — калорії й БЖВ'), `${kcalToday} ${T('ккал')} ›`)}
       ${item('aiSmart', '🧠', T('Розумний тренер'), T('Які мʼязи вже відновились і скільки відпочивати'))}
-      ${item('aiImport', '📥', T('Рецепт з посилання або фото'), T('TikTok, YouTube, сайт чи сторінка з книги — запишеться сам'), `<span class="pro-tag">PRO</span> ›`)}
+      ${item('aiImport', '📥', T('Рецепт з посилання або фото'), T('TikTok, YouTube, сайт чи сторінка з книги — запишеться сам'))}
     </div>
 
     <p class="muted side fc-head" id="fcList">🎥 ${T('Аналіз техніки')} — ${T('Обери вправу — камера стежитиме за технікою, підкаже глибину і порахує повторення')}</p>
@@ -4850,7 +4850,7 @@ async function renderRecipeEdit(idEnc) {
         <div class="appbar-title">${r ? T('Редагувати рецепт') : T('Новий рецепт')}</div></div>
     </header>
     ${r ? '' : `<section class="card re-import">
-      <div class="card-label">✨ ${T('Автоімпорт рецепта')} <span class="pro-tag">PRO</span></div>
+      <div class="card-label">✨ ${T('Автоімпорт рецепта')}</div>
       <p class="muted small">${T('Кинь фото рецепта або посилання на статтю, YouTube чи TikTok — заповню все сам')}</p>
       <div class="ri-row">
         <input type="url" id="riUrl" placeholder="${T('Посилання на рецепт або відео')}"/>
@@ -4920,9 +4920,9 @@ async function renderRecipeEdit(idEnc) {
     const paintQuota = () => {
       const q = BILL.importQuota();
       const st = BILL.status();
-      screenEl.querySelector('#riQuota').textContent = st === 'active' ? T('PRO — без обмежень')
-        : st === 'expired' ? T('Доступно з підпискою PRO')
-          : `${T('Пробний період')}: ${T('сьогодні лишилось')} ${q.left} / ${q.limit}`;
+      screenEl.querySelector('#riQuota').textContent = st === 'active' ? T('Підписка — без обмежень')
+        : q.limit === 0 ? T('Пробний тиждень закінчився — далі з підпискою')
+          : `${T('Безкоштовно сьогодні')}: ${q.left} ${T('з')} ${q.limit} · ${T('пробний тиждень, далі — підписка')}`;
     };
     paintQuota();
     const fill = (rec) => {
@@ -4934,8 +4934,8 @@ async function renderRecipeEdit(idEnc) {
     };
     const run = async (input, btn) => {
       if (BILL.importQuota().left <= 0) {
-        if (BILL.status() === 'expired') { toast(T('Автоімпорт — функція PRO')); go('#/pro'); }
-        else toast(T('Ліміт пробного періоду на сьогодні вичерпано — з PRO без обмежень'));
+        if (BILL.importQuota().limit === 0) { toast(T('Пробний тиждень закінчився — далі з підпискою')); go('#/pro'); }
+        else toast(T('Ліміт на сьогодні вичерпано — далі потрібна підписка'));
         return;
       }
       const label = btn.textContent;
