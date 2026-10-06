@@ -5357,3 +5357,19 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./service-worker.js').catch(() => {});
   });
 }
+
+// Android тримає застосунок згорнутим у пам'яті — при поверненні він показував би стару версію.
+// Коли екран знову видно: звіряємо js/version.js із сайтом і, якщо вийшла новіша, перезавантажуємось
+// (не під час підходу й камери — щоб не збити таймер).
+let verCheckAt = 0;
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible' || !navigator.onLine) return;
+  if (Date.now() - verCheckAt < 60000) return;
+  verCheckAt = Date.now();
+  try {
+    const txt = await fetch('./js/version.js', { cache: 'no-store' }).then((r) => (r.ok ? r.text() : ''));
+    const m = txt.match(/APP_VERSION\s*=\s*'([^']+)'/);
+    const busy = location.hash.startsWith('#/set/') || location.hash.startsWith('#/camera/');
+    if (m && m[1] !== APP_VERSION && !busy) location.reload();
+  } catch (e) { /* немає мережі — спробуємо наступного разу */ }
+});
