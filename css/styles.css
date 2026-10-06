@@ -1144,6 +1144,10 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
 .ai .w { stroke: var(--gold); stroke-width: 3.2; fill: none; stroke-linecap: round; }
 .ai .wf { fill: var(--gold); }
 .ai .f { stroke: #454556; stroke-width: 2.4; fill: none; stroke-linecap: round; }
+/* робоча кінцівка виділена, решта тіла приглушена (іконка біцепса) */
+.ai .a { stroke: var(--blue-soft); stroke-width: 4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.ai .bd { stroke: var(--blue-soft); stroke-width: 2.8; fill: none; stroke-linecap: round; stroke-linejoin: round; opacity: .42; }
+.ai .bdf { fill: var(--blue-soft); opacity: .42; }
 
 /* ОЧІКУВАННЯ ПЕРЕД НАСТУПНОЮ ВПРАВОЮ — таймер міняє колір із зеленого на
    фіолетовий (свідомо в кінці файлу: перекриває .ring-mount.running вище) */
