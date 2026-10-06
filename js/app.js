@@ -107,8 +107,8 @@ function clearLive() {
 const routes = [
   { re: /^#\/set\/(.+)$/, render: renderSet },
   { re: /^#\/camera\/(.+)$/, render: renderCamera },
-  { re: /^#\/formcheck$/, render: renderFormcheck },
-  { re: /^#\/ai$/, render: renderAI },
+  { re: /^#\/formcheck$/, render: () => renderAI(true) },
+  { re: /^#\/ai$/, render: () => renderAI(false) },
   { re: /^#\/calendar$/, render: renderCalendar },
   { re: /^#\/workouts$/, render: renderWorkouts },
   { re: /^#\/workout\/(.+)$/, render: renderWorkoutDetail },
@@ -197,10 +197,10 @@ function applyTheme(id) {
 
 // ---------- нижня навігація ----------
 const TABS = [
-  { hash: '#/today', icon: '🏋️', label: 'Сьогодні' }, // календар — кнопкою 📅 на цьому екрані
-  { hash: '#/workouts', icon: '📋', label: 'Тренування' },
-  { hash: '#/formcheck', icon: '🎥', label: 'Техніка' },
-  { hash: '#/ai', icon: '🤖', label: 'ШІ' },
+  { hash: '#/today', icon: '🏋️', label: 'Сьогодні' },
+  { hash: '#/calendar', icon: '📅', label: 'Календар' }, // + мої тренування й тижневий план
+  { hash: '#/workouts', icon: '📋', label: 'Тренування' }, // програми й шаблони
+  { hash: '#/ai', icon: '🤖', label: 'ШІ' }, // калорії, тренер, техніка, імпорт рецепта
   { hash: '#/progress', icon: '📈', label: 'Прогрес' },
   { hash: '#/community', icon: '👥', label: 'Спільнота' },
 ];
@@ -215,12 +215,15 @@ function renderTabbar() {
 }
 function updateTabbar(hash) {
   // день, відкритий з календаря, — це ще перегляд календаря, а не «Сьогодні»
-  // (вкладки «Календар» більше немає — він живе під «Сьогодні»)
+  const otherDay = (hash === '#/today' || hash === '#/') && selectedISO !== S.todayISO();
   tabbarEl.querySelectorAll('.tab').forEach((b) => {
-    const active = hash.startsWith(b.dataset.hash) ||
-      (b.dataset.hash === '#/today' && (hash === '#/' || hash === '#/calendar')) ||
-      (b.dataset.hash === '#/ai' && (hash === '#/calories' || hash === '#/smart')) ||
-      (b.dataset.hash === '#/workouts' && hash.startsWith('#/workout')) ||
+    const active = otherDay
+      ? b.dataset.hash === '#/calendar'
+      : hash.startsWith(b.dataset.hash) ||
+      (b.dataset.hash === '#/today' && hash === '#/') ||
+      (b.dataset.hash === '#/calendar' && hash.startsWith('#/workout/')) ||
+      (b.dataset.hash === '#/workouts' && hash.startsWith('#/program')) ||
+      (b.dataset.hash === '#/ai' && (hash === '#/calories' || hash === '#/smart' || hash === '#/formcheck')) ||
       (b.dataset.hash === '#/progress' && (hash.startsWith('#/history') || hash.startsWith('#/body'))) ||
       (b.dataset.hash === '#/community' &&
         (hash.startsWith('#/user') || hash.startsWith('#/recipe') || hash.startsWith('#/coach') || hash.startsWith('#/chat') || hash.startsWith('#/client')));
@@ -604,7 +607,7 @@ function renderToday() {
 
   bindPhotos(iso);
   const manageBtn = screenEl.querySelector('#manageW');
-  if (manageBtn) manageBtn.onclick = () => go(single ? '#/workout/' + single : '#/workouts');
+  if (manageBtn) manageBtn.onclick = () => go(single ? '#/workout/' + single : '#/calendar');
 }
 
 function emptyToday() {
@@ -1731,7 +1734,6 @@ function renderCalendar() {
 
   screenEl.innerHTML = `
     <header class="appbar">
-      <button class="icon-btn" id="backCal">‹</button>
       <div class="appbar-titles"><div class="appbar-kicker">${T('Календар')}</div>
         <div class="appbar-title">${monthsFull[calMonth]} ${calYear}</div></div>
     </header>
@@ -1757,8 +1759,9 @@ function renderCalendar() {
         </div>`
       : ''}
     <p class="muted center">${T('Натисни на день, щоб переглянути або записати тренування.')}</p>
+    ${myWorkoutsHTML()}
   `;
-  screenEl.querySelector('#backCal').onclick = () => go('#/today');
+  bindMyWorkouts();
   screenEl.querySelector('#prevM').onclick = () => { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); };
   screenEl.querySelector('#nextM').onclick = () => { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); };
   screenEl.querySelectorAll('.cal-cell[data-iso]').forEach((c) =>
@@ -1785,7 +1788,8 @@ function plural(n, one, few, many) {
 // =====================================================================
 //  ЕКРАН: ТРЕНУВАННЯ (список іменованих тренувань)
 // =====================================================================
-function renderWorkouts() {
+// мої тренування + тижневий план — блок екрана «Календар»
+function myWorkoutsHTML() {
   const list = S.getWorkouts();
   const rows = list
     .map((w) => {
@@ -1839,16 +1843,11 @@ function renderWorkouts() {
     })
     .join('');
 
-  const tplChips = TEMPLATES.map(
-    (tp, i) => `<button class="tpl" data-i="${i}">${tp.icon} ${T(tp.name)}</button>`
-  ).join('');
-
-  screenEl.innerHTML = `
-    <header class="appbar">
-      <div class="appbar-titles"><div class="appbar-kicker">${T('Мої тренування')}</div>
-        <div class="appbar-title">${T('Тренування')}</div></div>
+  return `
+    <div class="sec-head">
+      <h2 class="sec-title">🏋️ ${T('Мої тренування')}</h2>
       <button class="icon-btn" id="addW" title="${T('Нове тренування')}">＋</button>
-    </header>
+    </div>
     <p class="muted side">${T('Збери різні тренування (напр. «Акцент на руках», «V-подібний»). Натисни, щоб переглянути; змінювати — після кнопки «Редагувати».')}</p>
     <div class="list">${rows || `<div class="empty"><div class="empty-ico">🏋️</div><p>${T('Немає тренувань.')}</p></div>`}</div>
 
@@ -1856,30 +1855,43 @@ function renderWorkouts() {
       <div class="card-label">📅 ${T('Тижневий план')}</div>
       <p class="muted" style="margin:0 0 10px">${T('Признач тренування на дні тижня — «Тренування дня» підставиться автоматично.')}</p>
       <div class="plan-list">${planRows}</div>
-    </section>
-
-    <button class="prog-start" id="progsBtn" style="margin-top:16px">🎯 ${T('Програми')} ${T('до')} 300 ${T('повт.')} —
-      ${T('Прес')}, ${T('Підтягування')}, ${T('Віджимання')}, ${T('Присідання')}</button>
-
-    <section class="card" style="margin-top:12px">
-      <div class="card-label">✨ ${T('Шаблони тренувань')}</div>
-      <p class="muted" style="margin:0 0 10px">${T('З практики атлетів: важкі/легкі дні та кардіо.')}</p>
-      <div class="tpl-grid">${tplChips}</div>
-    </section>
-
-    <div class="day-actions"><button class="btn ghost" id="histBtn">📈 ${T('Історія по вправах')}</button></div>
-  `;
+    </section>`;
+}
+function bindMyWorkouts() {
   screenEl.querySelectorAll('.ex-card[data-w]').forEach((c) =>
     c.addEventListener('click', () => go('#/workout/' + c.dataset.w))
   );
   screenEl.querySelectorAll('.ex-card[data-p]').forEach((c) =>
     c.addEventListener('click', () => go('#/program/' + c.dataset.p))
   );
-  screenEl.querySelector('#progsBtn').onclick = () => go('#/programs');
   screenEl.querySelector('#addW').onclick = () => openNewWorkout();
-  screenEl.querySelector('#histBtn').onclick = () => go('#/history');
   screenEl.querySelectorAll('.plan-row').forEach((r) =>
     r.addEventListener('click', () => openDayPlanEditor(parseInt(r.dataset.dow, 10)))
+  );
+}
+
+// вкладка «Тренування»: програми з вагою тіла + шаблони (свої тренування — у «Календарі»)
+function renderWorkouts() {
+  const tplChips = TEMPLATES.map(
+    (tp, i) => `<button class="tpl" data-i="${i}">${tp.icon} ${T(tp.name)}</button>`
+  ).join('');
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <div class="appbar-titles"><div class="appbar-kicker">${T('Програми')}</div>
+        <div class="appbar-title">${T('Тренування')}</div></div>
+    </header>
+    <p class="muted side">🎯 ${T('Окрема програма на одну річ: качаєш її до цілі за рівнями й днями. Ваги тут немає — росте кількість повторень.')}</p>
+    <div class="list">${programRowsHTML()}</div>
+
+    <section class="card" style="margin-top:16px">
+      <div class="card-label">✨ ${T('Шаблони тренувань')}</div>
+      <p class="muted" style="margin:0 0 10px">${T('З практики атлетів: важкі/легкі дні та кардіо.')}</p>
+      <div class="tpl-grid">${tplChips}</div>
+    </section>
+    <p class="muted side">${T('Свої тренування й тижневий план — у вкладці «Календар».')}</p>
+  `;
+  screenEl.querySelectorAll('.ex-card[data-p]').forEach((c) =>
+    c.addEventListener('click', () => go('#/program/' + c.dataset.p))
   );
   screenEl.querySelectorAll('.tpl').forEach((b) =>
     b.addEventListener('click', () => addTemplate(TEMPLATES[parseInt(b.dataset.i, 10)]))
@@ -1889,8 +1901,8 @@ function renderWorkouts() {
 // =====================================================================
 //  ЕКРАНИ: ПРОГРАМИ З ВАГОЮ ТІЛА (окремі тренування — «тільки прес» тощо)
 // =====================================================================
-function renderPrograms() {
-  const rows = S.PROGRAMS.map((p) => {
+function programRowsHTML() {
+  return S.PROGRAMS.map((p) => {
     const s = S.programSummary(p.id);
     const ico = S.PROG_ICONS[p.id] || '🤸';
     let sub;
@@ -1908,7 +1920,9 @@ function renderPrograms() {
       <span class="ex-meta"><span class="chev">›</span></span>
     </button>`;
   }).join('');
-
+}
+function renderPrograms() {
+  const rows = programRowsHTML();
   screenEl.innerHTML = `
     <header class="appbar">
       <button class="icon-btn" id="backP">‹</button>
@@ -2065,7 +2079,7 @@ function openDayPlanEditor(dow) {
       const ids = Array.from(root.querySelectorAll('input:checked')).map((i) => i.dataset.id);
       S.setScheduleDay(dow, ids);
       closeModal();
-      renderWorkouts();
+      router();
     } },
   ]);
 }
@@ -2135,8 +2149,8 @@ function addTemplate(tpl) {
     }).id;
   });
   S.setWorkoutItems(w.id, ids);
-  toast(`${T('Додано')}: ${esc(w.name)}`);
-  renderWorkouts();
+  toast(`${T('Додано в «Мої тренування»')}: ${esc(w.name)}`);
+  router();
 }
 
 function openNewWorkout() {
@@ -2158,7 +2172,7 @@ function openNewWorkout() {
 // =====================================================================
 function renderWorkoutDetail(workoutId) {
   const w = S.getWorkout(workoutId);
-  if (!w) return go('#/workouts');
+  if (!w) return go('#/calendar');
   if (pendingWorkoutEdit === workoutId) {
     workoutEditMode = true;
     pendingWorkoutEdit = null;
@@ -2214,7 +2228,7 @@ function renderWorkoutDetail(workoutId) {
   screenEl.querySelector('#backW').onclick = () => {
     if (edit) saveName();
     workoutEditMode = false;
-    go('#/workouts');
+    go('#/calendar');
   };
   const enterEdit = () => { workoutEditMode = true; renderWorkoutDetail(workoutId); };
   const exitEdit = () => { saveName(); workoutEditMode = false; renderWorkoutDetail(workoutId); };
@@ -2225,7 +2239,7 @@ function renderWorkoutDetail(workoutId) {
     if (confirm(T('Видалити тренування «{name}»? Вправи в бібліотеці залишаться.', { name: w.name }))) {
       S.deleteWorkout(workoutId);
       workoutEditMode = false;
-      go('#/workouts');
+      go('#/calendar');
     }
   });
 
@@ -2247,7 +2261,7 @@ function renderWorkoutDetail(workoutId) {
       if (confirm(T('Видалити тренування «{name}»? Вправи в бібліотеці залишаться.', { name: w.name }))) {
         S.deleteWorkout(workoutId);
         workoutEditMode = false;
-        go('#/workouts');
+        go('#/calendar');
       }
     };
     screenEl.querySelectorAll('.ex-row').forEach((row) => {
@@ -4572,11 +4586,10 @@ async function renderChat(otherId) {
 }
 
 // =====================================================================
-//  ЕКРАН: АНАЛІЗ ТЕХНІКИ (вибір вправи для камери)
-// =====================================================================
-function renderFormcheck() {
+function renderAI(toForm) {
+  const kcalToday = S.calorieDayTotal(S.todayISO()).kcal;
   const exs = S.getExercises();
-  const rows = exs
+  const fcRows = exs
     .map((e) => {
       const pid = FC.matchPattern(e);
       const p = pid ? FC.patternById(pid) : null;
@@ -4586,28 +4599,10 @@ function renderFormcheck() {
         <span class="fc-pat">${p ? `${patternIconHTML(p.id)} ${T(p.label)}` : T('обрати рух')}</span></button>`;
     })
     .join('');
-  screenEl.innerHTML = `
-    <header class="appbar">
-      <div class="appbar-titles"><div class="appbar-kicker">🎥 ${T('Аналіз техніки')}</div>
-        <div class="appbar-title">${T('Техніка')}</div></div>
-    </header>
-    <p class="muted side">${T('Обери вправу — камера стежитиме за технікою, підкаже глибину і порахує повторення')}</p>
-    <div class="pick-list">${rows || `<p class="muted center">${T('Немає тренувань — додай у вкладці «Тренування»')}</p>`}</div>
-    <p class="muted side fc-note">${T('Відео не записується і нікуди не надсилається — аналіз іде на телефоні.')}</p>`;
-  screenEl.querySelectorAll('.fc-row[data-id]').forEach((b) =>
-    b.addEventListener('click', () => go('#/camera/' + b.dataset.id))
-  );
-}
-
-// =====================================================================
-//  ЕКРАН: ШІ — розумні помічники в одному місці
-// =====================================================================
-function renderAI() {
-  const kcalToday = S.calorieDayTotal(S.todayISO()).kcal;
   const item = (id, ico, title, sub, right = '›') => `
-      <button class="pick-row ai-row" id="${id}">
+      <button class="pick-row aih-row" id="${id}">
         <span class="pick-ico">${ico}</span>
-        <span class="ai-txt"><b>${title}</b><span class="muted">${sub}</span></span>
+        <span class="aih-txt"><b>${title}</b><span class="muted">${sub}</span></span>
         <span class="fc-pat">${right}</span>
       </button>`;
   screenEl.innerHTML = `
@@ -4615,15 +4610,21 @@ function renderAI() {
       <div class="appbar-titles"><div class="appbar-kicker">🤖 ${T('ШІ')}</div>
         <div class="appbar-title">${T('Розумні помічники')}</div></div>
     </header>
-    <div class="pick-list ai-list">
+    <div class="pick-list aih-list">
       ${item('aiKcal', '🍎', T('Калорії'), T('Фото страви або штрихкод — калорії й БЖВ'), `${kcalToday} ${T('ккал')} ›`)}
       ${item('aiSmart', '🧠', T('Розумний тренер'), T('Які мʼязи вже відновились і скільки відпочивати'))}
-      ${item('aiForm', '🎥', T('Аналіз техніки'), T('Камера рахує повторення й підказує глибину'))}
       ${item('aiImport', '📥', T('Рецепт з посилання або фото'), T('TikTok, YouTube, сайт чи сторінка з книги — запишеться сам'), `<span class="pro-tag">PRO</span> ›`)}
-    </div>`;
+    </div>
+
+    <p class="muted side fc-head" id="fcList">🎥 ${T('Аналіз техніки')} — ${T('Обери вправу — камера стежитиме за технікою, підкаже глибину і порахує повторення')}</p>
+    <div class="pick-list">${fcRows || `<p class="muted center">${T('Немає тренувань — додай у вкладці «Календар»')}</p>`}</div>
+    <p class="muted side fc-note">${T('Відео не записується і нікуди не надсилається — аналіз іде на телефоні.')}</p>`;
   screenEl.querySelector('#aiKcal').onclick = () => go('#/calories');
   screenEl.querySelector('#aiSmart').onclick = () => go('#/smart');
-  screenEl.querySelector('#aiForm').onclick = () => go('#/formcheck');
+  screenEl.querySelectorAll('.fc-row[data-id]').forEach((b) =>
+    b.addEventListener('click', () => go('#/camera/' + b.dataset.id))
+  );
+  if (toForm) screenEl.querySelector('#fcList').scrollIntoView({ block: 'start' });
   screenEl.querySelector('#aiImport').onclick = () => go('#/recipe-new');
 }
 
