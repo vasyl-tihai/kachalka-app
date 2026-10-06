@@ -108,6 +108,7 @@ const routes = [
   { re: /^#\/set\/(.+)$/, render: renderSet },
   { re: /^#\/camera\/(.+)$/, render: renderCamera },
   { re: /^#\/formcheck$/, render: renderFormcheck },
+  { re: /^#\/ai$/, render: renderAI },
   { re: /^#\/calendar$/, render: renderCalendar },
   { re: /^#\/workouts$/, render: renderWorkouts },
   { re: /^#\/workout\/(.+)$/, render: renderWorkoutDetail },
@@ -196,10 +197,10 @@ function applyTheme(id) {
 
 // ---------- нижня навігація ----------
 const TABS = [
-  { hash: '#/today', icon: '🏋️', label: 'Сьогодні' },
-  { hash: '#/calendar', icon: '📅', label: 'Календар' },
+  { hash: '#/today', icon: '🏋️', label: 'Сьогодні' }, // календар — кнопкою 📅 на цьому екрані
   { hash: '#/workouts', icon: '📋', label: 'Тренування' },
-  { hash: '#/formcheck', icon: '📷', label: 'Сканер' },
+  { hash: '#/formcheck', icon: '🎥', label: 'Техніка' },
+  { hash: '#/ai', icon: '🤖', label: 'ШІ' },
   { hash: '#/progress', icon: '📈', label: 'Прогрес' },
   { hash: '#/community', icon: '👥', label: 'Спільнота' },
 ];
@@ -214,12 +215,11 @@ function renderTabbar() {
 }
 function updateTabbar(hash) {
   // день, відкритий з календаря, — це ще перегляд календаря, а не «Сьогодні»
-  const otherDay = (hash === '#/today' || hash === '#/') && selectedISO !== S.todayISO();
+  // (вкладки «Календар» більше немає — він живе під «Сьогодні»)
   tabbarEl.querySelectorAll('.tab').forEach((b) => {
-    const active = otherDay
-      ? b.dataset.hash === '#/calendar'
-      : hash.startsWith(b.dataset.hash) ||
-      (b.dataset.hash === '#/today' && (hash === '#/' || hash === '#/calories')) ||
+    const active = hash.startsWith(b.dataset.hash) ||
+      (b.dataset.hash === '#/today' && (hash === '#/' || hash === '#/calendar')) ||
+      (b.dataset.hash === '#/ai' && (hash === '#/calories' || hash === '#/smart')) ||
       (b.dataset.hash === '#/workouts' && hash.startsWith('#/workout')) ||
       (b.dataset.hash === '#/progress' && (hash.startsWith('#/history') || hash.startsWith('#/body'))) ||
       (b.dataset.hash === '#/community' &&
@@ -1731,6 +1731,7 @@ function renderCalendar() {
 
   screenEl.innerHTML = `
     <header class="appbar">
+      <button class="icon-btn" id="backCal">‹</button>
       <div class="appbar-titles"><div class="appbar-kicker">${T('Календар')}</div>
         <div class="appbar-title">${monthsFull[calMonth]} ${calYear}</div></div>
     </header>
@@ -1757,6 +1758,7 @@ function renderCalendar() {
       : ''}
     <p class="muted center">${T('Натисни на день, щоб переглянути або записати тренування.')}</p>
   `;
+  screenEl.querySelector('#backCal').onclick = () => go('#/today');
   screenEl.querySelector('#prevM').onclick = () => { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); };
   screenEl.querySelector('#nextM').onclick = () => { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); };
   screenEl.querySelectorAll('.cal-cell[data-iso]').forEach((c) =>
@@ -4576,39 +4578,57 @@ function renderFormcheck() {
   const exs = S.getExercises();
   const rows = exs
     .map((e) => {
-      const p = FC.patternById(FC.guessPattern(e));
+      const pid = FC.matchPattern(e);
+      const p = pid ? FC.patternById(pid) : null;
       return `<button class="pick-row fc-row" data-id="${e.id}">
         <span class="pick-ico">${exIconHTML(e) || e.icon}</span>
         <span class="pick-name">${esc(e.name)}</span>
-        <span class="fc-pat">${patternIconHTML(p.id)} ${T(p.label)}</span></button>`;
+        <span class="fc-pat">${p ? `${patternIconHTML(p.id)} ${T(p.label)}` : T('обрати рух')}</span></button>`;
     })
     .join('');
-  const kcalToday = S.calorieDayTotal(S.todayISO()).kcal;
   screenEl.innerHTML = `
     <header class="appbar">
-      <div class="appbar-titles"><div class="appbar-kicker">📷 ${T('Сканер')}</div>
-        <div class="appbar-title">Gym Log</div></div>
+      <div class="appbar-titles"><div class="appbar-kicker">🎥 ${T('Аналіз техніки')}</div>
+        <div class="appbar-title">${T('Техніка')}</div></div>
     </header>
-
-    <p class="muted side">🍎 ${T('Їжа')}</p>
-    <div class="pick-list" style="margin-bottom:16px">
-      <button class="pick-row fc-row" id="fcCalories">
-        <span class="pick-ico">🍎</span>
-        <span class="pick-name">${T('Калорії по фото')}</span>
-        <span class="fc-pat">${kcalToday} ${T('ккал')} ›</span>
-      </button>
-    </div>
-
-    <p class="muted side">🏋️ ${T('Аналіз техніки')} — ${T('Обери вправу — камера стежитиме за технікою, підкаже глибину і порахує повторення')}</p>
-    <div class="pick-list">${rows || `<p class="muted center">${T('Немає тренувань — додай у вкладці «Тренування»')}</p>`}</div>`;
-  screenEl.querySelector('#fcCalories').onclick = () => go('#/calories');
+    <p class="muted side">${T('Обери вправу — камера стежитиме за технікою, підкаже глибину і порахує повторення')}</p>
+    <div class="pick-list">${rows || `<p class="muted center">${T('Немає тренувань — додай у вкладці «Тренування»')}</p>`}</div>
+    <p class="muted side fc-note">${T('Відео не записується і нікуди не надсилається — аналіз іде на телефоні.')}</p>`;
   screenEl.querySelectorAll('.fc-row[data-id]').forEach((b) =>
     b.addEventListener('click', () => go('#/camera/' + b.dataset.id))
   );
 }
 
 // =====================================================================
-//  ЕКРАН: РЕЦЕПТИ — стрічка як у TikTok (Сканер → Їжа → Рецепти)
+//  ЕКРАН: ШІ — розумні помічники в одному місці
+// =====================================================================
+function renderAI() {
+  const kcalToday = S.calorieDayTotal(S.todayISO()).kcal;
+  const item = (id, ico, title, sub, right = '›') => `
+      <button class="pick-row ai-row" id="${id}">
+        <span class="pick-ico">${ico}</span>
+        <span class="ai-txt"><b>${title}</b><span class="muted">${sub}</span></span>
+        <span class="fc-pat">${right}</span>
+      </button>`;
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <div class="appbar-titles"><div class="appbar-kicker">🤖 ${T('ШІ')}</div>
+        <div class="appbar-title">${T('Розумні помічники')}</div></div>
+    </header>
+    <div class="pick-list ai-list">
+      ${item('aiKcal', '🍎', T('Калорії'), T('Фото страви або штрихкод — калорії й БЖВ'), `${kcalToday} ${T('ккал')} ›`)}
+      ${item('aiSmart', '🧠', T('Розумний тренер'), T('Які мʼязи вже відновились і скільки відпочивати'))}
+      ${item('aiForm', '🎥', T('Аналіз техніки'), T('Камера рахує повторення й підказує глибину'))}
+      ${item('aiImport', '📥', T('Рецепт з посилання або фото'), T('TikTok, YouTube, сайт чи сторінка з книги — запишеться сам'), `<span class="pro-tag">PRO</span> ›`)}
+    </div>`;
+  screenEl.querySelector('#aiKcal').onclick = () => go('#/calories');
+  screenEl.querySelector('#aiSmart').onclick = () => go('#/smart');
+  screenEl.querySelector('#aiForm').onclick = () => go('#/formcheck');
+  screenEl.querySelector('#aiImport').onclick = () => go('#/recipe-new');
+}
+
+// =====================================================================
+//  ЕКРАН: РЕЦЕПТИ — стрічка як у TikTok (Спільнота → Рецепти)
 // =====================================================================
 let recipeTab = 'feed'; // feed | fav | mine
 let recipeFilter = 'all'; // all | breakfast | main | snack | shake | mass | cut

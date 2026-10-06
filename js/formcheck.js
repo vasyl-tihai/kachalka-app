@@ -32,15 +32,20 @@ export function patternById(id) {
 }
 
 // підбір патерна за групою м'язів / назвою вправи (евристика)
-export function guessPattern(exercise) {
+// рух, який камера вміє аналізувати, або null (тяга, прес, станова… — рух обирають у камері)
+export function matchPattern(exercise) {
   const m = (exercise && exercise.muscle) || '';
   const n = ((exercise && exercise.name) || '').toLowerCase();
+  if (/станов|тяга|row|deadlift|прес|скруч|планк|crunch|plank/.test(n)) return null;
   if (/присід|squat|випад/.test(n) || m === 'legs') return 'squat';
   if (/біцепс|curl|згинан/.test(n)) return 'curl';
   if (/віджим|push|жим лежач|груд/.test(n) || m === 'chest') return 'pushup';
   if (/жим|press|плеч|shoulder/.test(n) || m === 'shoulders') return 'press';
   if (m === 'arms') return 'curl';
-  return 'squat';
+  return null;
+}
+export function guessPattern(exercise) {
+  return matchPattern(exercise) || 'squat';
 }
 
 // які три точки утворюють кут для суглоба, на заданому боці ('L'|'R')
