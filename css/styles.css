@@ -648,7 +648,7 @@ a.btn { display: block; text-align: center; text-decoration: none; box-sizing: b
   border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 0;
 }
 .kcal-g input { width: 110px; text-align: center; }
-.bc-scan { width: 100%; margin-top: 4px; }
+.bc-btns { margin-top: 4px; }
 .bc-manual { display: flex; gap: 8px; margin-top: 10px; }
 .bc-manual input { flex: 1 1 auto; width: 100%; letter-spacing: 1px; }
 .bc-manual .btn { flex: 0 0 auto; width: auto; padding-left: 20px; padding-right: 20px; }

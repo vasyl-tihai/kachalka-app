@@ -5054,7 +5054,11 @@ async function renderCalories() {
     <section class="card">
       <div class="card-label">🏷 ${T('Продукт за штрихкодом')}</div>
       <p class="muted hint">${T('Відскануй штрихкод на упаковці — калорії й БЖВ підтягнуться з бази продуктів')}</p>
-      ${BC.scanSupported() ? `<button class="btn ghost bc-scan" id="bcScan">▥ ${T('Сканувати штрихкод')}</button>` : ''}
+      <div class="btn-row bc-btns">
+        <button class="btn ghost" id="bcPhoto">📷 ${T('Сфотографувати штрихкод')}</button>
+        ${BC.scanSupported() ? `<button class="btn ghost" id="bcScan">▥ ${T('Сканувати камерою')}</button>` : ''}
+      </div>
+      <input type="file" id="bcFile" accept="image/*" capture="environment" hidden/>
       <div class="bc-manual">
         <input id="bcCode" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="${T('Цифри штрихкоду')}"/>
         <button class="btn ghost" id="bcFind">${T('Знайти')}</button>
@@ -5151,6 +5155,24 @@ async function renderCalories() {
   const codeIn = screenEl.querySelector('#bcCode');
   screenEl.querySelector('#bcFind').onclick = () => findProduct(codeIn.value);
   codeIn.onkeydown = (e) => { if (e.key === 'Enter') findProduct(codeIn.value); };
+  // фото штрихкоду — працює на будь-якому телефоні (ZXing), живий сканер — лише де є BarcodeDetector
+  const bcFile = screenEl.querySelector('#bcFile');
+  screenEl.querySelector('#bcPhoto').onclick = () => bcFile.click();
+  bcFile.onchange = async () => {
+    const f = bcFile.files[0];
+    bcFile.value = ''; // щоб те саме фото можна було вибрати ще раз
+    if (!f || !bcBox()) return;
+    bcBox().innerHTML = `<p class="muted center">🔎 ${T('Розпізнаю штрихкод…')}</p>`;
+    let code = '';
+    try { code = await BC.decodeImage(f); } catch (e) { /* бібліотека не завантажилась — нижче підказка */ }
+    if (!bcBox()) return;
+    if (!code) {
+      bcBox().innerHTML = `<p class="muted center">${T('Не вдалося прочитати штрихкод — сфотографуй ближче й рівно або введи цифри')}</p>`;
+      return;
+    }
+    codeIn.value = code;
+    findProduct(code);
+  };
   const scanBtn = screenEl.querySelector('#bcScan');
   if (scanBtn) scanBtn.onclick = () => openBarcodeScanner((code) => { codeIn.value = code; findProduct(code); });
 

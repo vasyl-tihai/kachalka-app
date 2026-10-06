@@ -55,6 +55,78 @@ export function startScan(video) {
   return { done, stop };
 }
 
+// ZXing (vendor/zxing, 360 КБ) вантажиться лише при першому фото штрихкоду
+let zxLoad = null;
+function loadZXing() {
+  if (window.ZXing) return Promise.resolve(window.ZXing);
+  return zxLoad || (zxLoad = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'vendor/zxing/zxing.min.js';
+    s.onload = () => resolve(window.ZXing);
+    s.onerror = () => { zxLoad = null; reject(new Error('nolib')); };
+    document.head.appendChild(s);
+  }));
+}
+
+async function loadImage(file) {
+  try {
+    return await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch (e) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      return img;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+}
+
+// Штрихкод із фото (працює на будь-якому телефоні). Повертає цифри або '' — не вдалося прочитати.
+export async function decodeImage(file) {
+  const img = await loadImage(file);
+  if ('BarcodeDetector' in window) {
+    try {
+      const found = await new window.BarcodeDetector({ formats: FORMATS }).detect(img);
+      const c = found.map((x) => cleanCode(x.rawValue)).find(Boolean);
+      if (c) return c;
+    } catch (e) { /* формат не підтримується — далі ZXing */ }
+  }
+  const Z = await loadZXing();
+  const hints = new Map();
+  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS,
+    [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E]);
+  hints.set(Z.DecodeHintType.TRY_HARDER, true);
+  const reader = new Z.MultiFormatReader();
+  reader.setHints(hints);
+  const W = img.width, H = img.height;
+  const cv = document.createElement('canvas');
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  // кілька масштабів і поворот на 90° (штрихкод на фото буває вертикальним)
+  for (const side of [1400, 900, 2200]) {
+    const k = Math.min(1, side / Math.max(W, H));
+    const w = Math.round(W * k), h = Math.round(H * k);
+    for (const rot of [false, true]) {
+      cv.width = rot ? h : w;
+      cv.height = rot ? w : h;
+      ctx.save();
+      if (rot) { ctx.translate(h, 0); ctx.rotate(Math.PI / 2); }
+      ctx.drawImage(img, 0, 0, w, h);
+      ctx.restore();
+      const src = new Z.HTMLCanvasElementLuminanceSource(cv);
+      for (const Bin of [Z.HybridBinarizer, Z.GlobalHistogramBinarizer]) {
+        try {
+          const c = cleanCode(reader.decode(new Z.BinaryBitmap(new Bin(src))).getText());
+          if (c) return c;
+        } catch (e) { /* не знайшли — наступна спроба */ }
+      }
+    }
+  }
+  return '';
+}
+
 const num = (x) => {
   const n = Number(x);
   return Number.isFinite(n) && n >= 0 ? n : 0;
