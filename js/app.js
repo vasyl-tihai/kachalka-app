@@ -17,6 +17,7 @@ import * as BE from './backend.js';
 import { APP_VERSION } from './version.js';
 import * as CAL from './calories.js';
 import * as BC from './barcode.js';
+import * as GD from './guides.js';
 
 // мова інтерфейсу — із налаштувань (до першого рендеру)
 setLang(S.getSettings().lang);
@@ -109,6 +110,8 @@ const routes = [
   { re: /^#\/camera\/(.+)$/, render: renderCamera },
   { re: /^#\/formcheck$/, render: () => renderAI(true) },
   { re: /^#\/ai$/, render: () => renderAI(false) },
+  { re: /^#\/guides$/, render: renderGuides },
+  { re: /^#\/guide\/([\w-]+)$/, render: renderGuide },
   { re: /^#\/calendar$/, render: renderCalendar },
   { re: /^#\/workouts$/, render: renderWorkouts },
   { re: /^#\/workout\/(.+)$/, render: renderWorkoutDetail },
@@ -223,7 +226,7 @@ function updateTabbar(hash) {
       (b.dataset.hash === '#/today' && hash === '#/') ||
       (b.dataset.hash === '#/calendar' && hash.startsWith('#/workout/')) ||
       (b.dataset.hash === '#/workouts' && hash.startsWith('#/program')) ||
-      (b.dataset.hash === '#/ai' && (hash === '#/calories' || hash === '#/smart' || hash === '#/formcheck')) ||
+      (b.dataset.hash === '#/ai' && (hash === '#/calories' || hash === '#/smart' || hash === '#/formcheck' || hash.startsWith('#/guide'))) ||
       (b.dataset.hash === '#/progress' && (hash.startsWith('#/history') || hash.startsWith('#/body'))) ||
       (b.dataset.hash === '#/community' &&
         (hash.startsWith('#/user') || hash.startsWith('#/recipe') || hash.startsWith('#/coach') || hash.startsWith('#/chat') || hash.startsWith('#/client')));
@@ -677,6 +680,7 @@ function renderSet(exerciseId) {
         <div class="set-titles">
           <div class="set-name">${esc(ex.name)}</div>
           <div class="set-date">${dateLine}</div>
+          ${GD.guideFor(ex) ? `<button class="how-link" id="howBtn">ℹ️ ${T('Як виконувати')}</button>` : ''}
         </div>
         <button class="icon-btn" id="camBtn" title="${T('Камера-тренер')}">📹</button>
         <button class="icon-btn" id="cfgBtn" title="${T('Ціль і налаштування')}">⚙️</button>
@@ -760,6 +764,8 @@ function renderSet(exerciseId) {
   // ----- події -----
   screenEl.querySelector('#backBtn').onclick = () => go('#/today');
   screenEl.querySelector('#camBtn').onclick = () => go('#/camera/' + exerciseId);
+  const howBtn = screenEl.querySelector('#howBtn');
+  if (howBtn) howBtn.onclick = () => go('#/guide/' + GD.guideFor(ex));
   screenEl.querySelector('#cfgBtn').onclick = () => openTargetEditor(iso, exerciseId);
   screenEl.querySelector('#goalChip').onclick = () => openTargetEditor(iso, exerciseId);
   // головна дія: обрав повторення на барабані → «Виконав підхід»
@@ -4586,6 +4592,85 @@ async function renderChat(otherId) {
 }
 
 // =====================================================================
+//  ЕКРАНИ: «ЯК ВИКОНУВАТИ» (js/guides.js, ілюстрації img/exercises/<id>_0|1.webp)
+// =====================================================================
+const GUIDE_TITLES = {
+  squat: 'Присідання зі штангою', squat_bw: 'Присідання з вагою тіла', bench_bb: 'Жим штанги лежачи',
+  bench_db: 'Жим гантелей лежачи', row_bb: 'Тяга штанги в нахилі', row_db: 'Тяга гантелей у нахилі',
+  deadlift: 'Станова тяга', curl: 'Згинання на біцепс', crunch: 'Скручування', pushup: 'Віджимання',
+  pullup: 'Підтягування', plank: 'Планка', lunge: 'Випади', ohp: 'Жим стоячи', burpee: 'Берпі',
+};
+const guideTexts = {}; // мова → переклад (вантажиться за потреби)
+async function guideText(id) {
+  const lang = S.getSettings().lang || 'uk';
+  const base = GD.GUIDES[id];
+  if (!base || lang === 'uk') return base;
+  try {
+    if (!guideTexts[lang]) guideTexts[lang] = (await import(`./guides-i18n/${lang}.js`)).default;
+    return { ...base, ...(guideTexts[lang][id] || {}) };
+  } catch (e) {
+    return base; // перекладу немає — українською
+  }
+}
+function guideMediaHTML(id, cls = '') {
+  // два кадри (старт / фінал) м'яко змінюють один одного; немає файлу — блок ховається
+  return `<div class="guide-media ${cls}">
+    <img class="gm0" src="img/exercises/${id}_0.webp" alt="" loading="lazy" onerror="this.parentNode.remove()"/>
+    <img class="gm1" src="img/exercises/${id}_1.webp" alt="" loading="lazy" onerror="this.remove()"/>
+  </div>`;
+}
+
+async function renderGuides() {
+  const ids = Object.keys(GD.GUIDES);
+  const texts = await Promise.all(ids.map(guideText));
+  if (location.hash !== '#/guides') return;
+  const rows = ids.map((id, i) => `
+    <button class="pick-row aih-row guide-row" data-g="${id}">
+      ${guideMediaHTML(id, 'mini')}
+      <span class="aih-txt"><b>${T(GUIDE_TITLES[id])}</b><span class="muted">${esc(texts[i].muscles)}</span></span>
+      <span class="fc-pat">›</span>
+    </button>`).join('');
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backG">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">📘 ${T('Як виконувати')}</div>
+        <div class="appbar-title">${T('Техніка вправ')}</div></div>
+    </header>
+    <div class="pick-list">${rows}</div>`;
+  screenEl.querySelector('#backG').onclick = () => history.back();
+  screenEl.querySelectorAll('.guide-row').forEach((b) => b.addEventListener('click', () => go('#/guide/' + b.dataset.g)));
+}
+
+async function renderGuide(id) {
+  const g = await guideText(id);
+  if (!g) return go('#/guides');
+  if (location.hash !== '#/guide/' + id) return; // поки вантажився переклад, пішли з екрана
+  const li = (arr) => arr.map((x) => `<li>${esc(x)}</li>`).join('');
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backG">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">📘 ${T('Як виконувати')}</div>
+        <div class="appbar-title">${T(GUIDE_TITLES[id])}</div></div>
+    </header>
+    ${guideMediaHTML(id)}
+    <section class="card">
+      <div class="card-label">💪 ${T('Що працює')}</div>
+      <p class="guide-muscles">${esc(g.muscles)}</p>
+    </section>
+    <section class="card">
+      <div class="card-label">📋 ${T('Техніка')}</div>
+      <ol class="guide-steps">${li(g.steps)}</ol>
+    </section>
+    <section class="card">
+      <div class="card-label">⚠️ ${T('Часті помилки')}</div>
+      <ul class="guide-mistakes">${li(g.mistakes)}</ul>
+    </section>
+    ${g.tip ? `<section class="card guide-tip"><b>💡</b> ${esc(g.tip)}</section>` : ''}`;
+  screenEl.querySelector('#backG').onclick = () => history.back();
+}
+
+// =====================================================================
+//  ЕКРАН: ШІ — розумні помічники + аналіз техніки
 function renderAI(toForm) {
   const kcalToday = S.calorieDayTotal(S.todayISO()).kcal;
   const exs = S.getExercises();
@@ -4613,6 +4698,7 @@ function renderAI(toForm) {
     <div class="pick-list aih-list">
       ${item('aiKcal', '🍎', T('Калорії'), T('Фото страви або штрихкод — калорії й БЖВ'), `${kcalToday} ${T('ккал')} ›`)}
       ${item('aiSmart', '🧠', T('Розумний тренер'), T('Які мʼязи вже відновились і скільки відпочивати'))}
+      ${item('aiGuides', '📘', T('Техніка вправ'), T('Як виконувати: кроки, помилки й 3D-ілюстрації'))}
       ${item('aiImport', '📥', T('Рецепт з посилання або фото'), T('TikTok, YouTube, сайт чи сторінка з книги — запишеться сам'))}
     </div>
 
@@ -4621,6 +4707,7 @@ function renderAI(toForm) {
     <p class="muted side fc-note">${T('Відео не записується і нікуди не надсилається — аналіз іде на телефоні.')}</p>`;
   screenEl.querySelector('#aiKcal').onclick = () => go('#/calories');
   screenEl.querySelector('#aiSmart').onclick = () => go('#/smart');
+  screenEl.querySelector('#aiGuides').onclick = () => go('#/guides');
   screenEl.querySelectorAll('.fc-row[data-id]').forEach((b) =>
     b.addEventListener('click', () => go('#/camera/' + b.dataset.id))
   );
