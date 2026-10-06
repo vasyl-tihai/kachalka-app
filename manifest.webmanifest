@@ -1,6 +1,6 @@
 {
-  "name": "КАЧАЛКА — щоденник тренувань",
-  "short_name": "КАЧАЛКА",
+  "name": "Gym Log & Body Tracker",
+  "short_name": "Gym Log",
   "description": "Особистий щоденник тренувань: підходи, вага, таймер відпочинку, календар.",
   "lang": "uk",
   "start_url": "./index.html",

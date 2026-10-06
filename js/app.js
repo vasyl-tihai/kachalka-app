@@ -2562,7 +2562,7 @@ async function renderPro() {
   screenEl.innerHTML = `
     <header class="appbar">
       <button class="icon-btn" id="backPro" ${BILL.locked() ? 'hidden' : ''}>‹</button>
-      <div class="appbar-titles"><div class="appbar-kicker">${T('КАЧАЛКА')} PRO</div>
+      <div class="appbar-titles"><div class="appbar-kicker">Gym Log PRO</div>
         <div class="appbar-title">${T('Підписка')}</div></div>
     </header>
 
@@ -3131,7 +3131,7 @@ function renderSettings() {
     <header class="appbar">
       <button class="icon-btn" id="backBtn">‹</button>
       <div class="appbar-titles"><div class="appbar-kicker">${T('Налаштування')}</div>
-        <div class="appbar-title">КАЧАЛКА</div></div>
+        <div class="appbar-title">Gym Log</div></div>
     </header>
 
     <section class="card">
@@ -3226,7 +3226,7 @@ function renderSettings() {
       </div>
       <input type="file" id="importFile" accept="application/json,.json" hidden/>
     </section>
-    <p class="muted center">КАЧАЛКА · ${T('щоденник тренувань · усі дані лише на цьому пристрої')}<br/>
+    <p class="muted center">Gym Log · ${T('щоденник тренувань · усі дані лише на цьому пристрої')}<br/>
       <small>${T('версія')}: ${esc(APP_VERSION)}</small></p>
   `;
   screenEl.querySelector('#backBtn').onclick = () => history.back();
@@ -3456,7 +3456,7 @@ function toggleLike(id) {
   return on;
 }
 
-// позначка біля імені: офіційний акаунт КАЧАЛКИ або приклад профілю
+// позначка біля імені: офіційний акаунт Gym Log або приклад профілю
 function personBadge(a) {
   if (a.official) return `<span class="badge-off" title="${T('Офіційний акаунт')}">✔</span>`;
   if (a.sample) return `<span class="badge-sample">${T('Приклад профілю')}</span>`;
@@ -3500,7 +3500,7 @@ async function renderCommunity() {
     <header class="appbar">
       <div class="appbar-titles">
         <div class="appbar-kicker">👥 ${T('Спільнота')}</div>
-        <div class="appbar-title">КАЧАЛКА</div>
+        <div class="appbar-title">Gym Log</div>
       </div>
       <button class="icon-btn" id="myCab" title="${T('Мій кабінет')}">👤</button>
     </header>
@@ -3551,7 +3551,7 @@ async function renderCommunity() {
       <div class="auth-box">${authCardHTML()}</div>
     </section>`;
   } else {
-    top = `<section class="card comm-note"><p class="muted">${T('Публікувати свої фото можна буде після входу — сервер спільноти ще підключається. Поки тут дописи КАЧАЛКИ і приклади профілів.')}</p></section>`;
+    top = `<section class="card comm-note"><p class="muted">${T('Публікувати свої фото можна буде після входу — сервер спільноти ще підключається. Поки тут дописи Gym Log і приклади профілів.')}</p></section>`;
   }
   if (loadErr) top += `<section class="card"><p class="muted">⚠️ ${esc(loadErr.message)}</p></section>`;
 
@@ -3600,7 +3600,7 @@ async function renderCommunity() {
     const p = byPost(b.dataset.share);
     if (!p) return;
     const a = p.author || {};
-    const text = `${T(a.name || '')}: ${a.official || a.sample ? T(p.caption || '') : p.caption || ''}\n\n— КАЧАЛКА`;
+    const text = `${T(a.name || '')}: ${a.official || a.sample ? T(p.caption || '') : p.caption || ''}\n\n— Gym Log`;
     if (navigator.share) navigator.share({ text }).catch(() => {});
     else navigator.clipboard.writeText(text).then(() => toast(T('Скопійовано')), () => {});
   }));
@@ -3898,7 +3898,7 @@ function coachShell(inner) {
     <header class="appbar">
       <button class="icon-btn" id="backBtn">‹</button>
       <div class="appbar-titles"><div class="appbar-kicker">👤 ${T('Мій кабінет')}</div>
-        <div class="appbar-title">КАЧАЛКА</div></div>
+        <div class="appbar-title">Gym Log</div></div>
     </header>
     <div id="coachBody">${inner}</div>`;
   screenEl.querySelector('#backBtn').onclick = () => go('#/community');
@@ -4586,7 +4586,7 @@ function renderFormcheck() {
   screenEl.innerHTML = `
     <header class="appbar">
       <div class="appbar-titles"><div class="appbar-kicker">📷 ${T('Сканер')}</div>
-        <div class="appbar-title">КАЧАЛКА</div></div>
+        <div class="appbar-title">Gym Log</div></div>
     </header>
 
     <p class="muted side">🍎 ${T('Їжа')}</p>
@@ -4646,7 +4646,7 @@ function recipeCardHTML(r) {
     </div>
     <div class="rc-shade"></div>
     <div class="rc-info">
-      ${r.own ? '' : `<div class="rc-author"><span class="rc-ava">👨‍🍳</span>${T('Кухня КАЧАЛКИ')}</div>`}
+      ${r.own ? '' : `<div class="rc-author"><span class="rc-ava">👨‍🍳</span>${T('Кухня Gym Log')}</div>`}
       <div class="rc-tags">${tags}</div>
       <h2 class="rc-name">${esc(r.name)}</h2>
       ${r.kcal ? `<div class="rc-macros"><b>${r.kcal}</b> ${T('ккал')} · ${T('Б')} ${r.p} · ${T('Ж')} ${r.f} · ${T('В')} ${r.c}</div>` : ''}
@@ -4763,7 +4763,7 @@ function recipeAction(act, r, btn) {
     S.addCalorieEntry(S.todayISO(), { name: r.name, kcal: r.kcal, prot: r.p, fat: r.f, carb: r.c });
     toast(`＋ ${r.kcal} ${T('ккал')} — ${T('додано в калорії дня')}`);
   } else if (act === 'share') {
-    const text = `${r.name}\n${r.kcal ? `${r.kcal} ${T('ккал')} · ${T('Б')} ${r.p} · ${T('Ж')} ${r.f} · ${T('В')} ${r.c}\n` : ''}\n${(r.ing || []).map((x) => '• ' + x).join('\n')}\n\n${(r.steps || []).map((x, i) => `${i + 1}. ${x}`).join('\n')}\n\n— КАЧАЛКА`;
+    const text = `${r.name}\n${r.kcal ? `${r.kcal} ${T('ккал')} · ${T('Б')} ${r.p} · ${T('Ж')} ${r.f} · ${T('В')} ${r.c}\n` : ''}\n${(r.ing || []).map((x) => '• ' + x).join('\n')}\n\n${(r.steps || []).map((x, i) => `${i + 1}. ${x}`).join('\n')}\n\n— Gym Log`;
     if (navigator.share) navigator.share({ title: r.name, text }).catch(() => {});
     else navigator.clipboard.writeText(text).then(() => toast(T('Рецепт скопійовано')), () => {});
   }

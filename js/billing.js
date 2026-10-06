@@ -158,7 +158,7 @@ export async function buy(productId) {
     try {
       const req = new PaymentRequest(
         [{ supportedMethods: PLAY_BILLING, data: { sku: productId } }],
-        { total: { label: 'КАЧАЛКА Pro', amount: { currency: 'UAH', value: '0' } } }
+        { total: { label: 'Gym Log Pro', amount: { currency: 'UAH', value: '0' } } }
       );
       const res = await req.show();
       const token = res.details && res.details.purchaseToken;

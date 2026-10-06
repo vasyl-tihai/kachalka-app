@@ -1302,7 +1302,7 @@ export function importData(json) {
     !Array.isArray(parsed.exercises) ||
     !(parsed.entries && typeof parsed.entries === 'object')
   ) {
-    throw new Error('Файл не схожий на резервну копію КАЧАЛКА');
+    throw new Error('Файл не схожий на резервну копію Gym Log');
   }
   const next = normalizeState(parsed);
   // знімок поточних даних для можливості відкату

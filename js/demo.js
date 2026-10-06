@@ -1,4 +1,4 @@
-// demo.js — вітрина Спільноти, поки справжніх людей мало: офіційні акаунти КАЧАЛКИ
+// demo.js — вітрина Спільноти, поки справжніх людей мало: офіційні акаунти Gym Log
 // і ПРИКЛАДИ профілів (позначені «Приклад профілю», не видаються за реальних людей).
 // Фото — img/social/<id>.webp (згенеровані); нема файлу — показується градієнт з емодзі.
 // Нічого не пише на сервер. Вантажиться ліниво (import).
@@ -27,8 +27,8 @@ const pic = (id) => `img/social/${id}.webp`;
 export function demoData() {
   // official — акаунти самого застосунку; sample — приклад профілю (з позначкою)
   const people = [
-    { id: 'kachalka-coach', name: 'Тренер КАЧАЛКИ', city: '', role: 'trainer', official: true, avatar_url: 'icons/icon-192.png' },
-    { id: 'kachalka-kitchen', name: 'Кухня КАЧАЛКИ', city: '', role: 'kitchen', official: true, avatar_url: 'icons/icon-192.png' },
+    { id: 'kachalka-coach', name: 'Тренер Gym Log', city: '', role: 'trainer', official: true, avatar_url: 'icons/icon-192.png' },
+    { id: 'kachalka-kitchen', name: 'Кухня Gym Log', city: '', role: 'kitchen', official: true, avatar_url: 'icons/icon-192.png' },
     { id: 'sample-t1', name: 'Андрій', city: 'Київ', role: 'trainer', sample: true, avatar_url: pic('sample-t1') },
     { id: 'sample-t2', name: 'Оксана', city: 'Львів', role: 'trainer', sample: true, avatar_url: pic('sample-t2') },
     { id: 'sample-t3', name: 'Олег', city: 'Одеса', role: 'trainer', sample: true, avatar_url: pic('sample-t3') },
@@ -39,8 +39,8 @@ export function demoData() {
   const byId = Object.fromEntries(people.map((p) => [p.id, p]));
 
   const bios = {
-    'kachalka-coach': 'Офіційний акаунт КАЧАЛКИ: техніка вправ, відновлення, прості плани для залу й дому.',
-    'kachalka-kitchen': 'Офіційний акаунт КАЧАЛКИ: 100 рецептів з калоріями й БЖВ — у розділі «Рецепти».',
+    'kachalka-coach': 'Офіційний акаунт Gym Log: техніка вправ, відновлення, прості плани для залу й дому.',
+    'kachalka-kitchen': 'Офіційний акаунт Gym Log: 100 рецептів з калоріями й БЖВ — у розділі «Рецепти».',
     'sample-t1': 'Так може виглядати профіль тренера: силові, 8 років досвіду, ранкові групи 💪',
     'sample-t2': 'Приклад профілю тренерки: жіночі групи, техніка з нуля, без страху перед залізом 🙌',
     'sample-t3': 'Приклад профілю: функціональний тренінг і кросфіт, перше заняття безкоштовно 🔥',
