@@ -4615,7 +4615,7 @@ async function guideText(id) {
     return base; // перекладу немає — українською
   }
 }
-const EX_IMG_V = 3; // підняти після перерендеру img/exercises — SW віддає їх із кешу (cache-first)
+const EX_IMG_V = 4; // підняти після перерендеру img/exercises — SW віддає їх із кешу (cache-first)
 function guideMediaHTML(id, cls = '') {
   // два кадри (старт / фінал) м'яко змінюють один одного; немає файлу — блок ховається
   return `<div class="guide-media ${cls}">
