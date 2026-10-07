@@ -2472,7 +2472,7 @@ function renderProgress() {
 
   const liftsRows = lifts.length
     ? `<div class="chart-card">
-        <div class="card-label">🏆 Рекорди</div>
+        <div class="card-label">🏆 ${T('Рекорди')}</div>
         <div class="rec-list">
           ${lifts
             .map((l) => {
@@ -2503,10 +2503,10 @@ function renderProgress() {
     ${muscleRows}
     ${liftsRows}
     <div class="day-actions">
-      <button class="btn ghost" id="bodyBtn">📏 Заміри тіла${bw ? ` · ${bw.value} кг` : ''}</button>
-      <button class="btn ghost" id="histBtn">📈 Історія по вправах</button>
-      <button class="btn ghost" id="smartBtn2">🧠 Розумний тренер — відновлення</button>
-      <button class="btn ghost" id="kcalBtn2">🍎 Калорії по фото</button>
+      <button class="btn ghost" id="bodyBtn">📏 ${T('Заміри тіла')}${bw ? ` · ${bw.value} ${T('кг')}` : ''}</button>
+      <button class="btn ghost" id="histBtn">📈 ${T('Історія по вправах')}</button>
+      <button class="btn ghost" id="smartBtn2">🧠 ${T('Розумний тренер — відновлення')}</button>
+      <button class="btn ghost" id="kcalBtn2">🍎 ${T('Калорії по фото')}</button>
     </div>
   `;
   screenEl.querySelector('#setBtn').onclick = () => go('#/settings');
@@ -3059,9 +3059,9 @@ function renderBestsCard(exerciseId) {
   const b = S.exerciseBests(exerciseId);
   if (b.count === 0) return '';
   const items = b.bodyweight
-    ? [['Макс. повторень', `${b.maxReps}`]]
-    : [['Макс. вага', `${b.maxWeight} кг`], ['Макс. повт.', `${b.maxReps}`], ['1ПМ ≈', `${Math.round(b.max1RM)} кг`]];
-  return `<div class="chart-card"><div class="card-label">🏆 Рекорди</div>
+    ? [[T('Макс. повторень'), `${b.maxReps}`]]
+    : [[T('Макс. вага'), `${b.maxWeight} ${T('кг')}`], [T('Макс. повт.'), `${b.maxReps}`], [T('1ПМ ≈'), `${Math.round(b.max1RM)} ${T('кг')}`]];
+  return `<div class="chart-card"><div class="card-label">🏆 ${T('Рекорди')}</div>
     <div class="best-grid">${items.map(([k, v]) => `<div class="best-cell"><div class="best-v">${v}</div><div class="best-k">${k}</div></div>`).join('')}</div>
   </div>`;
 }
@@ -3071,7 +3071,10 @@ function renderBestsCard(exerciseId) {
 // =====================================================================
 function renderHistory(exerciseId) {
   const list = S.getExercises({ includeArchived: true });
-  const current = exerciseId || (list[0] && list[0].id);
+  // без вибору — остання вправа, яку робили (перша в списку часто ще без записів → порожній екран)
+  const lastIso = (id) => (S.exerciseHistory(id)[0] || {}).iso || '';
+  const recent = list.filter((x) => lastIso(x.id)).sort((x, y) => lastIso(y.id).localeCompare(lastIso(x.id)))[0];
+  const current = exerciseId || (recent || list[0] || {}).id;
 
   const chips = list
     .map((ex) => `<button class="hchip ${ex.id === current ? 'on' : ''}" data-id="${ex.id}">${exIconHTML(ex) || ex.icon} ${esc(ex.name)}</button>`)
@@ -3081,12 +3084,12 @@ function renderHistory(exerciseId) {
   const rows = current ? S.exerciseHistory(current) : [];
   let table = '';
   if (rows.length === 0) {
-    table = `<div class="empty"><div class="empty-ico">📭</div><p>Поки немає записів для цієї вправи.</p></div>`;
+    table = `<div class="empty"><div class="empty-ico">📭</div><p>${T('Поки немає записів для цієї вправи.')}</p></div>`;
   } else {
     table = `<div class="hist-table">
-      <div class="hist-head"><span>Дата</span><span>Вага</span><span>Підходи (повт.)</span></div>
+      <div class="hist-head"><span>${T('Дата')}</span><span>${T('Вага')}</span><span>${T('Підходи (повт.)')}</span></div>
       ${rows.map((r) => {
-        const w = r.weightType === 'bodyweight' ? '—' : `${r.weight} кг`;
+        const w = r.weightType === 'bodyweight' ? '—' : `${r.weight} ${T('кг')}`;
         const sets = r.sets.map((s) => s.reps).join(' · ');
         return `<div class="hist-row">
           <span class="hist-date">${S.prettyDate(r.iso)}</span>
@@ -3100,8 +3103,8 @@ function renderHistory(exerciseId) {
   screenEl.innerHTML = `
     <header class="appbar">
       <button class="icon-btn" id="backBtn">‹</button>
-      <div class="appbar-titles"><div class="appbar-kicker">Історія по вправі</div>
-        <div class="appbar-title">${ex ? esc(ex.name) : 'Вправи'}</div></div>
+      <div class="appbar-titles"><div class="appbar-kicker">${T('Історія по вправі')}</div>
+        <div class="appbar-title">${ex ? esc(ex.name) : T('Вправи')}</div></div>
       <button class="icon-btn" id="setBtn" title="Налаштування">⚙️</button>
     </header>
     <div class="hchips">${chips}</div>
@@ -3124,7 +3127,7 @@ function renderMiniChart(exerciseId) {
   const bars = vols
     .map((v, i) => `<span class="bar" style="height:${Math.max(6, Math.round((v / max) * 100))}%" title="${S.prettyDate(rows[i].iso)}: обсяг ${Math.round(v)}"></span>`)
     .join('');
-  return `<div class="chart-card"><div class="card-label">Динаміка обсягу (вага×повт.)</div><div class="bars">${bars}</div></div>`;
+  return `<div class="chart-card"><div class="card-label">${T('Динаміка обсягу (вага×повт.)')}</div><div class="bars">${bars}</div></div>`;
 }
 
 // =====================================================================
@@ -4612,11 +4615,12 @@ async function guideText(id) {
     return base; // перекладу немає — українською
   }
 }
+const EX_IMG_V = 2; // підняти після перерендеру img/exercises — SW віддає їх із кешу (cache-first)
 function guideMediaHTML(id, cls = '') {
   // два кадри (старт / фінал) м'яко змінюють один одного; немає файлу — блок ховається
   return `<div class="guide-media ${cls}">
-    <img class="gm0" src="img/exercises/${id}_0.webp" alt="" loading="lazy" onerror="this.parentNode.remove()"/>
-    <img class="gm1" src="img/exercises/${id}_1.webp" alt="" loading="lazy" onerror="this.remove()"/>
+    <img class="gm0" src="img/exercises/${id}_0.webp?v=${EX_IMG_V}" alt="" loading="lazy" onerror="this.parentNode.remove()"/>
+    <img class="gm1" src="img/exercises/${id}_1.webp?v=${EX_IMG_V}" alt="" loading="lazy" onerror="this.remove()"/>
   </div>`;
 }
 
