@@ -18,6 +18,7 @@ export const TRIAL_DAYS = 7; // скільки днів працює безко�
 export const FREE_PHOTOS = 3; // фото-аналізів на день у пробному періоді
 export const PRO_PHOTOS = 0; // 0 = без обмежень для підписників
 export const FREE_IMPORTS = 3; // автоімпортів рецептів на день у пробному тижні (як і фото); з підпискою — без ліміту
+export const FREE_RECEIPTS = 3; // запитів «Чек → меню» до ШІ на день у пробному тижні (як фото); запасний режим — без ліміту
 export const WARN_DAYS = 2; // за скільки днів до кінця нагадати
 // ENFORCE=false — поки оплата не підключена, застосунок НЕ замикається після
 // пробного тижня й не нагадує про підписку. Денний ліміт фото діє завжди.
@@ -116,6 +117,22 @@ export function useImport() {
   const b = data();
   const same = b.impISO === todayISO();
   save({ impISO: todayISO(), impN: same ? (Number(b.impN) || 0) + 1 : 1 });
+}
+
+/** «Чек → меню» (запити до ШІ): { used, limit, left } — як автоімпорт. */
+export function receiptQuota() {
+  const b = data();
+  const st = status();
+  const used = b.rcpISO === todayISO() ? Number(b.rcpN) || 0 : 0;
+  if (st === 'active') return { used, limit: 0, left: Infinity };
+  if (st === 'expired' && ENFORCE) return { used, limit: 0, left: 0 };
+  return { used, limit: FREE_RECEIPTS, left: Math.max(0, FREE_RECEIPTS - used) };
+}
+
+export function useReceipt() {
+  const b = data();
+  const same = b.rcpISO === todayISO();
+  save({ rcpISO: todayISO(), rcpN: same ? (Number(b.rcpN) || 0) + 1 : 1 });
 }
 
 /** Записати підписку локально (після покупки або відповіді сервера). */

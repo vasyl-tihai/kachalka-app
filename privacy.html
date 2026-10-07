@@ -56,6 +56,10 @@
     <li><b>Продукт за штрихкодом</b>: номер штрихкоду (лише цифри, без фото й інших даних)
       надсилається у відкриту базу продуктів Open Food Facts, щоб отримати калорійність і БЖВ.
       Зображення з камери під час сканування обробляється на пристрої й нікуди не надсилається.</li>
+    <li><b>Чек → меню</b> (тільки коли ти сам його запускаєш): фото чека надсилається на наш сервер,
+      який передає його OpenAI, щоб розпізнати куплені продукти; список продуктів так само надсилається, щоб
+      скласти меню. Фото чека й список на сервері не зберігаються — меню лягає лише на твій пристрій.
+      Без сервера меню складається на телефоні з вбудованих рецептів і нічого не надсилає.</li>
     <li><b>Відео в рецептах</b>: якщо до свого рецепта ти додаєш посилання на YouTube,
       ролик показується через youtube-nocookie.com; кнопка «Відео» відкриває YouTube.
       Що при цьому бачить YouTube — регулює політика Google.</li>
@@ -104,6 +108,9 @@
         recipe photo or link to our server, which reads the page and asks OpenAI to build the
         recipe; neither is stored. When you look up a product by barcode, only the barcode number
         is sent to the open Open Food Facts database (the camera image is processed on the device).
+        Receipt → menu (only when you start it) sends the receipt photo and then the product list to our
+        server, which asks OpenAI to recognize the products and build a menu; nothing is stored there, the menu
+        stays on your device. Without the server the menu is built on the phone from built-in recipes.
         A YouTube link you add to your own recipe is played via
         youtube-nocookie.com.</li>
       <li><b>Camera:</b> the form-analysis feature runs pose detection on the device; video

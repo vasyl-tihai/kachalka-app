@@ -18,6 +18,7 @@ import { APP_VERSION } from './version.js';
 import * as CAL from './calories.js';
 import * as BC from './barcode.js';
 import * as GD from './guides.js';
+import * as RCP from './receipt.js';
 
 // мова інтерфейсу — із налаштувань (до першого рендеру)
 setLang(S.getSettings().lang);
@@ -129,6 +130,7 @@ const routes = [
   { re: /^#\/client\/(.+)$/, render: renderClientManage },
   { re: /^#\/chat\/(.+)$/, render: renderChat },
   { re: /^#\/calories$/, render: renderCalories },
+  { re: /^#\/mealplan$/, render: renderMealPlan },
   { re: /^#\/recipes$/, render: () => { commSeg = 'recipes'; return renderRecipes(); } },
   { re: /^#\/recipe-new$/, render: () => renderRecipeEdit(null) },
   { re: /^#\/recipe-edit\/(.+)$/, render: renderRecipeEdit },
@@ -226,7 +228,7 @@ function updateTabbar(hash) {
       (b.dataset.hash === '#/today' && hash === '#/') ||
       (b.dataset.hash === '#/calendar' && hash.startsWith('#/workout/')) ||
       (b.dataset.hash === '#/workouts' && hash.startsWith('#/program')) ||
-      (b.dataset.hash === '#/ai' && (hash === '#/calories' || hash === '#/smart' || hash === '#/formcheck' || hash.startsWith('#/guide'))) ||
+      (b.dataset.hash === '#/ai' && (hash === '#/calories' || hash === '#/mealplan' || hash === '#/smart' || hash === '#/formcheck' || hash.startsWith('#/guide'))) ||
       (b.dataset.hash === '#/progress' && (hash.startsWith('#/history') || hash.startsWith('#/body'))) ||
       (b.dataset.hash === '#/community' &&
         (hash.startsWith('#/user') || hash.startsWith('#/recipe') || hash.startsWith('#/coach') || hash.startsWith('#/chat') || hash.startsWith('#/client')));
@@ -4615,13 +4617,16 @@ async function guideText(id) {
     return base; // перекладу немає — українською
   }
 }
-const EX_IMG_V = 5; // підняти після перерендеру img/exercises — SW віддає їх із кешу (cache-first)
+const EX_IMG_V = 6; // підняти після перерендеру img/exercises — SW віддає їх із кешу (cache-first)
 function guideMediaHTML(id, cls = '') {
-  // два кадри (старт / фінал) м'яко змінюють один одного; немає файлу — блок ховається
-  return `<div class="guide-media ${cls}">
-    <img class="gm0" src="img/exercises/${id}_0.webp?v=${EX_IMG_V}" alt="" loading="lazy" onerror="this.parentNode.remove()"/>
-    <img class="gm1" src="img/exercises/${id}_1.webp?v=${EX_IMG_V}" alt="" loading="lazy" onerror="this.remove()"/>
-  </div>`;
+  // мініатюра — перший кадр; велика — смужка з 9 кадрів (tools/exercise3d/anim.py), рух туди-назад робить CSS
+  // (@keyframes exRun). Немає файлу — блок ховається
+  if (cls === 'mini') {
+    return `<div class="guide-media mini"><img src="img/exercises/${id}_0.webp?v=${EX_IMG_V}" alt="" loading="lazy" onerror="this.parentNode.remove()"/></div>`;
+  }
+  const src = `img/exercises/${id}_anim.webp?v=${EX_IMG_V}`;
+  return `<div class="guide-media"><div class="gm-anim" style="background-image:url('${src}')"></div>
+    <img src="${src}" alt="" hidden onerror="this.parentNode.remove()"/></div>`;
 }
 
 async function renderGuides() {
@@ -5164,7 +5169,11 @@ async function renderCalories() {
         </section>
 
     <section class="card">
-      <div class="card-label">🏷 ${T('Продукт за штрихкодом')}</div>
+      <div class="cseg kseg">
+        <button class="${kcalPane === 'bc' ? 'on' : ''}" data-kp="bc">🏷 ${T('Штрихкод')}</button>
+        <button class="${kcalPane === 'rc' ? 'on' : ''}" data-kp="rc">🧾 ${T('Чек → меню')}</button>
+      </div>
+      <div id="paneBc" ${kcalPane === 'bc' ? '' : 'hidden'}>
       <p class="muted hint">${T('Відскануй штрихкод на упаковці — калорії й БЖВ підтягнуться з бази продуктів')}</p>
       <div class="btn-row bc-btns">
         <button class="btn ghost" id="bcPhoto">📷 ${T('Сфотографувати штрихкод')}</button>
@@ -5176,6 +5185,8 @@ async function renderCalories() {
         <button class="btn ghost" id="bcFind">${T('Знайти')}</button>
       </div>
       <div id="bcBox"></div>
+      </div>
+      ${receiptPaneHTML()}
     </section>
 
     <section class="card">
@@ -5287,6 +5298,14 @@ async function renderCalories() {
   };
   const scanBtn = screenEl.querySelector('#bcScan');
   if (scanBtn) scanBtn.onclick = () => openBarcodeScanner((code) => { codeIn.value = code; findProduct(code); });
+  // перемикач «Штрихкод · Чек» — без перемальовування екрана
+  screenEl.querySelectorAll('[data-kp]').forEach((b) => (b.onclick = () => {
+    kcalPane = b.dataset.kp;
+    screenEl.querySelectorAll('[data-kp]').forEach((x) => x.classList.toggle('on', x === b));
+    screenEl.querySelector('#paneBc').hidden = kcalPane !== 'bc';
+    screenEl.querySelector('#paneRc').hidden = kcalPane !== 'rc';
+  }));
+  bindReceiptPane();
 
   const cam = screenEl.querySelector('#foodCam');
   const gal = screenEl.querySelector('#foodGal');
@@ -5296,6 +5315,226 @@ async function renderCalories() {
     cam.onchange = () => analyze(cam.files[0]);
     gal.onchange = () => analyze(gal.files[0]);
   }
+}
+
+// =====================================================================
+//  «ЧЕК → МЕНЮ» (js/receipt.js): фото чека → продукти → меню на 3/5/7 днів
+// =====================================================================
+let kcalPane = 'bc'; // відкрита вкладка картки на екрані калорій: bc — штрихкод, rc — чек
+const MEAL_LABEL = { breakfast: 'Сніданок', lunch: 'Обід', dinner: 'Вечеря', snack: 'Перекус' };
+
+function receiptPaneHTML() {
+  const mp = S.getMealPlan();
+  return `<div id="paneRc" ${kcalPane === 'rc' ? '' : 'hidden'}>
+    <p class="muted hint">${T('Сфотографуй чек — складемо меню на кілька днів лише з того, що ти купив')}</p>
+    <div class="btn-row">
+      <button class="btn ghost" id="rcSnap">📷 ${T('Сфотографувати чек')}</button>
+      <button class="btn ghost" id="rcGal">🖼 ${T('З галереї')}</button>
+    </div>
+    <input type="file" id="rcCam" accept="image/*" capture="environment" hidden/>
+    <input type="file" id="rcFiles" accept="image/*" multiple hidden/>
+    <div id="rcStatus"></div>
+    <div class="rc-head">${T('Продукти')} <span class="muted" id="rcCount"></span></div>
+    <div class="rc-list" id="rcList"></div>
+    <div class="bc-manual">
+      <input id="rcAdd" autocomplete="off" maxlength="160" placeholder="${T('Додати продукт, напр. «куряче філе 1 кг»')}"/>
+      <button class="btn ghost" id="rcAddBtn">＋</button>
+    </div>
+    <div class="rc-opts">
+      <span class="muted">${T('Меню на')}</span>
+      ${[3, 5, 7].map((n) => `<button class="tchip ${mp.days === n ? 'on' : ''}" data-rd="${n}">${n} ${PL(n, 'день', 'дні', 'днів')}</button>`).join('')}
+    </div>
+    <label class="share-row">
+      <input type="checkbox" id="rcExtra" ${mp.extra ? 'checked' : ''}/>
+      <span>🛒 ${T('Можна докупити')}
+        <small class="muted">${T('вимкнено — страви лише з того, що є (сіль, олія, спеції — вважаємо, що вдома є)')}</small></span>
+    </label>
+    <div class="btn-col">
+      <button class="btn primary" id="rcPlan">🍽 ${T('Скласти меню')}</button>
+      ${mp.plan ? `<button class="btn ghost" id="rcOpen">📋 ${T('Відкрити збережене меню')}</button>` : ''}
+    </div>
+    <p class="muted small" id="rcQuota"></p>
+  </div>`;
+}
+
+function bindReceiptPane() {
+  const root = screenEl.querySelector('#paneRc');
+  if (!root) return;
+  const $ = (sel) => root.querySelector(sel);
+  const status = (html) => { const el = screenEl.querySelector('#rcStatus'); if (el) el.innerHTML = html; };
+  const lang = () => S.getSettings().lang;
+  const update = (patch) => S.setMealPlan({ ...S.getMealPlan(), ...patch });
+
+  const renderList = () => {
+    const list = $('#rcList');
+    if (!list) return;
+    const pr = S.getMealPlan().products;
+    $('#rcCount').textContent = pr.length ? `· ${pr.length}` : '';
+    list.innerHTML = pr.length
+      ? pr.map((x, i) => `<span class="rc-chip">${esc(x.name)}${x.qty ? ` <span class="muted">${esc(x.qty)}</span>` : ''}
+          <button class="rc-del" data-i="${i}" aria-label="✕">✕</button></span>`).join('')
+      : `<p class="muted small">${T('Поки порожньо — сфотографуй чек або впиши продукти')}</p>`;
+    list.querySelectorAll('.rc-del').forEach((b) => (b.onclick = () => {
+      const pr2 = S.getMealPlan().products.slice();
+      pr2.splice(Number(b.dataset.i), 1);
+      update({ products: pr2 });
+      renderList();
+    }));
+  };
+  const addProducts = (items) => {
+    const cur = S.getMealPlan().products.slice();
+    const seen = new Set(cur.map((x) => x.name.toLowerCase()));
+    let n = 0;
+    for (const it of items) {
+      const name = String(it.name || '').trim();
+      if (!name || seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase());
+      cur.push({ name, qty: String(it.qty || '').trim() });
+      n++;
+    }
+    update({ products: cur });
+    renderList();
+    return n;
+  };
+  renderList();
+
+  // квота / режим
+  RCP.serverAvailable().then((srv) => {
+    const q = $('#rcQuota');
+    if (!q) return;
+    if (!srv) { q.textContent = T('Поки без ШІ: меню складається з наших рецептів під продукти, що є'); return; }
+    const qt = BILL.receiptQuota();
+    q.textContent = qt.limit === 0 && qt.left === Infinity ? T('Підписка — без обмежень')
+      : qt.left === 0 && qt.limit === 0 ? T('Пробний тиждень закінчився — далі з підпискою')
+        : `${T('Запитів до ШІ сьогодні')}: ${qt.left} ${T('з')} ${qt.limit} · ${T('пробний тиждень, далі — підписка')}`;
+  });
+
+  // ручне додавання: можна кілька через кому або з нового рядка
+  const addIn = $('#rcAdd');
+  const addManual = () => {
+    const parts = addIn.value.split(/[;\n]+|,(?!\d)/).map((x) => x.trim()).filter(Boolean); // «2,5%» не ділимо
+    if (!parts.length) return;
+    addProducts(parts.map((name) => ({ name })));
+    addIn.value = '';
+  };
+  $('#rcAddBtn').onclick = addManual;
+  addIn.onkeydown = (e) => { if (e.key === 'Enter') addManual(); };
+
+  root.querySelectorAll('[data-rd]').forEach((b) => (b.onclick = () => {
+    update({ days: Number(b.dataset.rd) });
+    root.querySelectorAll('[data-rd]').forEach((x) => x.classList.toggle('on', x === b));
+  }));
+  $('#rcExtra').onchange = (e) => update({ extra: e.target.checked });
+
+  // фото чека → продукти (ШІ на сервері)
+  const recognize = async (files) => {
+    files = [...(files || [])].filter(Boolean);
+    if (!files.length) return;
+    if (!(await RCP.serverAvailable())) { status(`<p class="muted center">ℹ️ ${T(RCP.errorText(new Error('no-server')))}</p>`); return; }
+    if (BILL.receiptQuota().left <= 0) { toast(`🧾 ${T('Ліміт на сьогодні вичерпано — далі потрібна підписка')}`); return; }
+    status(`<p class="muted center">🔎 ${T('Розпізнаю чек…')}</p>`);
+    try {
+      const pr = await RCP.recognize(files, lang());
+      BILL.useReceipt();
+      const n = addProducts(pr);
+      status(`<p class="muted center">✅ ${T('Додано продуктів')}: ${n}</p>`);
+    } catch (e) {
+      status(`<p class="muted center">⚠️ ${esc(T(RCP.errorText(e)))}</p>`);
+    }
+  };
+  const cam = $('#rcCam'), gal = $('#rcFiles');
+  $('#rcSnap').onclick = () => cam.click();
+  $('#rcGal').onclick = () => gal.click();
+  cam.onchange = () => { const f = [...cam.files]; cam.value = ''; recognize(f); };
+  gal.onchange = () => { const f = [...gal.files]; gal.value = ''; recognize(f); };
+
+  // скласти меню: ШІ (якщо сервер є й ліміт не вичерпано), інакше — з вбудованих рецептів
+  $('#rcPlan').onclick = async () => {
+    const mp = S.getMealPlan();
+    if (!mp.products.length) { toast(T('Спершу додай продукти — сфотографуй чек або впиши вручну')); return; }
+    const btn = $('#rcPlan');
+    btn.disabled = true;
+    status(`<p class="muted center">🍳 ${T('Складаю меню…')}</p>`);
+    let plan = null;
+    try {
+      if ((await RCP.serverAvailable()) && BILL.receiptQuota().left > 0) {
+        try {
+          plan = await RCP.planAI({ products: mp.products, days: mp.days, extra: mp.extra, lang: lang() });
+          BILL.useReceipt();
+        } catch (e) {
+          plan = null; // ШІ не відповів — складемо з наших рецептів
+        }
+      }
+      if (!plan) {
+        await RC.loadTexts(lang());
+        plan = RCP.planLocal({ products: mp.products, days: mp.days, extra: mp.extra, recipes: RC.allRecipes(lang()) });
+        plan.buy = plan.buy.map((b) => ({
+          name: b.name,
+          why: b.kind === 'need' ? `${T('для')}: ${b.dishes.join(', ')}` : `${T('ще рецептів із ним')}: ${b.n}`,
+        }));
+      }
+    } catch (e) {
+      btn.disabled = false;
+      status(`<p class="muted center">⚠️ ${esc(T(RCP.errorText(e)))}</p>`);
+      return;
+    }
+    update({ plan });
+    go('#/mealplan');
+  };
+  const openBtn = $('#rcOpen');
+  if (openBtn) openBtn.onclick = () => go('#/mealplan');
+}
+
+function renderMealPlan() {
+  const mp = S.getMealPlan();
+  const pl = mp.plan;
+  if (!pl) { kcalPane = 'rc'; go('#/calories'); return; }
+  const macro = (x) => `${x.kcal} ${T('ккал')} · ${T('Б')} ${x.p} · ${T('Ж')} ${x.f} · ${T('В')} ${x.c}`;
+  const days = pl.days.map((d, i) => {
+    const tot = d.meals.reduce((a, m) => ({ kcal: a.kcal + m.kcal, p: a.p + m.p, f: a.f + m.f, c: a.c + m.c }), { kcal: 0, p: 0, f: 0, c: 0 });
+    return `<section class="card mp-day">
+      <div class="mp-day-head"><b>📅 ${T('День')} ${i + 1}</b><span class="muted">${macro(tot)}</span></div>
+      ${d.meals.map((m, j) => `<details class="mp-meal">
+        <summary><span class="mp-type">${T(MEAL_LABEL[m.type])}</span>
+          <span class="mp-name">${esc(m.name)}</span><span class="muted mp-kcal">${macro(m)}</span></summary>
+        ${m.ing.length ? `<ul class="mp-ing">${m.ing.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+        ${m.steps.length ? `<ol class="mp-steps">${m.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
+        <button class="btn ghost mp-add" data-d="${i}" data-m="${j}">➕ ${T('Додати в калорії сьогодні')}</button>
+      </details>`).join('') || `<p class="muted">${T('На цей день страв не вистачило')}</p>`}
+    </section>`;
+  }).join('');
+  const buy = pl.buy.length ? `<section class="card">
+      <div class="card-label">🛒 ${T('Варто докупити')}</div>
+      <p class="muted hint">${mp.extra ? T('Для страв у меню й для різноманіття') : T('Меню складене лише з того, що є. Ці продукти додадуть різноманіття')}</p>
+      <ul class="mp-buy">${pl.buy.map((b) => `<li><b>${esc(b.name)}</b>${b.why ? ` <span class="muted">— ${esc(b.why)}</span>` : ''}</li>`).join('')}</ul>
+    </section>` : '';
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backMp">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">🧾 ${T('Меню з чека')}</div>
+        <div class="appbar-title">${T('Меню на')} ${pl.days.length} ${PL(pl.days.length, 'день', 'дні', 'днів')}</div></div>
+    </header>
+    <p class="muted hint mp-src">${pl.source === 'ai' ? `🤖 ${T('Склав ШІ з продуктів твого чека')}` : `📚 ${T('Зібрано з рецептів Gym Log під твої продукти')}`}</p>
+    ${days}
+    ${buy}
+    <div class="btn-col">
+      <button class="btn ghost" id="mpAgain">🔄 ${T('Змінити продукти й скласти заново')}</button>
+      <button class="btn ghost" id="mpDel">🗑 ${T('Видалити меню')}</button>
+    </div>`;
+  screenEl.querySelector('#backMp').onclick = () => history.back();
+  screenEl.querySelector('#mpAgain').onclick = () => { kcalPane = 'rc'; go('#/calories'); };
+  screenEl.querySelector('#mpDel').onclick = () => {
+    if (!confirm(T('Видалити меню? Список продуктів залишиться.'))) return;
+    S.setMealPlan({ ...S.getMealPlan(), plan: null });
+    kcalPane = 'rc';
+    go('#/calories');
+  };
+  screenEl.querySelectorAll('.mp-add').forEach((b) => (b.onclick = (e) => {
+    e.preventDefault();
+    const m = pl.days[Number(b.dataset.d)].meals[Number(b.dataset.m)];
+    S.addCalorieEntry(S.todayISO(), { name: m.name, kcal: m.kcal, prot: m.p, fat: m.f, carb: m.c });
+    toast(`✅ ${T('Додано в калорії')}`);
+  }));
 }
 
 // результат «страва / продукт»: назва, калорії, БЖВ і поле ваги (якщо відомо, від чого рахувати)

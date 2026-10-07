@@ -117,6 +117,7 @@ function defaultState() {
     progression: {}, // { exerciseId: { programId, goal, testMax, level, day, … } } — програми власної ваги
     calories: {}, // { 'YYYY-MM-DD': [ {id, name, kcal, prot, fat, carb, g?} ] } — журнал їжі (фото / штрихкод); g — вага, г
     recipes: { fav: [], own: [] }, // обрані id рецептів і власні рецепти (фото — в IndexedDB)
+    mealPlan: null, // «Чек → меню»: продукти з чека, налаштування й складене меню (normalizeMealPlan)
     settings: {
       restSeconds: 60,
       restStep: 30,
@@ -310,6 +311,7 @@ function normalizeState(raw) {
     if (clean.length) cal[iso] = clean;
   }
   s.calories = cal;
+  s.mealPlan = normalizeMealPlan(raw.mealPlan);
 
   // одноразова міграція: раніше кількість підходів помилково дорівнювала кільк. повторень
   // (напр. 12). Реальні підходи — це 3–5, тож завищені значення (>6) знижуємо до 4.
@@ -403,6 +405,48 @@ export function deleteOwnRecipe(id) {
   state.recipes.own = state.recipes.own.filter((r) => r.id !== id);
   state.recipes.fav = state.recipes.fav.filter((x) => x !== id);
   saveNow();
+}
+
+// ---------- «Чек → меню» ----------
+// { products: [{name, qty}], days: 3|5|7, extra: bool, plan: null | { created, source: 'ai'|'local',
+//   days: [{ meals: [{type, name, kcal, p, f, c, ing[], steps[], rid?}] }], buy: [{name, why}] } }
+const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack'];
+const cleanStrs = (a, n, len = 160) => (Array.isArray(a) ? a.map((x) => String(x || '').trim().slice(0, len)).filter(Boolean).slice(0, n) : []);
+export function normalizeMealPlan(m) {
+  if (!m || typeof m !== 'object') return null;
+  const products = (Array.isArray(m.products) ? m.products : [])
+    .map((x) => ({ name: String((x && x.name) || '').trim().slice(0, 80), qty: String((x && x.qty) || '').trim().slice(0, 30) }))
+    .filter((x) => x.name)
+    .slice(0, 80);
+  const out = { products, days: [3, 5, 7].includes(Number(m.days)) ? Number(m.days) : 3, extra: !!m.extra, plan: null };
+  const pl = m.plan;
+  if (pl && typeof pl === 'object' && Array.isArray(pl.days) && pl.days.length) {
+    const num = (x) => Math.max(0, Math.round(Number(x) || 0));
+    out.plan = {
+      created: Number(pl.created) || Date.now(),
+      source: pl.source === 'ai' ? 'ai' : 'local',
+      days: pl.days.slice(0, 7).map((d) => ({
+        meals: (Array.isArray(d && d.meals) ? d.meals : []).slice(0, 6).map((x) => ({
+          type: MEAL_TYPES.includes(x && x.type) ? x.type : 'snack',
+          name: String((x && x.name) || '').trim().slice(0, 120),
+          kcal: num(x && x.kcal), p: num(x && x.p), f: num(x && x.f), c: num(x && x.c),
+          ing: cleanStrs(x && x.ing, 20), steps: cleanStrs(x && x.steps, 10, 300),
+          ...(x && x.rid ? { rid: String(x.rid).slice(0, 60) } : {}),
+        })).filter((x) => x.name),
+      })),
+      buy: (Array.isArray(pl.buy) ? pl.buy : []).slice(0, 12)
+        .map((b) => ({ name: String((b && b.name) || '').trim().slice(0, 80), why: String((b && b.why) || '').trim().slice(0, 160) }))
+        .filter((b) => b.name),
+    };
+  }
+  return out;
+}
+export function getMealPlan() {
+  return state.mealPlan || { products: [], days: 3, extra: false, plan: null };
+}
+export function setMealPlan(m) {
+  state.mealPlan = normalizeMealPlan(m);
+  save();
 }
 
 export function addCalorieEntry(iso, entry) {

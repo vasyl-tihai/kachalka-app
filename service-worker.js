@@ -3,7 +3,7 @@
 //   • код застосунку (навігація, *.js, *.css) — network-first: свіжа версія підтягується
 //     при кожному онлайн-запуску, а офлайн працює з кешу;
 //   • іконки/шрифти/маніфест — cache-first (рідко змінюються), із докешуванням у рантаймі.
-const CACHE = 'kachalka-v66';
+const CACHE = 'kachalka-v67';
 // фото рецептів: окремий кеш, який не стирається при кожному оновленні версії
 const IMG_CACHE = 'kachalka-recipe-img-v1';
 const ASSETS = [
@@ -25,6 +25,7 @@ const ASSETS = [
   './js/recipe-import.js',
   './js/barcode.js',
   './js/guides.js',
+  './js/receipt.js',
   './js/recipes-i18n/en.js',
   './js/recipes-i18n/pl.js',
   './js/recipes-i18n/de.js',
