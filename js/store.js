@@ -330,12 +330,17 @@ function normalizeState(raw) {
 let state = load();
 
 function load() {
+  let raw = null;
   try {
-    const raw = localStorage.getItem(KEY);
+    raw = localStorage.getItem(KEY);
     if (!raw) return defaultState();
     return normalizeState(JSON.parse(raw));
   } catch (e) {
     console.warn('Не вдалося прочитати дані, починаємо з чистого', e);
+    // запобіжник: зберегти непрочитані дані окремо (не затираючи попередню копію), щоб їх можна було відновити
+    try {
+      if (raw && !localStorage.getItem(KEY + '.broken')) localStorage.setItem(KEY + '.broken', raw);
+    } catch (e2) { /* місця немає — нічого не вдієш */ }
     return defaultState();
   }
 }
@@ -410,9 +415,20 @@ export function deleteOwnRecipe(id) {
 // ---------- «Чек → меню» ----------
 // { products: [{name, qty}], days: 3|5|7, extra: bool, plan: null | { created, source: 'ai'|'local',
 //   days: [{ meals: [{type, name, kcal, p, f, c, ing[], steps[], rid?}] }], buy: [{name, why}] } }
-const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack'];
-const cleanStrs = (a, n, len = 160) => (Array.isArray(a) ? a.map((x) => String(x || '').trim().slice(0, len)).filter(Boolean).slice(0, n) : []);
+// УВАГА: викликається з load() під час завантаження модуля — тут не можна звертатися до const/let, оголошених
+// нижче в цьому файлі (TDZ → load() падає → застосунок стартує з чистого стану). Тому все — всередині функції,
+// і помилка в меню ніколи не валить решту даних.
 export function normalizeMealPlan(m) {
+  try {
+    return normMealPlan(m);
+  } catch (e) {
+    console.warn('Меню з чека пошкоджене — скидаю', e);
+    return null;
+  }
+}
+function normMealPlan(m) {
+  const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack'];
+  const cleanStrs = (a, n, len = 160) => (Array.isArray(a) ? a.map((x) => String(x || '').trim().slice(0, len)).filter(Boolean).slice(0, n) : []);
   if (!m || typeof m !== 'object') return null;
   const products = (Array.isArray(m.products) ? m.products : [])
     .map((x) => ({ name: String((x && x.name) || '').trim().slice(0, 80), qty: String((x && x.qty) || '').trim().slice(0, 30) }))
