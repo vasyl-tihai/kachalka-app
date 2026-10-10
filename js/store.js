@@ -118,6 +118,7 @@ function defaultState() {
     calories: {}, // { 'YYYY-MM-DD': [ {id, name, kcal, prot, fat, carb, g?} ] } — журнал їжі (фото / штрихкод); g — вага, г
     recipes: { fav: [], own: [] }, // обрані id рецептів і власні рецепти (фото — в IndexedDB)
     mealPlan: null, // «Чек → меню»: продукти з чека, налаштування й складене меню (normalizeMealPlan)
+    supps: { items: [], log: {} }, // вітаміни й добавки: що, скільки, коли + відмітки прийому (normalizeSupps)
     settings: {
       restSeconds: 60,
       restStep: 30,
@@ -312,6 +313,7 @@ function normalizeState(raw) {
   }
   s.calories = cal;
   s.mealPlan = normalizeMealPlan(raw.mealPlan);
+  s.supps = normalizeSupps(raw.supps);
 
   // одноразова міграція: раніше кількість підходів помилково дорівнювала кільк. повторень
   // (напр. 12). Реальні підходи — це 3–5, тож завищені значення (>6) знижуємо до 4.
@@ -448,6 +450,7 @@ function normMealPlan(m) {
           kcal: num(x && x.kcal), p: num(x && x.p), f: num(x && x.f), c: num(x && x.c),
           ing: cleanStrs(x && x.ing, 20), steps: cleanStrs(x && x.steps, 10, 300),
           ...(x && x.rid ? { rid: String(x.rid).slice(0, 60) } : {}),
+          ...(x && Number(x.time) > 0 ? { time: Math.min(600, num(x.time)) } : {}),
         })).filter((x) => x.name),
       })),
       buy: (Array.isArray(pl.buy) ? pl.buy : []).slice(0, 12)
@@ -463,6 +466,121 @@ export function getMealPlan() {
 export function setMealPlan(m) {
   state.mealPlan = normalizeMealPlan(m);
   save();
+}
+
+// ---------- вітаміни й добавки ----------
+// Особистий нагадувач: людина сама вписує, що, скільки й коли (за призначенням лікаря). Застосунок нічого не радить.
+// { items: [{ id, name, form: tab|cap|drop|powder|inj|other, dose, unit, times: ['08:00'], food: ''|before|with|after,
+//   sched: { type: daily|every|week, n, days: [0..6] }, start: ISO, len: днів (0 = без кінця), route: ''|im|sc, note }],
+//   log: { ISO: { id: [номери прийомів за день] } } }
+// Як і меню чека: викликається з load() — константи тільки всередині функції (TDZ), помилка не валить решту даних.
+export function normalizeSupps(x) {
+  try {
+    return normSupps(x);
+  } catch (e) {
+    console.warn('Список вітамінів пошкоджений — скидаю', e);
+    return { items: [], log: {} };
+  }
+}
+function normSupps(x) {
+  const FORMS = ['tab', 'cap', 'drop', 'powder', 'inj', 'other'];
+  const UNITS = ['мг', 'мкг', 'МО', 'г', 'мл', 'шт', 'крап.', 'од.'];
+  const ISO = /^\d{4}-\d{2}-\d{2}$/;
+  const str = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+  const o = x && typeof x === 'object' ? x : {};
+  const items = (Array.isArray(o.items) ? o.items : []).slice(0, 60).map((it) => {
+    it = it && typeof it === 'object' ? it : {};
+    const sc = it.sched && typeof it.sched === 'object' ? it.sched : {};
+    const type = ['daily', 'every', 'week'].includes(sc.type) ? sc.type : 'daily';
+    const times = (Array.isArray(it.times) ? it.times : []).map((t) => str(t, 5)).filter((t) => /^\d{2}:\d{2}$/.test(t)).slice(0, 6).sort();
+    return {
+      id: str(it.id, 60) || 'sp-' + Math.random().toString(36).slice(2),
+      name: str(it.name, 80),
+      form: FORMS.includes(it.form) ? it.form : 'tab',
+      dose: str(it.dose, 12),
+      unit: UNITS.includes(it.unit) ? it.unit : 'мг',
+      times: times.length ? times : ['09:00'],
+      food: ['before', 'with', 'after'].includes(it.food) ? it.food : '',
+      sched: { type, n: Math.min(60, Math.max(2, Math.round(Number(sc.n) || 2))),
+        days: (Array.isArray(sc.days) ? sc.days : []).map(Number).filter((d) => d >= 0 && d <= 6).slice(0, 7) },
+      start: ISO.test(it.start) ? it.start : todayISO(),
+      len: Math.min(3650, Math.max(0, Math.round(Number(it.len) || 0))),
+      route: ['im', 'sc'].includes(it.route) ? it.route : '',
+      note: str(it.note, 300),
+      created: Number(it.created) || Date.now(),
+    };
+  }).filter((it) => it.name);
+  const ids = new Set(items.map((it) => it.id));
+  const log = {};
+  const raw = o.log && typeof o.log === 'object' ? o.log : {};
+  const keep = Object.keys(raw).filter((d) => ISO.test(d)).sort().slice(-400); // журнал — не довше ~року
+  for (const d of keep) {
+    const day = {};
+    for (const [id, arr] of Object.entries(raw[d] || {})) {
+      if (!ids.has(id) || !Array.isArray(arr)) continue;
+      const v = [...new Set(arr.map(Number).filter((n) => n >= 0 && n < 6))];
+      if (v.length) day[id] = v;
+    }
+    if (Object.keys(day).length) log[d] = day;
+  }
+  return { items, log };
+}
+export function getSupps() {
+  return state.supps.items.slice().sort((a, b) => a.times[0].localeCompare(b.times[0]) || a.name.localeCompare(b.name));
+}
+export function getSupp(id) {
+  return state.supps.items.find((x) => x.id === id) || null;
+}
+export function saveSupp(item) {
+  const clean = normalizeSupps({ items: [{ ...item, id: item.id || 'sp-' + uid() }] }).items[0];
+  if (!clean) return null;
+  const i = state.supps.items.findIndex((x) => x.id === clean.id);
+  if (i >= 0) state.supps.items[i] = { ...clean, created: state.supps.items[i].created };
+  else state.supps.items.push(clean);
+  saveNow();
+  return clean;
+}
+export function deleteSupp(id) {
+  state.supps.items = state.supps.items.filter((x) => x.id !== id);
+  for (const d of Object.keys(state.supps.log)) {
+    delete state.supps.log[d][id];
+    if (!Object.keys(state.supps.log[d]).length) delete state.supps.log[d];
+  }
+  saveNow();
+}
+// день курсу (1…len) або 0, якщо цього дня прийому немає
+export function suppCourseDay(it, iso) {
+  const diff = Math.round((isoToDate(iso) - isoToDate(it.start)) / 86400000);
+  if (diff < 0 || (it.len && diff >= it.len)) return 0;
+  return diff + 1;
+}
+export function suppDueOn(it, iso) {
+  const day = suppCourseDay(it, iso);
+  if (!day) return false;
+  if (it.sched.type === 'every') return (day - 1) % it.sched.n === 0;
+  if (it.sched.type === 'week') return it.sched.days.includes(isoToDate(iso).getDay());
+  return true;
+}
+// прийоми на день: [{ it, i, time, taken }] за часом
+export function suppDosesOn(iso) {
+  const log = state.supps.log[iso] || {};
+  const out = [];
+  for (const it of state.supps.items) {
+    if (!suppDueOn(it, iso)) continue;
+    it.times.forEach((time, i) => out.push({ it, i, time, taken: (log[it.id] || []).includes(i) }));
+  }
+  return out.sort((a, b) => a.time.localeCompare(b.time) || a.it.name.localeCompare(b.it.name));
+}
+export function toggleSuppDose(iso, id, i) {
+  const log = state.supps.log;
+  const day = log[iso] || (log[iso] = {});
+  const arr = day[id] || (day[id] = []);
+  const k = arr.indexOf(i);
+  if (k >= 0) arr.splice(k, 1); else arr.push(i);
+  if (!arr.length) delete day[id];
+  if (!Object.keys(day).length) delete log[iso];
+  saveNow();
+  return k < 0;
 }
 
 export function addCalorieEntry(iso, entry) {

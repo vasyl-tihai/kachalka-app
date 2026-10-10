@@ -19,6 +19,7 @@ import * as CAL from './calories.js';
 import * as BC from './barcode.js';
 import * as GD from './guides.js';
 import * as RCP from './receipt.js';
+import { RECIPES } from './recipes-data.js';
 
 // мова інтерфейсу — із налаштувань (до першого рендеру)
 setLang(S.getSettings().lang);
@@ -131,6 +132,9 @@ const routes = [
   { re: /^#\/chat\/(.+)$/, render: renderChat },
   { re: /^#\/calories$/, render: renderCalories },
   { re: /^#\/mealplan$/, render: renderMealPlan },
+  { re: /^#\/meal\/(\d+)\/(\d+)$/, render: renderMeal },
+  { re: /^#\/supps$/, render: renderSupps },
+  { re: /^#\/supp\/([\w-]+)$/, render: renderSuppEdit },
   { re: /^#\/recipes$/, render: () => { commSeg = 'recipes'; return renderRecipes(); } },
   { re: /^#\/recipe-new$/, render: () => renderRecipeEdit(null) },
   { re: /^#\/recipe-edit\/(.+)$/, render: renderRecipeEdit },
@@ -228,7 +232,7 @@ function updateTabbar(hash) {
       (b.dataset.hash === '#/today' && hash === '#/') ||
       (b.dataset.hash === '#/calendar' && hash.startsWith('#/workout/')) ||
       (b.dataset.hash === '#/workouts' && hash.startsWith('#/program')) ||
-      (b.dataset.hash === '#/ai' && (hash === '#/calories' || hash === '#/mealplan' || hash === '#/smart' || hash === '#/formcheck' || hash.startsWith('#/guide'))) ||
+      (b.dataset.hash === '#/ai' && (hash === '#/calories' || hash === '#/mealplan' || hash.startsWith('#/meal/') || hash.startsWith('#/supp') || hash === '#/smart' || hash === '#/formcheck' || hash.startsWith('#/guide'))) ||
       (b.dataset.hash === '#/progress' && (hash.startsWith('#/history') || hash.startsWith('#/body'))) ||
       (b.dataset.hash === '#/community' &&
         (hash.startsWith('#/user') || hash.startsWith('#/recipe') || hash.startsWith('#/coach') || hash.startsWith('#/chat') || hash.startsWith('#/client')));
@@ -570,6 +574,7 @@ function renderToday() {
       return `<div class="day-volume">⚡ ${T('Обсяг тренування')}: <b>${t}${dv.reps} ${T('повт.')}</b></div>`;
     })()}
     ${isPast ? dayStatsCard(iso) : ''}
+    ${suppsCard(iso)}
     ${photosCard(iso)}
     <div class="day-actions">
       ${isPast ? '' : `<button class="btn ghost" id="manageW">${single ? '✏️ ' + T('Редагувати це тренування') : '🏋️ ' + T('Керувати тренуваннями')}</button>`}
@@ -602,6 +607,7 @@ function renderToday() {
       router();
     };
   screenEl.querySelector('#calBtn').onclick = () => go('#/calendar');
+  bindSuppsCard(iso);
   const dp = screenEl.querySelector('#datePick');
   dp.onchange = () => {
     if (dp.value) {
@@ -4708,6 +4714,7 @@ function renderAI(toForm) {
       ${item('aiKcal', '🍎', T('Калорії'), T('Фото страви або штрихкод — калорії й БЖВ'), `${kcalToday} ${T('ккал')} ›`)}
       ${item('aiSmart', '🧠', T('Розумний тренер'), T('Які мʼязи вже відновились і скільки відпочивати'))}
       ${item('aiGuides', '📘', T('Техніка вправ'), T('Як виконувати: кроки, помилки й 3D-ілюстрації'))}
+      ${item('aiSupps', '💊', T('Вітаміни й добавки'), T('Графік прийому, уколи й курси — відмічай, що вже прийняв'), suppsToday())}
       ${item('aiImport', '📥', T('Рецепт з посилання або фото'), T('TikTok, YouTube, сайт чи сторінка з книги — запишеться сам'))}
     </div>
 
@@ -4717,6 +4724,7 @@ function renderAI(toForm) {
   screenEl.querySelector('#aiKcal').onclick = () => go('#/calories');
   screenEl.querySelector('#aiSmart').onclick = () => go('#/smart');
   screenEl.querySelector('#aiGuides').onclick = () => go('#/guides');
+  screenEl.querySelector('#aiSupps').onclick = () => go('#/supps');
   screenEl.querySelectorAll('.fc-row[data-id]').forEach((b) =>
     b.addEventListener('click', () => go('#/camera/' + b.dataset.id))
   );
@@ -5494,13 +5502,11 @@ function renderMealPlan() {
     const tot = d.meals.reduce((a, m) => ({ kcal: a.kcal + m.kcal, p: a.p + m.p, f: a.f + m.f, c: a.c + m.c }), { kcal: 0, p: 0, f: 0, c: 0 });
     return `<section class="card mp-day">
       <div class="mp-day-head"><b>📅 ${T('День')} ${i + 1}</b><span class="muted">${macro(tot)}</span></div>
-      ${d.meals.map((m, j) => `<details class="mp-meal">
-        <summary><span class="mp-type">${T(MEAL_LABEL[m.type])}</span>
-          <span class="mp-name">${esc(m.name)}</span><span class="muted mp-kcal">${macro(m)}</span></summary>
-        ${m.ing.length ? `<ul class="mp-ing">${m.ing.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-        ${m.steps.length ? `<ol class="mp-steps">${m.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
-        <button class="btn ghost mp-add" data-d="${i}" data-m="${j}">➕ ${T('Додати в калорії сьогодні')}</button>
-      </details>`).join('') || `<p class="muted">${T('На цей день страв не вистачило')}</p>`}
+      ${d.meals.map((m, j) => `<a class="mp-meal" href="#/meal/${i}/${j}">
+        <span class="mp-type">${T(MEAL_LABEL[m.type])}</span>
+        <span class="mp-name">${esc(m.name)}</span><span class="muted mp-kcal">${macro(m)}</span>
+        <span class="mp-go">${T('Рецепт')} ›</span>
+      </a>`).join('') || `<p class="muted">${T('На цей день страв не вистачило')}</p>`}
     </section>`;
   }).join('');
   const buy = pl.buy.length ? `<section class="card">
@@ -5529,12 +5535,271 @@ function renderMealPlan() {
     kcalPane = 'rc';
     go('#/calories');
   };
-  screenEl.querySelectorAll('.mp-add').forEach((b) => (b.onclick = (e) => {
-    e.preventDefault();
-    const m = pl.days[Number(b.dataset.d)].meals[Number(b.dataset.m)];
+}
+
+// рецепт однієї страви з меню чека: склад, кроки, час; фото — якщо це вбудований рецепт
+function renderMeal(di, mi) {
+  const pl = S.getMealPlan().plan;
+  const day = pl && pl.days[Number(di)];
+  const m = day && day.meals[Number(mi)];
+  if (!m) { go('#/mealplan'); return; }
+  const base = m.rid ? RECIPES.find((r) => r.id === m.rid) : null;
+  const plate = !m.rid && pl.source !== 'ai';
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backMeal">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">📅 ${T('День')} ${Number(di) + 1} · ${T(MEAL_LABEL[m.type])}</div>
+        <div class="appbar-title">${T('Рецепт')}</div></div>
+    </header>
+    ${base ? `<div class="ml-photo" style="background:linear-gradient(135deg,${base.bg[0]},${base.bg[1]})"><span>${base.emoji}</span>
+      <img src="img/recipes/${base.id}.webp" alt="" loading="lazy" onerror="this.remove()"/></div>` : ''}
+    <section class="card">
+      <h2 class="ml-name">${esc(m.name)}</h2>
+      <div class="ml-macros">
+        <div><b>${m.kcal}</b><span>${T('ккал')}</span></div>
+        <div><b>${m.p}</b><span>${T('Б')}, ${T('г')}</span></div>
+        <div><b>${m.f}</b><span>${T('Ж')}, ${T('г')}</span></div>
+        <div><b>${m.c}</b><span>${T('В')}, ${T('г')}</span></div>
+      </div>
+      ${m.time ? `<p class="muted ml-time">⏱ ${T('Готування')}: ~${m.time} ${T('хв')}</p>` : ''}
+      ${plate ? `<p class="muted hint">${T('Проста страва з твоїх продуктів: білок, гарнір і овочі. Готуй усе паралельно — кроки йдуть від найдовшого.')}</p>` : ''}
+    </section>
+    ${m.ing.length ? `<section class="card"><div class="card-label">🧺 ${T('Що потрібно')}</div>
+      <ul class="ml-ing">${m.ing.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></section>` : ''}
+    ${m.steps.length ? `<section class="card"><div class="card-label">👨‍🍳 ${T('Як приготувати')}</div>
+      <ol class="ml-steps">${m.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol></section>` : ''}
+    <div class="btn-col">
+      <button class="btn" id="mlAdd">➕ ${T('Додати в калорії сьогодні')}</button>
+      <button class="btn ghost" id="mlPlan">📋 ${T('До меню')}</button>
+    </div>`;
+  screenEl.querySelector('#backMeal').onclick = () => history.back();
+  screenEl.querySelector('#mlPlan').onclick = () => go('#/mealplan');
+  screenEl.querySelector('#mlAdd').onclick = () => {
     S.addCalorieEntry(S.todayISO(), { name: m.name, kcal: m.kcal, prot: m.p, fat: m.f, carb: m.c });
     toast(`✅ ${T('Додано в калорії')}`);
+  };
+}
+
+// =====================================================================
+//  ВІТАМІНИ Й ДОБАВКИ — особистий нагадувач (що, скільки, коли; курс; уколи)
+//  Застосунок нічого не радить: дозування й курс — від лікаря, людина лише записує. Гормонів/стероїдів у підказках немає.
+// =====================================================================
+const SUPP_FORMS = { tab: ['💊', 'Таблетка'], cap: ['🟡', 'Капсула'], drop: ['💧', 'Краплі'], powder: ['🥄', 'Порошок'], inj: ['💉', 'Укол'], other: ['🧴', 'Інше'] };
+const SUPP_UNITS = ['мг', 'мкг', 'МО', 'г', 'мл', 'шт', 'крап.', 'од.'];
+const SUPP_FOOD = { '': 'Будь-коли', before: 'До їжі', with: 'Під час їжі', after: 'Після їжі' };
+const SUPP_ROUTE = { im: 'У мʼяз', sc: 'Під шкіру' };
+// лише назви для швидкого вводу — без доз (дозу людина пише сама зі слів лікаря)
+const SUPP_NAMES = ['Вітамін D3', 'Вітамін C', 'Вітамін B12', 'Вітаміни групи B', 'Вітамін E', 'Фолієва кислота', 'Омега-3', 'Магній', 'Цинк',
+  'Залізо', 'Кальцій', 'Калій', 'Йод', 'Мультивітаміни', 'Креатин', 'Колаген', 'Пробіотик'];
+let suppDay = null; // день на екрані вітамінів (null = сьогодні)
+
+const suppsToday = () => { const d = S.suppDosesOn(S.todayISO()); return d.length ? `${d.filter((x) => x.taken).length}/${d.length} ›` : '›'; };
+const suppIcon = (it) => (SUPP_FORMS[it.form] || SUPP_FORMS.other)[0];
+const suppDose = (it) => (it.dose ? `${esc(it.dose)} ${T(it.unit)}` : '');
+function suppSchedText(it) {
+  const sc = it.sched;
+  let s = sc.type === 'every' ? (sc.n === 2 ? T('через день') : T('кожні {n} дн.', { n: sc.n }))
+    : sc.type === 'week' ? sc.days.slice().sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((d) => dateNames().dows[d]).join(', ')
+      : T('щодня');
+  s += ` · ${it.times.join(', ')}`;
+  if (it.food) s += ` · ${T(SUPP_FOOD[it.food]).toLowerCase()}`;
+  return s;
+}
+function suppCourseText(it, iso) {
+  if (!it.len) return '';
+  const d = S.suppCourseDay(it, iso);
+  if (d) return T('день {d} з {n}', { d, n: it.len });
+  return iso < it.start ? T('курс з {d}', { d: S.prettyDate(it.start) }) : T('курс завершено');
+}
+
+// рядок прийому з галочкою (екран вітамінів і картка «Сьогодні»)
+function suppDoseRow(iso, x) {
+  const extra = [suppDose(x.it), x.it.form === 'inj' && x.it.route ? T(SUPP_ROUTE[x.it.route]) : '', x.it.food ? T(SUPP_FOOD[x.it.food]) : '']
+    .filter(Boolean).join(' · ');
+  return `<button class="sp-dose ${x.taken ? 'on' : ''}" data-id="${x.it.id}" data-i="${x.i}" data-iso="${iso}">
+      <span class="sp-time">${x.time}</span>
+      <span class="sp-ico">${suppIcon(x.it)}</span>
+      <span class="sp-txt"><b>${esc(x.it.name)}</b>${extra ? `<span class="muted">${extra}</span>` : ''}</span>
+      <span class="sp-check">${x.taken ? '✓' : ''}</span>
+    </button>`;
+}
+function bindSuppDoses(root, after) {
+  root.querySelectorAll('.sp-dose').forEach((b) => (b.onclick = () => {
+    const on = S.toggleSuppDose(b.dataset.iso, b.dataset.id, Number(b.dataset.i));
+    if (on && navigator.vibrate) navigator.vibrate(15);
+    after();
   }));
+}
+
+// картка на «Сьогодні»: лише якщо на цей день є прийоми
+function suppsCard(iso) {
+  const doses = S.suppDosesOn(iso);
+  if (!doses.length) return '';
+  const done = doses.filter((x) => x.taken).length;
+  return `<section class="card sp-card" id="suppCard">
+    <div class="sp-card-head"><div class="card-label">💊 ${T('Вітаміни й добавки')} <span class="muted">${done}/${doses.length}</span></div>
+      <a class="sp-all" href="#/supps">${T('Усі')} ›</a></div>
+    ${doses.map((x) => suppDoseRow(iso, x)).join('')}
+  </section>`;
+}
+function bindSuppsCard(iso) {
+  const card = screenEl.querySelector('#suppCard');
+  if (!card) return;
+  bindSuppDoses(card, () => {
+    const html = suppsCard(iso);
+    const cur = screenEl.querySelector('#suppCard');
+    if (!cur) return;
+    cur.outerHTML = html;
+    bindSuppsCard(iso);
+  });
+}
+
+function renderSupps() {
+  const today = S.todayISO();
+  const iso = suppDay || today;
+  const doses = S.suppDosesOn(iso);
+  const items = S.getSupps();
+  const done = doses.filter((x) => x.taken).length;
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backSp">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">💊 ${T('Здоровʼя')}</div>
+        <div class="appbar-title">${T('Вітаміни й добавки')}</div></div>
+    </header>
+    <section class="card sp-warn">
+      <b>⚠️ ${T('Не медична порада')}</b>
+      <p>${T('Gym Log не лікар і не підказує, що, скільки й як приймати. Це лише твій нагадувач: дозування, курс і уколи — тільки за призначенням лікаря.')}</p>
+    </section>
+    ${items.length ? `<section class="card">
+      <div class="day-nav sp-nav">
+        <button class="chip" id="spPrev">‹</button>
+        <div class="sp-day"><b>${iso === today ? T('Сьогодні') : S.prettyDate(iso)}</b>
+          <span class="muted">${doses.length ? `${T('прийнято')} ${done}/${doses.length}` : T('прийомів немає')}</span></div>
+        <button class="chip" id="spNext">›</button>
+      </div>
+      ${doses.length ? `<div class="sp-bar"><i style="width:${Math.round((done / doses.length) * 100)}%"></i></div>` : ''}
+      <div id="spDoses">${doses.map((x) => suppDoseRow(iso, x)).join('')}</div>
+    </section>` : ''}
+    <div class="card-label side-label">${T('Мій список')}</div>
+    <div class="pick-list">
+      ${items.map((it) => {
+        const c = suppCourseText(it, today);
+        return `<button class="pick-row aih-row sp-item" data-id="${it.id}">
+          <span class="pick-ico">${suppIcon(it)}</span>
+          <span class="aih-txt"><b>${esc(it.name)}${it.dose ? ` · ${suppDose(it)}` : ''}</b>
+            <span class="muted">${esc(suppSchedText(it))}${c ? ` · ${c}` : ''}</span></span>
+          <span class="fc-pat">›</span>
+        </button>`;
+      }).join('') || `<p class="muted center">${T('Тут поки порожньо. Додай вітамін, добавку чи укол — і відмічай прийоми щодня.')}</p>`}
+    </div>
+    <div class="btn-col"><button class="btn primary" id="spAdd">＋ ${T('Додати')}</button></div>`;
+  screenEl.querySelector('#backSp').onclick = () => history.back();
+  screenEl.querySelector('#spAdd').onclick = () => go('#/supp/new');
+  screenEl.querySelectorAll('.sp-item').forEach((b) => (b.onclick = () => go('#/supp/' + b.dataset.id)));
+  const shift = (k) => {
+    const d = S.isoToDate(iso);
+    d.setDate(d.getDate() + k);
+    suppDay = S.dateToISO(d);
+    renderSupps();
+  };
+  const p = screenEl.querySelector('#spPrev');
+  if (p) {
+    p.onclick = () => shift(-1);
+    screenEl.querySelector('#spNext').onclick = () => shift(1);
+    bindSuppDoses(screenEl.querySelector('#spDoses'), renderSupps);
+  }
+}
+
+function renderSuppEdit(id) {
+  const old = id === 'new' ? null : S.getSupp(id);
+  if (id !== 'new' && !old) { go('#/supps'); return; }
+  const it = old ? JSON.parse(JSON.stringify(old)) : { name: '', form: 'tab', dose: '', unit: 'мг', times: ['09:00'], food: '', sched: { type: 'daily', n: 2, days: [1, 3, 5] }, start: S.todayISO(), len: 0, route: '', note: '' };
+  if (!it.sched.days.length) it.sched.days = [1, 3, 5];
+  const dn = dateNames().dows;
+  const draw = () => {
+    const tchips = (attr, map, cur) => Object.entries(map).map(([k, v]) => `<button class="tchip ${cur === k ? 'on' : ''}" data-${attr}="${k}">${Array.isArray(v) ? `${v[0]} ${T(v[1])}` : T(v)}</button>`).join('');
+    screenEl.innerHTML = `
+      <header class="appbar">
+        <button class="icon-btn" id="backSe">‹</button>
+        <div class="appbar-titles"><div class="appbar-kicker">💊 ${T('Вітаміни й добавки')}</div>
+          <div class="appbar-title">${old ? T('Редагувати') : T('Новий запис')}</div></div>
+      </header>
+      <section class="card sp-form">
+        <div class="field"><label>${T('Що це')}</label><div class="type-chips">${tchips('form', SUPP_FORMS, it.form)}</div></div>
+        <div class="field"><label>${T('Назва')}</label>
+          <input id="seName" maxlength="80" list="seNames" value="${esc(it.name)}" placeholder="${T('напр. Вітамін D3')}"/>
+          <datalist id="seNames">${SUPP_NAMES.map((n) => `<option value="${esc(T(n))}"></option>`).join('')}</datalist></div>
+        <div class="field-row">
+          <div class="field"><label>${T('Доза за раз')}</label><input id="seDose" inputmode="decimal" maxlength="12" value="${esc(it.dose)}" placeholder="${T('як призначив лікар')}"/></div>
+          <div class="field sp-unit"><label>${T('Одиниці')}</label><select id="seUnit">${SUPP_UNITS.map((u) => `<option value="${u}" ${it.unit === u ? 'selected' : ''}>${T(u)}</option>`).join('')}</select></div>
+        </div>
+        ${it.form === 'inj' ? `<div class="field"><label>${T('Як колоти')}</label><div class="type-chips">${tchips('route', { '': 'Не вказано', ...SUPP_ROUTE }, it.route)}</div></div>` : ''}
+        <div class="field"><label>${T('Коли за день')}</label>
+          <div class="sp-times">${it.times.map((t, i) => `<span class="sp-tm"><input type="time" data-ti="${i}" value="${t}"/>${it.times.length > 1 ? `<button class="rc-del" data-tdel="${i}">✕</button>` : ''}</span>`).join('')}
+            ${it.times.length < 6 ? `<button class="tchip" id="seTimeAdd">＋ ${T('ще прийом')}</button>` : ''}</div></div>
+        <div class="field"><label>${T('Їжа')}</label><div class="type-chips">${tchips('food', SUPP_FOOD, it.food)}</div></div>
+        <div class="field"><label>${T('Як часто')}</label><div class="type-chips">${tchips('sched', { daily: 'Щодня', every: 'Раз на кілька днів', week: 'Дні тижня' }, it.sched.type)}</div>
+          ${it.sched.type === 'every' ? `<div class="sp-inline">${T('кожні')} <input id="seN" type="number" inputmode="numeric" min="2" max="60" value="${it.sched.n}"/> ${T('дн.')}</div>` : ''}
+          ${it.sched.type === 'week' ? `<div class="type-chips">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<button class="tchip ${it.sched.days.includes(d) ? 'on' : ''}" data-wd="${d}">${dn[d]}</button>`).join('')}</div>` : ''}</div>
+        <div class="field-row">
+          <div class="field"><label>${T('Початок курсу')}</label><input id="seStart" type="date" value="${it.start}"/></div>
+          <div class="field"><label>${T('Тривалість, днів')}</label><input id="seLen" type="number" inputmode="numeric" min="0" max="3650" value="${it.len || ''}" placeholder="${T('без кінця')}"/></div>
+        </div>
+        <div class="field"><label>${T('Нотатка')}</label><textarea id="seNote" maxlength="300" rows="2" placeholder="${T('напр. хто призначив і що сказав лікар')}">${esc(it.note)}</textarea></div>
+      </section>
+      <p class="muted side small">⚠️ ${T('Записуй лише те, що призначив лікар. Gym Log не перевіряє дози й сумісність препаратів.')}</p>
+      <div class="btn-col">
+        <button class="btn primary" id="seSave">💾 ${T('Зберегти')}</button>
+        ${old ? `<button class="btn ghost" id="seDel">🗑 ${T('Видалити')}</button>` : ''}
+      </div>`;
+    const $ = (s) => screenEl.querySelector(s);
+    // поля вводу — у чернетку перед кожним перемальовуванням (щоб чипи не стирали введене)
+    const pull = () => {
+      it.name = $('#seName').value.trim();
+      it.dose = $('#seDose').value.trim();
+      it.unit = $('#seUnit').value;
+      it.times = [...screenEl.querySelectorAll('[data-ti]')].map((x) => x.value || '09:00');
+      it.start = $('#seStart').value || S.todayISO();
+      it.len = Number($('#seLen').value) || 0;
+      it.note = $('#seNote').value.trim();
+      if ($('#seN')) it.sched.n = Number($('#seN').value) || 2;
+    };
+    // спершу забрати введене, потім змінити й перемалювати
+    const on = (sel, fn) => screenEl.querySelectorAll(sel).forEach((b) => (b.onclick = () => { pull(); fn(b.dataset); draw(); }));
+    $('#backSe').onclick = () => history.back();
+    on('[data-form]', (d) => { if (d.form === 'inj' && it.form !== 'inj' && it.unit === 'мг') it.unit = 'мл'; it.form = d.form; });
+    on('[data-route]', (d) => { it.route = d.route; });
+    on('[data-food]', (d) => { it.food = d.food; });
+    on('[data-sched]', (d) => { it.sched.type = d.sched; });
+    on('[data-wd]', (d) => {
+      const w = Number(d.wd);
+      const a = it.sched.days;
+      if (a.includes(w)) { if (a.length > 1) a.splice(a.indexOf(w), 1); } else a.push(w);
+    });
+    on('[data-tdel]', (d) => { it.times.splice(Number(d.tdel), 1); });
+    const add = $('#seTimeAdd');
+    if (add) add.onclick = () => {
+      pull();
+      const last = it.times[it.times.length - 1] || '09:00';
+      const h = Math.min(23, Number(last.slice(0, 2)) + 4);
+      it.times.push(`${String(h).padStart(2, '0')}:${last.slice(3)}`);
+      draw();
+    };
+    $('#seSave').onclick = () => {
+      pull();
+      if (!it.name) { toast(T('Впиши назву')); $('#seName').focus(); return; }
+      S.saveSupp(it);
+      toast(`✅ ${T('Збережено')}`);
+      go('#/supps');
+    };
+    const del = $('#seDel');
+    if (del) del.onclick = () => {
+      if (!confirm(T('Видалити «{x}» разом з відмітками прийому?', { x: it.name }))) return;
+      S.deleteSupp(old.id);
+      go('#/supps');
+    };
+  };
+  draw();
 }
 
 // результат «страва / продукт»: назва, калорії, БЖВ і поле ваги (якщо відомо, від чого рахувати)
