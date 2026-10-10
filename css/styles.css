@@ -463,7 +463,7 @@ input, select { font-family: inherit; }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: .82rem; color: var(--muted); font-weight: 600; }
-.field input, .field select {
+.field input, .field select, .sp-inline input, .sp-inline select {
   background: var(--bg-card2); border: 1px solid var(--line); color: var(--txt);
   border-radius: 13px; padding: 12px 10px; font-size: 1rem; width: 100%;
 }
@@ -692,7 +692,33 @@ input, select { font-family: inherit; }
 .sp-tm { display: inline-flex; align-items: center; gap: 2px; }
 .sp-tm input { width: auto; }
 .sp-inline { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: .9rem; }
-.sp-inline input { width: 70px; }
+.sp-inline input { width: 76px; padding: 9px 10px; }
+.sp-inline select { padding: 9px 10px; }
+.sp-inline select, .sp-inline input.st-dose { flex: 1; min-width: 0; }
+.sp-inline input[type="date"] { flex: 1; width: auto; }
+.sp-inline .btn { width: auto; flex: 0 0 auto; padding-left: 18px; padding-right: 18px; }
+.sp-form p { margin: 0; }
+.spc-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.spc-head { margin: 4px 0; text-align: center; font-size: .7rem; color: var(--muted); font-weight: 700; }
+.spc-d { aspect-ratio: 1; border: 1px solid transparent; border-radius: 10px; background: var(--bg-card2); color: inherit; font: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 0; cursor: pointer; }
+.spc-d b { font-size: .85rem; }
+.spc-d i { font-style: normal; font-size: .62rem; font-weight: 800; color: var(--muted); }
+.spc-d.plan i { color: var(--blue-soft); }
+.spc-d.ok { background: var(--grad-primary); color: var(--on-accent); }
+.spc-d.ok i { color: var(--on-accent); }
+.spc-d.part i { color: var(--orange); }
+.spc-d.miss i { color: var(--danger); }
+.spc-d.today { border-color: var(--blue-soft); }
+.spc-d.sel { outline: 2px solid var(--txt); outline-offset: 1px; }
+.sp-sel { margin: 12px 0 6px; font-weight: 800; font-size: .9rem; }
+.cseg.sp-seg { grid-template-columns: 1fr 1fr; }
+.sp-old { margin: 4px 0 8px; }
+.sp-old summary { cursor: pointer; padding: 6px 4px; font-size: .85rem; }
+.sp-course.done { opacity: .65; }
+.sp-stages { display: flex; flex-direction: column; gap: 8px; }
+.sp-stage { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.sp-stage .sp-inline { margin-top: 0; }
+.sp-stage-h { display: flex; justify-content: space-between; align-items: center; }
 
 /* «Як виконувати»: два кадри старт/фінал змінюють один одного */
 .how-link { margin-top: 4px; padding: 0; border: 0; background: none; color: var(--blue-soft); font: inherit; font-size: .8rem; font-weight: 700; text-align: left; }

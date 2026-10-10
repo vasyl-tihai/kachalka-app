@@ -133,8 +133,9 @@ const routes = [
   { re: /^#\/calories$/, render: renderCalories },
   { re: /^#\/mealplan$/, render: renderMealPlan },
   { re: /^#\/meal\/(\d+)\/(\d+)$/, render: renderMeal },
-  { re: /^#\/supps$/, render: renderSupps },
-  { re: /^#\/supp\/([\w-]+)$/, render: renderSuppEdit },
+  { re: /^#\/supps(?:\/(day|month))?$/, render: (v) => { if (v) suppView = v; renderSupps(); } },
+  { re: /^#\/supp\/([\w-]+)(?:\/([\w-]+))?$/, render: renderSuppEdit },
+  { re: /^#\/course\/([\w-]+)$/, render: renderCourse },
   { re: /^#\/recipes$/, render: () => { commSeg = 'recipes'; return renderRecipes(); } },
   { re: /^#\/recipe-new$/, render: () => renderRecipeEdit(null) },
   { re: /^#\/recipe-edit\/(.+)$/, render: renderRecipeEdit },
@@ -232,7 +233,7 @@ function updateTabbar(hash) {
       (b.dataset.hash === '#/today' && hash === '#/') ||
       (b.dataset.hash === '#/calendar' && hash.startsWith('#/workout/')) ||
       (b.dataset.hash === '#/workouts' && hash.startsWith('#/program')) ||
-      (b.dataset.hash === '#/ai' && (hash === '#/calories' || hash === '#/mealplan' || hash.startsWith('#/meal/') || hash.startsWith('#/supp') || hash === '#/smart' || hash === '#/formcheck' || hash.startsWith('#/guide'))) ||
+      (b.dataset.hash === '#/ai' && (hash === '#/calories' || hash === '#/mealplan' || hash.startsWith('#/meal/') || hash.startsWith('#/supp') || hash.startsWith('#/course/') || hash === '#/smart' || hash === '#/formcheck' || hash.startsWith('#/guide'))) ||
       (b.dataset.hash === '#/progress' && (hash.startsWith('#/history') || hash.startsWith('#/body'))) ||
       (b.dataset.hash === '#/community' &&
         (hash.startsWith('#/user') || hash.startsWith('#/recipe') || hash.startsWith('#/coach') || hash.startsWith('#/chat') || hash.startsWith('#/client')));
@@ -5581,41 +5582,48 @@ function renderMeal(di, mi) {
 }
 
 // =====================================================================
-//  ВІТАМІНИ Й ДОБАВКИ — особистий нагадувач (що, скільки, коли; курс; уколи)
+//  ВІТАМІНИ Й ДОБАВКИ — особистий нагадувач (що, скільки, коли; курси на місяці вперед; етапи; уколи)
 //  Застосунок нічого не радить: дозування й курс — від лікаря, людина лише записує. Гормонів/стероїдів у підказках немає.
 // =====================================================================
 const SUPP_FORMS = { tab: ['💊', 'Таблетка'], cap: ['🟡', 'Капсула'], drop: ['💧', 'Краплі'], powder: ['🥄', 'Порошок'], inj: ['💉', 'Укол'], other: ['🧴', 'Інше'] };
 const SUPP_UNITS = ['мг', 'мкг', 'МО', 'г', 'мл', 'шт', 'крап.', 'од.'];
 const SUPP_FOOD = { '': 'Будь-коли', before: 'До їжі', with: 'Під час їжі', after: 'Після їжі' };
 const SUPP_ROUTE = { im: 'У мʼяз', sc: 'Під шкіру' };
+const COURSE_STATUS = { planned: '🗓 Заплановано', active: '▶ Триває', done: '✓ Завершено' };
 // лише назви для швидкого вводу — без доз (дозу людина пише сама зі слів лікаря)
 const SUPP_NAMES = ['Вітамін D3', 'Вітамін C', 'Вітамін B12', 'Вітаміни групи B', 'Вітамін E', 'Фолієва кислота', 'Омега-3', 'Магній', 'Цинк',
   'Залізо', 'Кальцій', 'Калій', 'Йод', 'Мультивітаміни', 'Креатин', 'Колаген', 'Пробіотик'];
-let suppDay = null; // день на екрані вітамінів (null = сьогодні)
+let suppDay = null; // вибраний день (null = сьогодні)
+let suppView = 'day'; // day | month
+let suppMonth = null; // 'YYYY-MM' на календарі (null = місяць вибраного дня)
 
 const suppsToday = () => { const d = S.suppDosesOn(S.todayISO()); return d.length ? `${d.filter((x) => x.taken).length}/${d.length} ›` : '›'; };
 const suppIcon = (it) => (SUPP_FORMS[it.form] || SUPP_FORMS.other)[0];
-const suppDose = (it) => (it.dose ? `${esc(it.dose)} ${T(it.unit)}` : '');
+const suppDose = (it, dose = it.dose) => (dose ? `${esc(dose)} ${T(it.unit)}` : '');
+const shortDate = (iso) => { const d = S.isoToDate(iso); return `${d.getDate()} ${dateNames().monthsShort[d.getMonth()]}`; };
+const stageText = (s) => (s.type === 'off' ? T('перерва') : s.type === 'every' ? (s.n === 2 ? T('через день') : T('кожні {n} дн.', { n: s.n })) : T('щодня'));
 function suppSchedText(it) {
   const sc = it.sched;
-  let s = sc.type === 'every' ? (sc.n === 2 ? T('через день') : T('кожні {n} дн.', { n: sc.n }))
-    : sc.type === 'week' ? sc.days.slice().sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((d) => dateNames().dows[d]).join(', ')
-      : T('щодня');
+  let s = it.stages.length ? it.stages.map((x) => `${x.days} ${T('дн.')} ${stageText(x)}`).join(' → ')
+    : sc.type === 'every' ? (sc.n === 2 ? T('через день') : T('кожні {n} дн.', { n: sc.n }))
+      : sc.type === 'week' ? sc.days.slice().sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((d) => dateNames().dows[d]).join(', ')
+        : T('щодня');
   s += ` · ${it.times.join(', ')}`;
   if (it.food) s += ` · ${T(SUPP_FOOD[it.food]).toLowerCase()}`;
   return s;
 }
 function suppCourseText(it, iso) {
-  if (!it.len) return '';
+  const len = S.suppLen(it);
   const d = S.suppCourseDay(it, iso);
-  if (d) return T('день {d} з {n}', { d, n: it.len });
-  return iso < it.start ? T('курс з {d}', { d: S.prettyDate(it.start) }) : T('курс завершено');
+  if (d) return len ? T('день {d} з {n}', { d, n: len }) : '';
+  const sp = S.suppSpan(it);
+  return iso < sp.start ? T('курс з {d}', { d: shortDate(sp.start) }) : T('курс завершено');
 }
 
 // рядок прийому з галочкою (екран вітамінів і картка «Сьогодні»)
 function suppDoseRow(iso, x) {
-  const extra = [suppDose(x.it), x.it.form === 'inj' && x.it.route ? T(SUPP_ROUTE[x.it.route]) : '', x.it.food ? T(SUPP_FOOD[x.it.food]) : '']
-    .filter(Boolean).join(' · ');
+  const extra = [suppDose(x.it, x.dose), x.stage ? `${T('етап')} ${x.stage}` : '', x.it.form === 'inj' && x.it.route ? T(SUPP_ROUTE[x.it.route]) : '',
+    x.it.food ? T(SUPP_FOOD[x.it.food]) : ''].filter(Boolean).join(' · ');
   return `<button class="sp-dose ${x.taken ? 'on' : ''}" data-id="${x.it.id}" data-i="${x.i}" data-iso="${iso}">
       <span class="sp-time">${x.time}</span>
       <span class="sp-ico">${suppIcon(x.it)}</span>
@@ -5629,6 +5637,18 @@ function bindSuppDoses(root, after) {
     if (on && navigator.vibrate) navigator.vibrate(15);
     after();
   }));
+}
+function suppItemRow(it, today) {
+  const c = suppCourseText(it, today);
+  return `<button class="pick-row aih-row sp-item" data-id="${it.id}">
+      <span class="pick-ico">${suppIcon(it)}</span>
+      <span class="aih-txt"><b>${esc(it.name)}${it.dose && !it.stages.length ? ` · ${suppDose(it)}` : ''}</b>
+        <span class="muted">${esc(suppSchedText(it))}${c ? ` · ${c}` : ''}</span></span>
+      <span class="fc-pat">›</span>
+    </button>`;
+}
+function courseDates(c, info) {
+  return `${shortDate(c.start)} – ${info.end ? shortDate(info.end) : T('без кінця')}`;
 }
 
 // картка на «Сьогодні»: лише якщо на цей день є прийоми
@@ -5646,20 +5666,58 @@ function bindSuppsCard(iso) {
   const card = screenEl.querySelector('#suppCard');
   if (!card) return;
   bindSuppDoses(card, () => {
-    const html = suppsCard(iso);
     const cur = screenEl.querySelector('#suppCard');
     if (!cur) return;
-    cur.outerHTML = html;
+    cur.outerHTML = suppsCard(iso);
     bindSuppsCard(iso);
   });
+}
+
+// календар місяця: на кожному дні — скільки прийомів і чи все прийнято
+function suppMonthHTML(sel, today) {
+  const [y, m] = (suppMonth || sel.slice(0, 7)).split('-').map(Number);
+  const first = new Date(y, m - 1, 1);
+  const lead = (first.getDay() + 6) % 7; // понеділок першим
+  const days = new Date(y, m, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push('<span></span>');
+  for (let d = 1; d <= days; d++) {
+    const iso = S.dateToISO(new Date(y, m - 1, d));
+    const ds = S.suppDosesOn(iso);
+    const done = ds.filter((x) => x.taken).length;
+    const st = !ds.length ? '' : done === ds.length ? 'ok' : iso < today ? (done ? 'part' : 'miss') : 'plan';
+    cells.push(`<button class="spc-d ${st} ${iso === today ? 'today' : ''} ${iso === sel ? 'sel' : ''}" data-iso="${iso}">
+      <b>${d}</b>${ds.length ? `<i>${iso <= today ? `${done}/${ds.length}` : ds.length}</i>` : ''}</button>`);
+  }
+  const dows = dateNames().dowsMon;
+  return `<div class="day-nav sp-nav">
+      <button class="chip" id="spmPrev">‹</button>
+      <div class="sp-day"><b>${dateNames().monthsFull[m - 1]} ${y}</b></div>
+      <button class="chip" id="spmNext">›</button>
+    </div>
+    <div class="spc-grid spc-head">${dows.map((x) => `<span>${x}</span>`).join('')}</div>
+    <div class="spc-grid">${cells.join('')}</div>`;
 }
 
 function renderSupps() {
   const today = S.todayISO();
   const iso = suppDay || today;
   const doses = S.suppDosesOn(iso);
-  const items = S.getSupps();
+  const loose = S.getSupps('');
+  const courses = S.getCourses().map((c) => ({ c, info: S.courseInfo(c.id) }));
+  const order = { active: 0, planned: 1, done: 2 };
+  courses.sort((a, b) => order[a.info.status] - order[b.info.status] || a.c.start.localeCompare(b.c.start));
+  const any = loose.length || courses.some((x) => x.info.items);
   const done = doses.filter((x) => x.taken).length;
+  const courseCard = ({ c, info }) => `<button class="pick-row aih-row sp-course ${info.status}" data-cid="${c.id}">
+      <span class="pick-ico">🗂</span>
+      <span class="aih-txt"><b>${esc(c.name)}</b>
+        <span class="muted">${T(COURSE_STATUS[info.status])} · ${courseDates(c, info)}${info.day && info.total ? ` · ${T('день {d} з {n}', { d: info.day, n: info.total })}` : ''}
+          · ${info.items} ${PL(info.items, 'пункт', 'пункти', 'пунктів')}</span></span>
+      <span class="fc-pat">›</span>
+    </button>`;
+  const live = courses.filter((x) => x.info.status !== 'done');
+  const old = courses.filter((x) => x.info.status === 'done');
   screenEl.innerHTML = `
     <header class="appbar">
       <button class="icon-btn" id="backSp">‹</button>
@@ -5670,32 +5728,41 @@ function renderSupps() {
       <b>⚠️ ${T('Не медична порада')}</b>
       <p>${T('Gym Log не лікар і не підказує, що, скільки й як приймати. Це лише твій нагадувач: дозування, курс і уколи — тільки за призначенням лікаря.')}</p>
     </section>
-    ${items.length ? `<section class="card">
-      <div class="day-nav sp-nav">
+    ${any ? `<div class="cseg sp-seg">
+        <button class="${suppView === 'day' ? 'on' : ''}" data-sv="day">📋 ${T('День')}</button>
+        <button class="${suppView === 'month' ? 'on' : ''}" data-sv="month">🗓 ${T('Місяць')}</button>
+      </div>
+      <section class="card">
+      ${suppView === 'month' ? suppMonthHTML(iso, today) : `<div class="day-nav sp-nav">
         <button class="chip" id="spPrev">‹</button>
         <div class="sp-day"><b>${iso === today ? T('Сьогодні') : S.prettyDate(iso)}</b>
           <span class="muted">${doses.length ? `${T('прийнято')} ${done}/${doses.length}` : T('прийомів немає')}</span></div>
         <button class="chip" id="spNext">›</button>
-      </div>
+      </div>`}
+      ${suppView === 'month' ? `<div class="sp-sel">${iso === today ? T('Сьогодні') : S.prettyDate(iso)} · ${doses.length ? `${T('прийнято')} ${done}/${doses.length}` : T('прийомів немає')}</div>` : ''}
       ${doses.length ? `<div class="sp-bar"><i style="width:${Math.round((done / doses.length) * 100)}%"></i></div>` : ''}
       <div id="spDoses">${doses.map((x) => suppDoseRow(iso, x)).join('')}</div>
     </section>` : ''}
-    <div class="card-label side-label">${T('Мій список')}</div>
+    <div class="card-label side-label">🗂 ${T('Курси')}</div>
     <div class="pick-list">
-      ${items.map((it) => {
-        const c = suppCourseText(it, today);
-        return `<button class="pick-row aih-row sp-item" data-id="${it.id}">
-          <span class="pick-ico">${suppIcon(it)}</span>
-          <span class="aih-txt"><b>${esc(it.name)}${it.dose ? ` · ${suppDose(it)}` : ''}</b>
-            <span class="muted">${esc(suppSchedText(it))}${c ? ` · ${c}` : ''}</span></span>
-          <span class="fc-pat">›</span>
-        </button>`;
-      }).join('') || `<p class="muted center">${T('Тут поки порожньо. Додай вітамін, добавку чи укол — і відмічай прийоми щодня.')}</p>`}
+      ${live.map(courseCard).join('') || `<p class="muted side small">${T('Курс — набір вітамінів чи уколів з датами на місяць або кілька. Його можна зберегти й потім повторити.')}</p>`}
     </div>
-    <div class="btn-col"><button class="btn primary" id="spAdd">＋ ${T('Додати')}</button></div>`;
+    ${old.length ? `<details class="sp-old"><summary class="muted">${T('Завершені курси')} (${old.length})</summary>
+      <div class="pick-list">${old.map(courseCard).join('')}</div></details>` : ''}
+    <div class="card-label side-label">💊 ${T('Окремо, без курсу')}</div>
+    <div class="pick-list">
+      ${loose.map((it) => suppItemRow(it, today)).join('') || `<p class="muted side small">${T('Тут — те, що приймаєш постійно, поза курсами.')}</p>`}
+    </div>
+    <div class="btn-row">
+      <button class="btn ghost" id="spAddCourse">🗂 ${T('Новий курс')}</button>
+      <button class="btn primary" id="spAdd">＋ ${T('Вітамін')}</button>
+    </div>`;
   screenEl.querySelector('#backSp').onclick = () => history.back();
   screenEl.querySelector('#spAdd').onclick = () => go('#/supp/new');
+  screenEl.querySelector('#spAddCourse').onclick = () => go('#/course/new');
   screenEl.querySelectorAll('.sp-item').forEach((b) => (b.onclick = () => go('#/supp/' + b.dataset.id)));
+  screenEl.querySelectorAll('.sp-course').forEach((b) => (b.onclick = () => go('#/course/' + b.dataset.cid)));
+  screenEl.querySelectorAll('[data-sv]').forEach((b) => (b.onclick = () => { suppView = b.dataset.sv; suppMonth = null; renderSupps(); }));
   const shift = (k) => {
     const d = S.isoToDate(iso);
     d.setDate(d.getDate() + k);
@@ -5706,18 +5773,108 @@ function renderSupps() {
   if (p) {
     p.onclick = () => shift(-1);
     screenEl.querySelector('#spNext').onclick = () => shift(1);
-    bindSuppDoses(screenEl.querySelector('#spDoses'), renderSupps);
   }
+  const mp = screenEl.querySelector('#spmPrev');
+  if (mp) {
+    const mshift = (k) => {
+      const [y, m] = (suppMonth || iso.slice(0, 7)).split('-').map(Number);
+      const d = new Date(y, m - 1 + k, 1);
+      suppMonth = S.dateToISO(d).slice(0, 7);
+      renderSupps();
+    };
+    mp.onclick = () => mshift(-1);
+    screenEl.querySelector('#spmNext').onclick = () => mshift(1);
+    screenEl.querySelectorAll('.spc-d').forEach((b) => (b.onclick = () => { suppDay = b.dataset.iso; renderSupps(); }));
+  }
+  const dl = screenEl.querySelector('#spDoses');
+  if (dl) bindSuppDoses(dl, renderSupps);
 }
 
-function renderSuppEdit(id) {
+// курс: назва, дати, пункти; повторити з нової дати, завершити, видалити
+function renderCourse(id) {
+  const old = id === 'new' ? null : S.getCourse(id);
+  if (id !== 'new' && !old) { go('#/supps'); return; }
+  const c = old ? { ...old } : { name: '', start: S.todayISO(), len: 30, note: '' };
+  const info = old ? S.courseInfo(old.id) : null;
+  const today = S.todayISO();
+  const items = old ? S.getSupps(old.id) : [];
+  const nextStart = info && info.end && info.end >= today ? S.dateToISO(new Date(S.isoToDate(info.end).getTime() + 86400000)) : today;
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backCs">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">🗂 ${T('Курс')}</div>
+        <div class="appbar-title">${old ? esc(old.name) : T('Новий курс')}</div></div>
+    </header>
+    ${info ? `<p class="muted side">${T(COURSE_STATUS[info.status])} · ${courseDates(old, info)}${info.day && info.total ? ` · ${T('день {d} з {n}', { d: info.day, n: info.total })}` : ''}</p>` : ''}
+    <section class="card sp-form">
+      <div class="field"><label>${T('Назва курсу')}</label>
+        <input id="csName" maxlength="60" value="${esc(c.name)}" placeholder="${T('напр. Вітаміни на осінь')}"/></div>
+      <div class="field-row">
+        <div class="field"><label>${T('Початок')}</label><input id="csStart" type="date" value="${c.start}"/></div>
+        <div class="field"><label>${T('Тривалість, днів')}</label><input id="csLen" type="number" inputmode="numeric" min="0" max="3650" value="${c.len || ''}" placeholder="${T('без кінця')}"/></div>
+      </div>
+      <div class="field"><label>${T('Нотатка')}</label><textarea id="csNote" maxlength="300" rows="2" placeholder="${T('напр. хто призначив і що сказав лікар')}">${esc(c.note)}</textarea></div>
+      <button class="btn primary" id="csSave">💾 ${old ? T('Зберегти') : T('Створити курс')}</button>
+    </section>
+    ${old ? `<div class="card-label side-label">${T('Що входить у курс')}</div>
+    <div class="pick-list">${items.map((it) => suppItemRow(it, today)).join('') || `<p class="muted side small">${T('Додай вітаміни чи уколи — вони почнуться з початком курсу.')}</p>`}</div>
+    <div class="btn-col"><button class="btn ghost" id="csAdd">＋ ${T('Додати в курс')}</button></div>
+    <section class="card sp-form">
+      <div class="card-label">🔁 ${T('Повторити курс')}</div>
+      <p class="muted small">${T('Копія з тими самими пунктами, дозами й етапами — з нової дати. Потім можна підправити.')}</p>
+      <div class="sp-inline"><input id="csRepStart" type="date" value="${nextStart}"/><button class="btn ghost" id="csRep">${T('Повторити')}</button></div>
+    </section>
+    <div class="btn-col">
+      ${info.status === 'active' && !old.stop ? `<button class="btn ghost" id="csStop">⏹ ${T('Завершити сьогодні')}</button>` : ''}
+      ${old.stop ? `<button class="btn ghost" id="csResume">▶ ${T('Продовжити курс')}</button>` : ''}
+      <button class="btn ghost" id="csDel">🗑 ${T('Видалити курс')}</button>
+    </div>` : ''}`;
+  const $ = (s) => screenEl.querySelector(s);
+  $('#backCs').onclick = () => history.back();
+  $('#csSave').onclick = () => {
+    const name = $('#csName').value.trim();
+    if (!name) { toast(T('Впиши назву')); $('#csName').focus(); return; }
+    const saved = S.saveCourse({ ...c, name, start: $('#csStart').value || today, len: Number($('#csLen').value) || 0, note: $('#csNote').value.trim() });
+    toast(`✅ ${T('Збережено')}`);
+    if (old) renderCourse(saved.id);
+    else location.replace('#/course/' + saved.id);
+  };
+  if (!old) return;
+  $('#csAdd').onclick = () => go(`#/supp/new/${old.id}`);
+  screenEl.querySelectorAll('.sp-item').forEach((b) => (b.onclick = () => go('#/supp/' + b.dataset.id)));
+  $('#csRep').onclick = () => {
+    const start = $('#csRepStart').value;
+    if (!start) return;
+    const nc = S.repeatCourse(old.id, start);
+    toast(`✅ ${T('Курс повторено з {d}', { d: shortDate(start) })}`);
+    go('#/course/' + nc.id);
+  };
+  const stop = $('#csStop');
+  if (stop) stop.onclick = () => {
+    if (!confirm(T('Завершити курс сьогодні? Далі прийоми з нього не показуватимуться.'))) return;
+    S.saveCourse({ ...old, stop: today });
+    renderCourse(old.id);
+  };
+  const res = $('#csResume');
+  if (res) res.onclick = () => { S.saveCourse({ ...old, stop: '' }); renderCourse(old.id); };
+  $('#csDel').onclick = () => {
+    if (!confirm(T('Видалити курс «{x}» з усіма пунктами й відмітками?', { x: old.name }))) return;
+    S.deleteCourse(old.id);
+    go('#/supps');
+  };
+}
+
+function renderSuppEdit(id, courseId) {
   const old = id === 'new' ? null : S.getSupp(id);
   if (id !== 'new' && !old) { go('#/supps'); return; }
-  const it = old ? JSON.parse(JSON.stringify(old)) : { name: '', form: 'tab', dose: '', unit: 'мг', times: ['09:00'], food: '', sched: { type: 'daily', n: 2, days: [1, 3, 5] }, start: S.todayISO(), len: 0, route: '', note: '' };
+  const it = old ? JSON.parse(JSON.stringify(old)) : { course: S.getCourse(courseId) ? courseId : '', name: '', form: 'tab', dose: '', unit: 'мг', times: ['09:00'], food: '', sched: { type: 'daily', n: 2, days: [1, 3, 5] }, start: S.todayISO(), len: 0, stages: [], route: '', note: '' };
   if (!it.sched.days.length) it.sched.days = [1, 3, 5];
   const dn = dateNames().dows;
+  const courses = S.getCourses().filter((c) => c.id === it.course || S.courseInfo(c.id).status !== 'done');
   const draw = () => {
     const tchips = (attr, map, cur) => Object.entries(map).map(([k, v]) => `<button class="tchip ${cur === k ? 'on' : ''}" data-${attr}="${k}">${Array.isArray(v) ? `${v[0]} ${T(v[1])}` : T(v)}</button>`).join('');
+    const staged = it.stages.length > 0;
+    const total = it.stages.reduce((a, s) => a + (Number(s.days) || 0), 0);
     screenEl.innerHTML = `
       <header class="appbar">
         <button class="icon-btn" id="backSe">‹</button>
@@ -5729,8 +5886,11 @@ function renderSuppEdit(id) {
         <div class="field"><label>${T('Назва')}</label>
           <input id="seName" maxlength="80" list="seNames" value="${esc(it.name)}" placeholder="${T('напр. Вітамін D3')}"/>
           <datalist id="seNames">${SUPP_NAMES.map((n) => `<option value="${esc(T(n))}"></option>`).join('')}</datalist></div>
+        <div class="field"><label>${T('Курс')}</label><select id="seCourse">
+          <option value="">${T('Без курсу')}</option>
+          ${courses.map((c) => `<option value="${c.id}" ${it.course === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
         <div class="field-row">
-          <div class="field"><label>${T('Доза за раз')}</label><input id="seDose" inputmode="decimal" maxlength="12" value="${esc(it.dose)}" placeholder="${T('як призначив лікар')}"/></div>
+          ${staged ? '' : `<div class="field"><label>${T('Доза за раз')}</label><input id="seDose" inputmode="decimal" maxlength="12" value="${esc(it.dose)}" placeholder="${T('як призначив лікар')}"/></div>`}
           <div class="field sp-unit"><label>${T('Одиниці')}</label><select id="seUnit">${SUPP_UNITS.map((u) => `<option value="${u}" ${it.unit === u ? 'selected' : ''}>${T(u)}</option>`).join('')}</select></div>
         </div>
         ${it.form === 'inj' ? `<div class="field"><label>${T('Як колоти')}</label><div class="type-chips">${tchips('route', { '': 'Не вказано', ...SUPP_ROUTE }, it.route)}</div></div>` : ''}
@@ -5738,13 +5898,28 @@ function renderSuppEdit(id) {
           <div class="sp-times">${it.times.map((t, i) => `<span class="sp-tm"><input type="time" data-ti="${i}" value="${t}"/>${it.times.length > 1 ? `<button class="rc-del" data-tdel="${i}">✕</button>` : ''}</span>`).join('')}
             ${it.times.length < 6 ? `<button class="tchip" id="seTimeAdd">＋ ${T('ще прийом')}</button>` : ''}</div></div>
         <div class="field"><label>${T('Їжа')}</label><div class="type-chips">${tchips('food', SUPP_FOOD, it.food)}</div></div>
-        <div class="field"><label>${T('Як часто')}</label><div class="type-chips">${tchips('sched', { daily: 'Щодня', every: 'Раз на кілька днів', week: 'Дні тижня' }, it.sched.type)}</div>
+        <label class="share-row"><input type="checkbox" id="seStaged" ${staged ? 'checked' : ''}/>
+          <span>📆 ${T('Розписати етапами')}<small class="muted">${T('напр. 10 днів щодня → 20 днів через день → 14 днів перерва')}</small></span></label>
+        ${staged ? `<div class="sp-stages">
+          ${it.stages.map((s, k) => `<div class="sp-stage" data-k="${k}">
+            <div class="sp-stage-h"><b>${T('Етап')} ${k + 1}</b>${it.stages.length > 1 ? `<button class="rc-del" data-sdel="${k}">✕</button>` : ''}</div>
+            <div class="sp-inline">
+              <input class="st-days" type="number" inputmode="numeric" min="1" max="365" value="${s.days}"/> ${T('дн.')}
+              <select class="st-type">${[['daily', 'щодня'], ['every', 'раз на кілька днів'], ['off', 'перерва']].map(([v, l]) => `<option value="${v}" ${s.type === v ? 'selected' : ''}>${T(l)}</option>`).join('')}</select>
+            </div>
+            ${s.type === 'every' ? `<div class="sp-inline">${T('кожні')} <input class="st-n" type="number" inputmode="numeric" min="2" max="60" value="${s.n}"/> ${T('дн.')}</div>` : ''}
+            ${s.type === 'off' ? '' : `<div class="sp-inline">${T('доза')} <input class="st-dose" inputmode="decimal" maxlength="12" value="${esc(s.dose)}" placeholder="${T('як призначив лікар')}"/> ${T(it.unit)}</div>`}
+          </div>`).join('')}
+          ${it.stages.length < 12 ? `<button class="tchip" id="seStageAdd">＋ ${T('етап')}</button>` : ''}
+          <p class="muted small">${T('Разом')}: ${total} ${PL(total, 'день', 'дні', 'днів')}</p>
+        </div>` : `<div class="field"><label>${T('Як часто')}</label><div class="type-chips">${tchips('sched', { daily: 'Щодня', every: 'Раз на кілька днів', week: 'Дні тижня' }, it.sched.type)}</div>
           ${it.sched.type === 'every' ? `<div class="sp-inline">${T('кожні')} <input id="seN" type="number" inputmode="numeric" min="2" max="60" value="${it.sched.n}"/> ${T('дн.')}</div>` : ''}
-          ${it.sched.type === 'week' ? `<div class="type-chips">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<button class="tchip ${it.sched.days.includes(d) ? 'on' : ''}" data-wd="${d}">${dn[d]}</button>`).join('')}</div>` : ''}</div>
+          ${it.sched.type === 'week' ? `<div class="type-chips">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<button class="tchip ${it.sched.days.includes(d) ? 'on' : ''}" data-wd="${d}">${dn[d]}</button>`).join('')}</div>` : ''}</div>`}
         <div class="field-row">
-          <div class="field"><label>${T('Початок курсу')}</label><input id="seStart" type="date" value="${it.start}"/></div>
-          <div class="field"><label>${T('Тривалість, днів')}</label><input id="seLen" type="number" inputmode="numeric" min="0" max="3650" value="${it.len || ''}" placeholder="${T('без кінця')}"/></div>
+          ${it.course ? '' : `<div class="field"><label>${T('Початок курсу')}</label><input id="seStart" type="date" value="${it.start}"/></div>`}
+          ${staged ? '' : `<div class="field"><label>${T('Тривалість, днів')}</label><input id="seLen" type="number" inputmode="numeric" min="0" max="3650" value="${it.len || ''}" placeholder="${it.course ? T('до кінця курсу') : T('без кінця')}"/></div>`}
         </div>
+        ${it.course ? `<p class="muted small">${T('Починається з початком курсу')}</p>` : ''}
         <div class="field"><label>${T('Нотатка')}</label><textarea id="seNote" maxlength="300" rows="2" placeholder="${T('напр. хто призначив і що сказав лікар')}">${esc(it.note)}</textarea></div>
       </section>
       <p class="muted side small">⚠️ ${T('Записуй лише те, що призначив лікар. Gym Log не перевіряє дози й сумісність препаратів.')}</p>
@@ -5756,13 +5931,21 @@ function renderSuppEdit(id) {
     // поля вводу — у чернетку перед кожним перемальовуванням (щоб чипи не стирали введене)
     const pull = () => {
       it.name = $('#seName').value.trim();
-      it.dose = $('#seDose').value.trim();
+      it.course = $('#seCourse').value;
+      if ($('#seDose')) it.dose = $('#seDose').value.trim();
       it.unit = $('#seUnit').value;
       it.times = [...screenEl.querySelectorAll('[data-ti]')].map((x) => x.value || '09:00');
-      it.start = $('#seStart').value || S.todayISO();
-      it.len = Number($('#seLen').value) || 0;
+      if ($('#seStart')) it.start = $('#seStart').value || S.todayISO();
+      if ($('#seLen')) it.len = Number($('#seLen').value) || 0;
       it.note = $('#seNote').value.trim();
       if ($('#seN')) it.sched.n = Number($('#seN').value) || 2;
+      screenEl.querySelectorAll('.sp-stage').forEach((el) => {
+        const s = it.stages[Number(el.dataset.k)];
+        s.days = Math.max(1, Number(el.querySelector('.st-days').value) || 1);
+        s.type = el.querySelector('.st-type').value;
+        if (el.querySelector('.st-n')) s.n = Number(el.querySelector('.st-n').value) || 2;
+        if (el.querySelector('.st-dose')) s.dose = el.querySelector('.st-dose').value.trim();
+      });
     };
     // спершу забрати введене, потім змінити й перемалювати
     const on = (sel, fn) => screenEl.querySelectorAll(sel).forEach((b) => (b.onclick = () => { pull(); fn(b.dataset); draw(); }));
@@ -5777,6 +5960,23 @@ function renderSuppEdit(id) {
       if (a.includes(w)) { if (a.length > 1) a.splice(a.indexOf(w), 1); } else a.push(w);
     });
     on('[data-tdel]', (d) => { it.times.splice(Number(d.tdel), 1); });
+    on('[data-sdel]', (d) => { it.stages.splice(Number(d.sdel), 1); });
+    $('#seCourse').onchange = () => { pull(); draw(); };
+    screenEl.querySelectorAll('.st-type').forEach((x) => (x.onchange = () => { pull(); draw(); }));
+    $('#seStaged').onchange = (e) => {
+      pull();
+      it.stages = e.target.checked
+        ? [{ days: it.len || 30, dose: it.dose, type: it.sched.type === 'every' ? 'every' : 'daily', n: it.sched.n }]
+        : [];
+      draw();
+    };
+    const addSt = $('#seStageAdd');
+    if (addSt) addSt.onclick = () => {
+      pull();
+      const last = it.stages[it.stages.length - 1];
+      it.stages.push({ days: 7, dose: last ? last.dose : it.dose, type: 'off', n: 2 });
+      draw();
+    };
     const add = $('#seTimeAdd');
     if (add) add.onclick = () => {
       pull();
@@ -5788,15 +5988,16 @@ function renderSuppEdit(id) {
     $('#seSave').onclick = () => {
       pull();
       if (!it.name) { toast(T('Впиши назву')); $('#seName').focus(); return; }
+      if (it.stages.length && it.stages.every((s) => s.type === 'off')) { toast(T('Потрібен хоча б один етап з прийомом')); return; }
       S.saveSupp(it);
       toast(`✅ ${T('Збережено')}`);
-      go('#/supps');
+      history.back();
     };
     const del = $('#seDel');
     if (del) del.onclick = () => {
       if (!confirm(T('Видалити «{x}» разом з відмітками прийому?', { x: it.name }))) return;
       S.deleteSupp(old.id);
-      go('#/supps');
+      history.back();
     };
   };
   draw();

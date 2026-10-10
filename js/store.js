@@ -118,7 +118,7 @@ function defaultState() {
     calories: {}, // { 'YYYY-MM-DD': [ {id, name, kcal, prot, fat, carb, g?} ] } — журнал їжі (фото / штрихкод); g — вага, г
     recipes: { fav: [], own: [] }, // обрані id рецептів і власні рецепти (фото — в IndexedDB)
     mealPlan: null, // «Чек → меню»: продукти з чека, налаштування й складене меню (normalizeMealPlan)
-    supps: { items: [], log: {} }, // вітаміни й добавки: що, скільки, коли + відмітки прийому (normalizeSupps)
+    supps: { courses: [], items: [], log: {} }, // вітаміни й добавки: що, скільки, коли + відмітки прийому (normalizeSupps)
     settings: {
       restSeconds: 60,
       restStep: 30,
@@ -470,16 +470,20 @@ export function setMealPlan(m) {
 
 // ---------- вітаміни й добавки ----------
 // Особистий нагадувач: людина сама вписує, що, скільки й коли (за призначенням лікаря). Застосунок нічого не радить.
-// { items: [{ id, name, form: tab|cap|drop|powder|inj|other, dose, unit, times: ['08:00'], food: ''|before|with|after,
-//   sched: { type: daily|every|week, n, days: [0..6] }, start: ISO, len: днів (0 = без кінця), route: ''|im|sc, note }],
+// { courses: [{ id, name, start: ISO, len: днів (0 = без кінця), stop: ISO|'' (завершено достроково), note }],
+//   items: [{ id, course: id|'', name, form: tab|cap|drop|powder|inj|other, dose, unit, times: ['08:00'],
+//     food: ''|before|with|after, sched: { type: daily|every|week, n, days: [0..6] }, start: ISO (без курсу),
+//     len: днів (0 = без кінця / до кінця курсу), stages: [{ days, dose, type: daily|every|off, n }], route: ''|im|sc, note }],
 //   log: { ISO: { id: [номери прийомів за день] } } }
+// Пункт курсу починається з початком курсу (свого start не має) — зсув курсу зсуває все. Етапи (stages) — розпис
+// по днях: «10 днів щодня 1 мл → 20 днів через день → 14 днів перерва»; з етапами тривалість = сума днів етапів.
 // Як і меню чека: викликається з load() — константи тільки всередині функції (TDZ), помилка не валить решту даних.
 export function normalizeSupps(x) {
   try {
     return normSupps(x);
   } catch (e) {
     console.warn('Список вітамінів пошкоджений — скидаю', e);
-    return { items: [], log: {} };
+    return { courses: [], items: [], log: {} };
   }
 }
 function normSupps(x) {
@@ -487,24 +491,45 @@ function normSupps(x) {
   const UNITS = ['мг', 'мкг', 'МО', 'г', 'мл', 'шт', 'крап.', 'од.'];
   const ISO = /^\d{4}-\d{2}-\d{2}$/;
   const str = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+  const int = (v, lo, hi, d) => Math.min(hi, Math.max(lo, Math.round(Number(v)) || d));
+  const rid = () => 'sp-' + Math.random().toString(36).slice(2);
   const o = x && typeof x === 'object' ? x : {};
-  const items = (Array.isArray(o.items) ? o.items : []).slice(0, 60).map((it) => {
+  const courses = (Array.isArray(o.courses) ? o.courses : []).slice(0, 40).map((c) => {
+    c = c && typeof c === 'object' ? c : {};
+    return {
+      id: str(c.id, 60) || rid(),
+      name: str(c.name, 60),
+      start: ISO.test(c.start) ? c.start : todayISO(),
+      len: int(c.len, 0, 3650, 0),
+      stop: ISO.test(c.stop) ? c.stop : '',
+      note: str(c.note, 300),
+      created: Number(c.created) || Date.now(),
+    };
+  }).filter((c) => c.name);
+  const cids = new Set(courses.map((c) => c.id));
+  const items = (Array.isArray(o.items) ? o.items : []).slice(0, 120).map((it) => {
     it = it && typeof it === 'object' ? it : {};
     const sc = it.sched && typeof it.sched === 'object' ? it.sched : {};
     const type = ['daily', 'every', 'week'].includes(sc.type) ? sc.type : 'daily';
     const times = (Array.isArray(it.times) ? it.times : []).map((t) => str(t, 5)).filter((t) => /^\d{2}:\d{2}$/.test(t)).slice(0, 6).sort();
+    const stages = (Array.isArray(it.stages) ? it.stages : []).slice(0, 12).map((s) => {
+      s = s && typeof s === 'object' ? s : {};
+      return { days: int(s.days, 1, 365, 7), dose: str(s.dose, 12), type: ['daily', 'every', 'off'].includes(s.type) ? s.type : 'daily', n: int(s.n, 2, 60, 2) };
+    });
     return {
-      id: str(it.id, 60) || 'sp-' + Math.random().toString(36).slice(2),
+      id: str(it.id, 60) || rid(),
+      course: cids.has(it.course) ? it.course : '',
       name: str(it.name, 80),
       form: FORMS.includes(it.form) ? it.form : 'tab',
       dose: str(it.dose, 12),
       unit: UNITS.includes(it.unit) ? it.unit : 'мг',
       times: times.length ? times : ['09:00'],
       food: ['before', 'with', 'after'].includes(it.food) ? it.food : '',
-      sched: { type, n: Math.min(60, Math.max(2, Math.round(Number(sc.n) || 2))),
+      sched: { type, n: int(sc.n, 2, 60, 2),
         days: (Array.isArray(sc.days) ? sc.days : []).map(Number).filter((d) => d >= 0 && d <= 6).slice(0, 7) },
       start: ISO.test(it.start) ? it.start : todayISO(),
-      len: Math.min(3650, Math.max(0, Math.round(Number(it.len) || 0))),
+      len: int(it.len, 0, 3650, 0),
+      stages,
       route: ['im', 'sc'].includes(it.route) ? it.route : '',
       note: str(it.note, 300),
       created: Number(it.created) || Date.now(),
@@ -523,16 +548,24 @@ function normSupps(x) {
     }
     if (Object.keys(day).length) log[d] = day;
   }
-  return { items, log };
+  return { courses, items, log };
 }
-export function getSupps() {
-  return state.supps.items.slice().sort((a, b) => a.times[0].localeCompare(b.times[0]) || a.name.localeCompare(b.name));
+const addDaysISO = (iso, n) => {
+  const d = isoToDate(iso);
+  d.setDate(d.getDate() + n);
+  return dateToISO(d);
+};
+const daysBetween = (a, b) => Math.round((isoToDate(b) - isoToDate(a)) / 86400000);
+
+export function getSupps(courseId) {
+  return state.supps.items.filter((x) => courseId === undefined || x.course === courseId)
+    .sort((a, b) => a.times[0].localeCompare(b.times[0]) || a.name.localeCompare(b.name));
 }
 export function getSupp(id) {
   return state.supps.items.find((x) => x.id === id) || null;
 }
 export function saveSupp(item) {
-  const clean = normalizeSupps({ items: [{ ...item, id: item.id || 'sp-' + uid() }] }).items[0];
+  const clean = normalizeSupps({ courses: state.supps.courses, items: [{ ...item, id: item.id || 'sp-' + uid() }] }).items[0];
   if (!clean) return null;
   const i = state.supps.items.findIndex((x) => x.id === clean.id);
   if (i >= 0) state.supps.items[i] = { ...clean, created: state.supps.items[i].created };
@@ -540,36 +573,119 @@ export function saveSupp(item) {
   saveNow();
   return clean;
 }
-export function deleteSupp(id) {
-  state.supps.items = state.supps.items.filter((x) => x.id !== id);
+function dropLog(ids) {
   for (const d of Object.keys(state.supps.log)) {
-    delete state.supps.log[d][id];
+    for (const id of ids) delete state.supps.log[d][id];
     if (!Object.keys(state.supps.log[d]).length) delete state.supps.log[d];
   }
+}
+export function deleteSupp(id) {
+  state.supps.items = state.supps.items.filter((x) => x.id !== id);
+  dropLog([id]);
   saveNow();
 }
-// день курсу (1…len) або 0, якщо цього дня прийому немає
+
+// --- курси ---
+export function getCourses() {
+  return state.supps.courses.slice().sort((a, b) => a.start.localeCompare(b.start));
+}
+export function getCourse(id) {
+  return state.supps.courses.find((c) => c.id === id) || null;
+}
+export function saveCourse(c) {
+  const clean = normalizeSupps({ courses: [{ ...c, id: c.id || 'cs-' + uid() }] }).courses[0];
+  if (!clean) return null;
+  const i = state.supps.courses.findIndex((x) => x.id === clean.id);
+  if (i >= 0) state.supps.courses[i] = { ...clean, created: state.supps.courses[i].created };
+  else state.supps.courses.push(clean);
+  saveNow();
+  return clean;
+}
+export function deleteCourse(id) {
+  const gone = state.supps.items.filter((x) => x.course === id).map((x) => x.id);
+  state.supps.items = state.supps.items.filter((x) => x.course !== id);
+  state.supps.courses = state.supps.courses.filter((c) => c.id !== id);
+  dropLog(gone);
+  saveNow();
+}
+// копія курсу з усіма пунктами з нової дати (відмітки прийому не копіюються)
+export function repeatCourse(id, start) {
+  const c = getCourse(id);
+  if (!c) return null;
+  const nc = saveCourse({ ...c, id: '', name: c.name, start, stop: '', created: Date.now() });
+  for (const it of state.supps.items.filter((x) => x.course === id)) {
+    state.supps.items.push({ ...JSON.parse(JSON.stringify(it)), id: 'sp-' + uid(), course: nc.id, created: Date.now() });
+  }
+  saveNow();
+  return nc;
+}
+
+// межі пункту: { start, len (0 = без кінця), stop }
+export function suppSpan(it) {
+  const c = it.course ? getCourse(it.course) : null;
+  const len = it.stages.length ? it.stages.reduce((a, s) => a + s.days, 0) : it.len || (c ? c.len : 0);
+  return { start: c ? c.start : it.start, len, stop: c ? c.stop : '' };
+}
+export function suppEnd(it) { // останній день або '' (без кінця)
+  const sp = suppSpan(it);
+  const end = sp.len ? addDaysISO(sp.start, sp.len - 1) : '';
+  return sp.stop && (!end || sp.stop < end) ? sp.stop : end;
+}
+// день курсу (1…len) або 0, якщо поза курсом
 export function suppCourseDay(it, iso) {
-  const diff = Math.round((isoToDate(iso) - isoToDate(it.start)) / 86400000);
-  if (diff < 0 || (it.len && diff >= it.len)) return 0;
+  const sp = suppSpan(it);
+  const diff = daysBetween(sp.start, iso);
+  if (diff < 0 || (sp.len && diff >= sp.len) || (sp.stop && iso > sp.stop)) return 0;
   return diff + 1;
 }
-export function suppDueOn(it, iso) {
+export function suppLen(it) { return suppSpan(it).len; }
+// що діє цього дня: { dose, stage (номер етапу з 1 або 0) } або null, якщо прийому немає
+export function suppOn(it, iso) {
   const day = suppCourseDay(it, iso);
-  if (!day) return false;
-  if (it.sched.type === 'every') return (day - 1) % it.sched.n === 0;
-  if (it.sched.type === 'week') return it.sched.days.includes(isoToDate(iso).getDay());
-  return true;
+  if (!day) return null;
+  if (it.stages.length) {
+    let d = day;
+    for (let k = 0; k < it.stages.length; k++) {
+      const s = it.stages[k];
+      if (d > s.days) { d -= s.days; continue; }
+      if (s.type === 'off' || (s.type === 'every' && (d - 1) % s.n !== 0)) return null;
+      return { dose: s.dose || it.dose, stage: k + 1 };
+    }
+    return null;
+  }
+  if (it.sched.type === 'every' && (day - 1) % it.sched.n !== 0) return null;
+  if (it.sched.type === 'week' && !it.sched.days.includes(isoToDate(iso).getDay())) return null;
+  return { dose: it.dose, stage: 0 };
 }
-// прийоми на день: [{ it, i, time, taken }] за часом
+export function suppDueOn(it, iso) {
+  return !!suppOn(it, iso);
+}
+// прийоми на день: [{ it, i, time, taken, dose, stage }] за часом
 export function suppDosesOn(iso) {
   const log = state.supps.log[iso] || {};
   const out = [];
   for (const it of state.supps.items) {
-    if (!suppDueOn(it, iso)) continue;
-    it.times.forEach((time, i) => out.push({ it, i, time, taken: (log[it.id] || []).includes(i) }));
+    const on = suppOn(it, iso);
+    if (!on) continue;
+    it.times.forEach((time, i) => out.push({ it, i, time, taken: (log[it.id] || []).includes(i), dose: on.dose, stage: on.stage }));
   }
   return out.sort((a, b) => a.time.localeCompare(b.time) || a.it.name.localeCompare(b.it.name));
+}
+// стан курсу: planned | active | done; end — останній день ('' = без кінця)
+export function courseInfo(id) {
+  const c = getCourse(id);
+  if (!c) return null;
+  const its = state.supps.items.filter((x) => x.course === id);
+  // кінець — за тривалістю курсу (або довшим пунктом); без тривалості — за пунктами, якщо всі скінченні
+  const ends = its.map(suppEnd);
+  const fin = ends.filter(Boolean).sort();
+  let end = c.len ? [addDaysISO(c.start, c.len - 1), ...fin].sort().pop()
+    : its.length && !ends.includes('') ? fin.pop() : '';
+  if (c.stop && (!end || c.stop < end)) end = c.stop;
+  const today = todayISO();
+  const status = c.start > today ? 'planned' : end && end < today ? 'done' : 'active';
+  return { status, end, items: its.length, day: status === 'active' ? daysBetween(c.start, today) + 1 : 0,
+    total: end ? daysBetween(c.start, end) + 1 : 0 };
 }
 export function toggleSuppDose(iso, id, i) {
   const log = state.supps.log;
