@@ -341,7 +341,10 @@ export async function myId() {
   const s = await getSession();
   return s ? s.user.id : null;
 }
+// id співрозмовника йде з адреси (#/chat/<id>) у фільтр PostgREST — лише UUID, інакше можна дописати свої умови
+const isUUID = (v) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 export async function listMessages(otherId) {
+  if (!isUUID(otherId)) return [];
   const sb = await client();
   const s = await getSession();
   const me = s.user.id;
