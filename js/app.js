@@ -15,6 +15,7 @@ import { exIconHTML, patternIconHTML } from './exicons.js';
 import * as FX from './fx.js';
 import * as BE from './backend.js';
 import { APP_VERSION } from './version.js';
+import { startIcons } from './icons.js';
 import * as CAL from './calories.js';
 import * as BC from './barcode.js';
 import * as GD from './guides.js';
@@ -3679,7 +3680,7 @@ function postCardHTML(p, meId, liked) {
     <img class="post-img" src="${esc(p.photo_url)}" alt="" loading="lazy"${fb}/>
     <div class="post-acts">
       <button class="post-act ${on ? 'on' : ''}" data-like="${esc(p.id)}">${on ? '♥' : '♡'}</button>
-      <button class="post-act" data-share="${esc(p.id)}">↗</button>
+      <button class="post-act" data-share="${esc(p.id)}">📤</button>
     </div>
     ${p.caption ? `<p class="post-cap">${esc(p.official || a.official || a.sample ? T(p.caption) : p.caption)}</p>` : ''}
   </section>`;
@@ -4316,7 +4317,7 @@ async function renderCoachRole(prof) {
         <p class="muted side" style="margin:8px 4px">Обери день → торкайся вільних годин, щоб відкрити запис. Клієнт зможе записатися лише на позначені години й саме на цю тривалість.</p>
         <div id="hourGrid" class="hour-grid"><p class="muted">Завантаження…</p></div>
       </section>
-      <section class="card"><div class="card-label">🔔 Заявки на тренування</div>
+      <section class="card"><div class="card-label">🛎️ Заявки на тренування</div>
         <div id="reqList"><p class="muted">Завантаження…</p></div>
       </section>
       <section class="card"><div class="card-label">👥 Мої клієнти</div>
@@ -6516,6 +6517,7 @@ let pendingShare = '';
     history.replaceState(null, '', location.pathname + '#/recipe-new');
   }
 }
+startIcons(); // емодзі в розмітці → власні іконки (js/icons.js)
 router();
 if (supQueue().length) setTimeout(() => flushSupport().catch(() => {}), 5000); // звернення, що чекали на звʼязок
 

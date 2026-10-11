@@ -1078,6 +1078,14 @@ a.btn { display: block; text-align: center; text-decoration: none; box-sizing: b
 .pro-tag { display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 99px; background: var(--grad-primary, var(--blue)); color: var(--on-accent); font-size: .66rem; font-weight: 800; vertical-align: 1px; }
 
 /* ---------- анімація значків (рухається сам емодзі, а не плитка) ---------- */
+/* власні іконки замість емодзі (js/icons.js): лінія 1.8 + напівпрозора заливка .d; колір — акцент теми або тон */
+.ic { width: 1.2em; height: 1.2em; vertical-align: -0.24em; flex: 0 0 auto; color: var(--blue-soft); overflow: visible;
+  fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ic .d { fill: currentColor; fill-opacity: .22; }
+.ic .s { fill: currentColor; stroke: none; }
+.ic.t-warn { color: var(--orange); } .ic.t-ok { color: var(--green); } .ic.t-bad { color: var(--danger); }
+.ic.t-gold { color: var(--gold); } .ic.t-like { color: #ff4d6d; } .ic.t-like .d { fill-opacity: 1; }
+.btn.primary .ic, .btn.danger .ic, .tab .ic, .tchip.on .ic, #toast .ic.t-ok { color: inherit; }
 .glyph { display: inline-block; transform-origin: 50% 78%; animation: swing 1.8s ease-in-out infinite; }
 @keyframes swing {
   0%, 100% { transform: rotate(-8deg); }
