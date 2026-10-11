@@ -563,6 +563,7 @@ function renderToday() {
         <div class="appbar-kicker">${isToday ? T('Сьогодні') : T('Календар')}</div>
         <div class="appbar-title">${S.prettyDate(iso)}</div>
       </div>
+      ${gearBtn()}
     </header>
     <div class="day-nav">
       <button class="chip" id="prevDay">‹</button>
@@ -644,8 +645,13 @@ function renderToday() {
 }
 
 document.addEventListener('click', (e) => {
-  if (e.target.closest && e.target.closest('[data-act="wsel"]')) document.getElementById('wselToggle')?.click();
+  if (!e.target.closest) return;
+  if (e.target.closest('[data-act="wsel"]')) document.getElementById('wselToggle')?.click();
+  if (e.target.closest('[data-act="settings"]')) go('#/settings');
 });
+// ⚙️ угорі справа на головних екранах (Сьогодні, Календар, Тренування, ШІ, Спільнота; у Прогресі — своя #setBtn)
+const gearBtn = () =>
+  `<button class="icon-btn" data-act="settings" title="${T('Налаштування')}" aria-label="${T('Налаштування')}">⚙️</button>`;
 function emptyToday() {
   return `<div class="empty">
     <div class="empty-ico">🗓️</div>
@@ -1776,6 +1782,7 @@ function renderCalendar() {
     <header class="appbar">
       <div class="appbar-titles"><div class="appbar-kicker">${T('Календар')}</div>
         <div class="appbar-title">${monthsFull[calMonth]} ${calYear}</div></div>
+      ${gearBtn()}
     </header>
     <div class="cal-nav">
       <button class="chip" id="prevM">‹</button>
@@ -1919,6 +1926,7 @@ function renderWorkouts() {
     <header class="appbar">
       <div class="appbar-titles"><div class="appbar-kicker">${T('Програми')}</div>
         <div class="appbar-title">${T('Тренування')}</div></div>
+      ${gearBtn()}
     </header>
     <div class="card-label side-label">🏋️ ${T('Програми для залу й дому')}</div>
     <p class="muted side">${T('Готовий план на тиждень: додай — і тренування зʼявляться в «Календарі» за днями.')}</p>
@@ -2598,9 +2606,9 @@ function renderProgress() {
 
   screenEl.innerHTML = `
     <header class="appbar">
-      <div class="appbar-titles"><div class="appbar-kicker">Прогрес</div>
-        <div class="appbar-title">Огляд</div></div>
-      <button class="icon-btn" id="setBtn" title="Налаштування">⚙️</button>
+      <div class="appbar-titles"><div class="appbar-kicker">${T('Прогрес')}</div>
+        <div class="appbar-title">${T('Огляд')}</div></div>
+      <button class="icon-btn" id="setBtn" title="${T('Налаштування')}">⚙️</button>
     </header>
     ${statStrip()}
     <div class="ov-grid">
@@ -3702,6 +3710,7 @@ async function renderCommunity() {
         <div class="appbar-title">Gym Log</div>
       </div>
       <button class="icon-btn" id="myCab" title="${T('Мій кабінет')}">👤</button>
+      ${gearBtn()}
     </header>
     ${commSegHTML('cseg')}
     <div id="commBody"><section class="card"><p class="muted">${T('Завантаження…')}</p></section></div>`;
@@ -4919,6 +4928,7 @@ function renderAI(toForm) {
     <header class="appbar">
       <div class="appbar-titles"><div class="appbar-kicker">🤖 ${T('ШІ')}</div>
         <div class="appbar-title">${T('Розумні помічники')}</div></div>
+      ${gearBtn()}
     </header>
     <div class="pick-list aih-list">
       ${item('aiKcal', '🍎', T('Калорії'), T('Фото страви або штрихкод — калорії й БЖВ'), `${kcalToday} ${T('ккал')} ›`)}
@@ -5020,7 +5030,7 @@ async function renderRecipes() {
       <div class="rfeed" id="rfeed">${list.map(recipeCardHTML).join('')}${empty}</div>
       <div class="rf-top">
         <div class="rf-row">
-          <span class="rf-ico rf-ghost"></span>
+          <button class="rf-ico" data-act="settings" aria-label="${T('Налаштування')}">⚙️</button>
           ${commSegHTML('rf-tabs')}
           <button class="rf-ico rf-add" id="rfAdd" aria-label="${T('Додати свій рецепт')}">＋</button>
         </div>
