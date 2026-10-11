@@ -719,6 +719,26 @@ input, select { font-family: inherit; }
 .sp-stage { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
 .sp-stage .sp-inline { margin-top: 0; }
 .sp-stage-h { display: flex; justify-content: space-between; align-items: center; }
+/* готові програми для залу й дому (#/gym/<id>) */
+.gp-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.gp-tags span { padding: 4px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: .8rem; font-weight: 700; color: var(--txt); }
+.gp-rules { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: .9rem; line-height: 1.4; }
+.gp-list { display: flex; flex-direction: column; }
+.gp-ex { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.gp-ex:first-child { border-top: 0; }
+.gp-ico { width: 28px; text-align: center; font-size: 1.1rem; }
+.gp-name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: .92rem; }
+.gp-name small { font-size: .78rem; }
+.gp-sr { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sp-trend { margin: 0 auto 0 8px; font-weight: 800; }
+.sp-trend.up { color: var(--orange); }
+.sp-trend.down { color: var(--blue-soft); }
+.sp-presets { margin-bottom: 2px; }
+.sp-tpl-row { margin: 10px 0 4px; }
+.sp-tpl summary { display: flex; gap: 12px; align-items: center; cursor: pointer; list-style: none; }
+.sp-tpl summary::-webkit-details-marker { display: none; }
+.sp-tpl[open] summary { margin-bottom: 10px; }
+.sp-tpl-items { margin: 0 0 8px; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: .88rem; }
 
 /* «Як виконувати»: два кадри старт/фінал змінюють один одного */
 .how-link { margin-top: 4px; padding: 0; border: 0; background: none; color: var(--blue-soft); font: inherit; font-size: .8rem; font-weight: 700; text-align: left; }

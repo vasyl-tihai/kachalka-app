@@ -20,6 +20,8 @@ import * as BC from './barcode.js';
 import * as GD from './guides.js';
 import * as RCP from './receipt.js';
 import { RECIPES } from './recipes-data.js';
+import { SUPP_TEMPLATES, SUPP_PRESETS } from './supp-templates.js';
+import { GYM_PROGRAMS, exIcon } from './gym-programs.js';
 
 // мова інтерфейсу — із налаштувань (до першого рендеру)
 setLang(S.getSettings().lang);
@@ -115,6 +117,7 @@ const routes = [
   { re: /^#\/guides$/, render: renderGuides },
   { re: /^#\/guide\/([\w-]+)$/, render: renderGuide },
   { re: /^#\/calendar$/, render: renderCalendar },
+  { re: /^#\/gym\/([\w-]+)$/, render: renderGymProgram },
   { re: /^#\/workouts$/, render: renderWorkouts },
   { re: /^#\/workout\/(.+)$/, render: renderWorkoutDetail },
   { re: /^#\/programs$/, render: renderPrograms },
@@ -134,7 +137,8 @@ const routes = [
   { re: /^#\/mealplan$/, render: renderMealPlan },
   { re: /^#\/meal\/(\d+)\/(\d+)$/, render: renderMeal },
   { re: /^#\/supps(?:\/(day|month))?$/, render: (v) => { if (v) suppView = v; renderSupps(); } },
-  { re: /^#\/supp\/([\w-]+)(?:\/([\w-]+))?$/, render: renderSuppEdit },
+  { re: /^#\/supptpl$/, render: renderSuppTpl },
+  { re: /^#\/supp\/([\w-]+)(?:\/([\w-]+))?(?:\/(\w+))?$/, render: renderSuppEdit },
   { re: /^#\/course\/([\w-]+)$/, render: renderCourse },
   { re: /^#\/recipes$/, render: () => { commSeg = 'recipes'; return renderRecipes(); } },
   { re: /^#\/recipe-new$/, render: () => renderRecipeEdit(null) },
@@ -232,7 +236,7 @@ function updateTabbar(hash) {
       : hash.startsWith(b.dataset.hash) ||
       (b.dataset.hash === '#/today' && hash === '#/') ||
       (b.dataset.hash === '#/calendar' && hash.startsWith('#/workout/')) ||
-      (b.dataset.hash === '#/workouts' && hash.startsWith('#/program')) ||
+      (b.dataset.hash === '#/workouts' && (hash.startsWith('#/program') || hash.startsWith('#/gym/'))) ||
       (b.dataset.hash === '#/ai' && (hash === '#/calories' || hash === '#/mealplan' || hash.startsWith('#/meal/') || hash.startsWith('#/supp') || hash.startsWith('#/course/') || hash === '#/smart' || hash === '#/formcheck' || hash.startsWith('#/guide'))) ||
       (b.dataset.hash === '#/progress' && (hash.startsWith('#/history') || hash.startsWith('#/body'))) ||
       (b.dataset.hash === '#/community' &&
@@ -1895,6 +1899,10 @@ function renderWorkouts() {
       <div class="appbar-titles"><div class="appbar-kicker">${T('Програми')}</div>
         <div class="appbar-title">${T('Тренування')}</div></div>
     </header>
+    <div class="card-label side-label">🏋️ ${T('Програми для залу й дому')}</div>
+    <p class="muted side">${T('Готовий план на тиждень: додай — і тренування зʼявляться в «Календарі» за днями.')}</p>
+    <div class="list">${GYM_PROGRAMS.map(gymRowHTML).join('')}</div>
+    <div class="card-label side-label">🤸 ${T('Одна вправа до цілі')}</div>
     <p class="muted side">🎯 ${T('Окрема програма на одну річ: качаєш її до цілі за рівнями й днями. Ваги тут немає — росте кількість повторень.')}</p>
     <div class="list">${programRowsHTML()}</div>
 
@@ -1911,6 +1919,78 @@ function renderWorkouts() {
   screenEl.querySelectorAll('.tpl').forEach((b) =>
     b.addEventListener('click', () => addTemplate(TEMPLATES[parseInt(b.dataset.i, 10)]))
   );
+  screenEl.querySelectorAll('.ex-card[data-g]').forEach((c) =>
+    c.addEventListener('click', () => go('#/gym/' + c.dataset.g))
+  );
+}
+
+// =====================================================================
+//  ГОТОВІ ПРОГРАМИ ДЛЯ ЗАЛУ Й ДОМУ (js/gym-programs.js)
+// =====================================================================
+const GYM_PLACE = { 'зал': '🏢 Зал', 'дім': '🏠 Вдома' };
+function gymDays(g) {
+  const dn = dateNames().dows;
+  return [1, 2, 3, 4, 5, 6, 0].filter((d) => g.schedule[d]).map((d) => dn[d]).join(' · ');
+}
+function gymRowHTML(g) {
+  const n = Object.keys(g.schedule).length;
+  return `<button class="ex-card" data-g="${g.id}">
+    <span class="ex-ico"><span class="glyph">${g.icon}</span></span>
+    <span class="ex-main">
+      <span class="ex-name">${T(g.title)}</span>
+      <span class="ex-sub">${T(GYM_PLACE[g.place])} · ${T(g.level)} · ${n} ${PL(n, 'день', 'дні', 'днів')} ${T('на тиждень')}</span>
+    </span>
+    <span class="ex-meta"><span class="chev">›</span></span>
+  </button>`;
+}
+function renderGymProgram(id) {
+  const g = GYM_PROGRAMS.find((x) => x.id === id);
+  if (!g) return go('#/workouts');
+  const dn = dateNames().dows;
+  const daysOf = (wi) => [1, 2, 3, 4, 5, 6, 0].filter((d) => (g.schedule[d] || []).includes(wi)).map((d) => dn[d]).join(', ');
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backG">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">${g.icon} ${T('Програма')}</div>
+        <div class="appbar-title">${T(g.title)}</div></div>
+    </header>
+    <p class="muted side">${T(g.about)}</p>
+    <div class="gp-tags"><span>${T(GYM_PLACE[g.place])}</span><span>${T(g.level)}</span><span>🗓 ${gymDays(g)}</span></div>
+    <section class="card">
+      <div class="card-label">📌 ${T('Як займатися')}</div>
+      <ul class="gp-rules">${g.rules.map((r) => `<li>${T(r)}</li>`).join('')}</ul>
+    </section>
+    ${g.workouts.map((w, wi) => `<section class="card">
+      <div class="card-label">${T(w.name)}${daysOf(wi) ? ` <span class="muted">· ${daysOf(wi)}</span>` : ''}</div>
+      <div class="gp-list">${w.items.map((x) => `<div class="gp-ex">
+        <span class="gp-ico">${exIcon(x.m)}</span>
+        <span class="gp-name">${T(x.name)}${x.hint ? `<small class="muted">${T(x.hint)}</small>` : ''}</span>
+        <b class="gp-sr">${x.sets}×${x.reps}</b>
+      </div>`).join('')}</div>
+    </section>`).join('')}
+    <p class="muted side small">⚠️ ${T('Перед новою програмою порадься з лікарем, якщо маєш проблеми зі спиною, суглобами чи серцем. Вагу додавай лише з чистою технікою.')}</p>
+    <div class="btn-col"><button class="btn primary" id="gpAdd">＋ ${T('Додати в мої тренування')}</button></div>`;
+  screenEl.querySelector('#backG').onclick = () => go('#/workouts');
+  screenEl.querySelector('#gpAdd').onclick = () => addGymProgram(g);
+}
+// тренування програми → «Мої тренування»; вправи з такою ж назвою беруться наявні; за згодою — тижневий план
+function addGymProgram(g) {
+  const wids = g.workouts.map((w) => {
+    const nw = S.addWorkout(T(w.name));
+    const ids = w.items.map((it) => {
+      const nm = T(it.name);
+      const ex = S.getExercises().find((x) => x.name === nm);
+      if (ex) return ex.id;
+      return S.addExercise({ name: nm, icon: exIcon(it.m), weightType: it.wt, weight: 0, targetSets: it.sets, targetReps: it.reps, muscle: it.m }).id;
+    });
+    S.setWorkoutItems(nw.id, [...new Set(ids)]);
+    return nw.id;
+  });
+  if (confirm(T('Поставити програму в тижневий план? Дні тижня заміняться днями програми.'))) {
+    for (const d of [0, 1, 2, 3, 4, 5, 6]) S.setScheduleDay(d, (g.schedule[d] || []).map((i) => wids[i]));
+  }
+  toast(`✅ ${T('Програму додано — дивись «Календар»')}`);
+  go('#/calendar');
 }
 
 // =====================================================================
@@ -5759,6 +5839,9 @@ function renderSupps() {
     <div class="pick-list">
       ${loose.map((it) => suppItemRow(it, today)).join('') || `<p class="muted side small">${T('Тут — те, що приймаєш постійно, поза курсами.')}</p>`}
     </div>
+    <button class="pick-row aih-row sp-tpl-row" id="spTpl"><span class="pick-ico">📚</span>
+      <span class="aih-txt"><b>${T('Приклади й заготовки')}</b><span class="muted">${T('Поширені схеми вітамінів і заготовки розкладу: гірка, через день, прийом і перерва')}</span></span>
+      <span class="fc-pat">›</span></button>
     <div class="btn-row">
       <button class="btn ghost" id="spAddCourse">🗂 ${T('Новий курс')}</button>
       <button class="btn primary" id="spAdd">＋ ${T('Вітамін')}</button>
@@ -5766,6 +5849,7 @@ function renderSupps() {
   screenEl.querySelector('#backSp').onclick = () => history.back();
   screenEl.querySelector('#spAdd').onclick = () => go('#/supp/new');
   screenEl.querySelector('#spAddCourse').onclick = () => go('#/course/new');
+  screenEl.querySelector('#spTpl').onclick = () => go('#/supptpl');
   screenEl.querySelectorAll('.sp-item').forEach((b) => (b.onclick = () => go('#/supp/' + b.dataset.id)));
   screenEl.querySelectorAll('.sp-course').forEach((b) => (b.onclick = () => go('#/course/' + b.dataset.cid)));
   screenEl.querySelectorAll('[data-sv]').forEach((b) => (b.onclick = () => { suppView = b.dataset.sv; suppMonth = null; renderSupps(); }));
@@ -5794,6 +5878,57 @@ function renderSupps() {
   }
   const dl = screenEl.querySelector('#spDoses');
   if (dl) bindSuppDoses(dl, renderSupps);
+}
+
+// ↗ / ↘ біля етапу, якщо доза більша / менша, ніж у попередньому етапі з прийомом (видно «гірку»)
+function stageTrend(stages, k) {
+  const num = (s) => (s && s.type !== 'off' ? parseFloat(String(s.dose).replace(',', '.')) : NaN);
+  const cur = num(stages[k]);
+  let j = k - 1;
+  while (j >= 0 && stages[j].type === 'off') j--;
+  const prev = num(stages[j]);
+  if (isNaN(cur) || isNaN(prev) || cur === prev) return '';
+  return `<span class="sp-trend ${cur > prev ? 'up' : 'down'}">${cur > prev ? '↗' : '↘'}</span>`;
+}
+
+// «Приклади й заготовки»: приклад створює курс з пунктами; заготовка відкриває новий запис з етапами без назви
+function renderSuppTpl() {
+  const today = S.todayISO();
+  const itemLine = (x) => {
+    const dose = x.stages.length ? x.stages.filter((s) => s.type !== 'off').map((s) => s.dose).filter(Boolean)[0] || x.dose : x.dose;
+    return `<li>${SUPP_FORMS[x.form][0]} <b>${esc(T(x.name))}</b>${dose ? ` · ${esc(dose)} ${T(x.unit)}` : ''} · ${x.times.length}× ${T('на день')}${x.food ? ` · ${T(SUPP_FOOD[x.food]).toLowerCase()}` : ''}${x.note ? `<br><span class="muted small">${esc(T(x.note))}</span>` : ''}</li>`;
+  };
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backTp">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">💊 ${T('Вітаміни й добавки')}</div>
+        <div class="appbar-title">${T('Приклади й заготовки')}</div></div>
+    </header>
+    <section class="card sp-warn">
+      <b>⚠️ ${T('Перш ніж приймати — до лікаря')}</b>
+      <p>${T('Це приклади поширених схем із книг про тренування, а не призначення. Дози, протипоказання й поєднання з ліками перевір з лікарем. Після створення курсу все можна змінити.')}</p>
+    </section>
+    <div class="card-label side-label">📚 ${T('Приклади курсів')}</div>
+    ${SUPP_TEMPLATES.map((t) => `<details class="card sp-tpl">
+      <summary><span class="pick-ico">${t.icon}</span><span class="aih-txt"><b>${T(t.title)}</b><span class="muted">${T(t.about)}</span></span></summary>
+      <ul class="sp-tpl-items">${t.items.map(itemLine).join('')}</ul>
+      <p class="muted small">🗓 ${t.len} ${PL(t.len, 'день', 'дні', 'днів')} · ${T('приклад — дози узгодь з лікарем')}</p>
+      <div class="sp-inline"><input type="date" data-tstart="${t.id}" value="${today}"/><button class="btn primary" data-tuse="${t.id}">${T('Створити курс')}</button></div>
+    </details>`).join('')}
+    <div class="card-label side-label">🧰 ${T('Заготовки розкладу')}</div>
+    <p class="muted side small">${T('Лише форма курсу — без назв і доз. Назву й дози впишеш сам за призначенням.')}</p>
+    <div class="pick-list">${SUPP_PRESETS.map((x) => `<button class="pick-row aih-row" data-pre="${x.id}"><span class="pick-ico">${x.icon}</span>
+      <span class="aih-txt"><b>${T(x.title)}</b><span class="muted">${T(x.about)}</span></span><span class="fc-pat">›</span></button>`).join('')}</div>`;
+  screenEl.querySelector('#backTp').onclick = () => history.back();
+  screenEl.querySelectorAll('[data-pre]').forEach((b) => (b.onclick = () => go(`#/supp/new/-/${b.dataset.pre}`)));
+  screenEl.querySelectorAll('[data-tuse]').forEach((b) => (b.onclick = () => {
+    const t = SUPP_TEMPLATES.find((x) => x.id === b.dataset.tuse);
+    const start = screenEl.querySelector(`[data-tstart="${t.id}"]`).value || today;
+    const c = S.saveCourse({ name: T(t.title), start, len: t.len, note: T('Приклад з Gym Log — дози й поєднання узгодь з лікарем.') });
+    for (const x of t.items) S.saveSupp({ ...JSON.parse(JSON.stringify(x)), name: T(x.name), note: x.note ? T(x.note) : '', course: c.id, start });
+    toast(`✅ ${T('Курс створено — перевір дози')}`);
+    go('#/course/' + c.id);
+  }));
 }
 
 // курс: назва, дати, пункти; повторити з нової дати, завершити, видалити
@@ -5870,10 +6005,19 @@ function renderCourse(id) {
   };
 }
 
-function renderSuppEdit(id, courseId) {
+function renderSuppEdit(id, courseId, presetId) {
   const old = id === 'new' ? null : S.getSupp(id);
   if (id !== 'new' && !old) { go('#/supps'); return; }
   const it = old ? JSON.parse(JSON.stringify(old)) : { course: S.getCourse(courseId) ? courseId : '', name: '', form: 'tab', dose: '', unit: 'мг', times: ['09:00'], food: '', sched: { type: 'daily', n: 2, days: [1, 3, 5] }, start: S.todayISO(), len: 0, stages: [], route: '', note: '' };
+  // заготовка розкладу (гірка, зниження…) — лише етапи, без назви й доз
+  let hint = '';
+  const usePreset = (pr) => {
+    it.stages = JSON.parse(JSON.stringify(pr.stages));
+    if (pr.form) { it.form = pr.form; it.unit = pr.unit; }
+    hint = `${pr.icon} ${T(pr.title)}: ${T(pr.about)}`;
+  };
+  const pre = !old && SUPP_PRESETS.find((x) => x.id === presetId);
+  if (pre) usePreset(pre);
   if (!it.sched.days.length) it.sched.days = [1, 3, 5];
   const dn = dateNames().dows;
   const courses = S.getCourses().filter((c) => c.id === it.course || S.courseInfo(c.id).status !== 'done');
@@ -5907,8 +6051,10 @@ function renderSuppEdit(id, courseId) {
         <label class="share-row"><input type="checkbox" id="seStaged" ${staged ? 'checked' : ''}/>
           <span>📆 ${T('Розписати етапами')}<small class="muted">${T('напр. 10 днів щодня → 20 днів через день → 14 днів перерва')}</small></span></label>
         ${staged ? `<div class="sp-stages">
+          <div class="type-chips sp-presets">${SUPP_PRESETS.filter((x) => !x.form).map((x) => `<button class="tchip" data-preset="${x.id}">${x.icon} ${T(x.title)}</button>`).join('')}</div>
+          ${hint ? `<p class="muted small">${esc(hint)} ${T('Впиши дозу для кожного етапу.')}</p>` : ''}
           ${it.stages.map((s, k) => `<div class="sp-stage" data-k="${k}">
-            <div class="sp-stage-h"><b>${T('Етап')} ${k + 1}</b>${it.stages.length > 1 ? `<button class="rc-del" data-sdel="${k}">✕</button>` : ''}</div>
+            <div class="sp-stage-h"><b>${T('Етап')} ${k + 1}</b>${stageTrend(it.stages, k)}${it.stages.length > 1 ? `<button class="rc-del" data-sdel="${k}">✕</button>` : ''}</div>
             <div class="sp-inline">
               <input class="st-days" type="number" inputmode="numeric" min="1" max="365" value="${s.days}"/> ${T('дн.')}
               <select class="st-type">${[['daily', 'щодня'], ['every', 'раз на кілька днів'], ['off', 'перерва']].map(([v, l]) => `<option value="${v}" ${s.type === v ? 'selected' : ''}>${T(l)}</option>`).join('')}</select>
@@ -5967,6 +6113,7 @@ function renderSuppEdit(id, courseId) {
     });
     on('[data-tdel]', (d) => { it.times.splice(Number(d.tdel), 1); });
     on('[data-sdel]', (d) => { it.stages.splice(Number(d.sdel), 1); });
+    on('[data-preset]', (d) => { usePreset(SUPP_PRESETS.find((x) => x.id === d.preset)); });
     $('#seCourse').onchange = () => { pull(); draw(); };
     screenEl.querySelectorAll('.st-type').forEach((x) => (x.onchange = () => { pull(); draw(); }));
     $('#seStaged').onchange = (e) => {
