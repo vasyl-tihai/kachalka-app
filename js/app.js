@@ -3546,19 +3546,25 @@ async function renderCommunity() {
   const seg = commSeg;
   const alive = () => location.hash === '#/community' && commSeg === seg;
 
+  // сесія й вітрина вантажаться паралельно (supabase.mjs ~210 КБ)
+  const sessP = BE.configured ? BE.getSession() : null;
+  if (sessP) sessP.catch(() => {});
   const { demoData } = await import('./demo.js');
   const D = demoData();
   let session = null, posts = [], people = [], shared = null, loadErr = null;
+  // сервер може не відповідати (старий Supabase видалено; збережена сесія безкінечно оновлює токен) —
+  // не тримати екран на «Завантаженні», а показати вітрину
+  const inTime = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('timeout')), ms))]);
   if (BE.configured) {
-    try { session = await BE.getSession(); } catch { /* нижче — запрошення увійти */ }
+    try { session = await inTime(sessP, 3000); } catch { /* нижче — запрошення увійти */ }
     if (session) {
       try {
-        [posts, people, shared] = await Promise.all([
+        [posts, people, shared] = await inTime(Promise.all([
           BE.listPosts(),
           BE.listPeople(),
           BE.mySharedTraining().catch(() => null),
-        ]);
-      } catch (e) { loadErr = e; }
+        ]), 8000);
+      } catch (e) { if (e.message !== 'timeout') loadErr = e; }
     }
   }
   if (!alive()) return;
