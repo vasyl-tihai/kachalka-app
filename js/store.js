@@ -141,7 +141,7 @@ function normalizeRecipe(r) {
   const num = (v) => Math.max(0, Math.round(Number(v) || 0));
   const lines = (a) => (Array.isArray(a) ? a : String(a || '').split('\n')).map((x) => String(x).trim()).filter(Boolean).slice(0, 40);
   return {
-    id: String(r.id), own: true,
+    id: safeId(r.id) || uid(), own: true,
     name: String(r.name || '').slice(0, 120),
     cat: ['breakfast', 'main', 'snack', 'shake'].includes(r.cat) ? r.cat : 'main',
     goal: ['mass', 'cut', 'any'].includes(r.goal) ? r.goal : 'any',
@@ -152,18 +152,65 @@ function normalizeRecipe(r) {
     created: Number(r.created) || Date.now(),
   };
 }
+// ----- захист від чужого файлу копії: те, що йде в розмітку (data-id, адреси, іконки), — лише безпечні символи -----
+// (function-оголошення: load() викликає їх під час імпорту модуля, const тут був би в TDZ)
+function safeId(v) {
+  const t = typeof v === 'number' ? String(v) : typeof v === 'string' ? v : '';
+  return /^[\w-]{1,64}$/.test(t) ? t : '';
+}
+function safeIcon(v) {
+  const t = String(v == null ? '' : v).replace(/[<>"'&`\\]/g, '').trim().slice(0, 16);
+  return t || '💪';
+}
+function safeWeightType(v) {
+  return ['dumbbell', 'barbell', 'kettlebell', 'bodyweight'].includes(v) ? v : 'dumbbell';
+}
+function safeMuscle(v) {
+  return ['legs', 'back', 'chest', 'shoulders', 'arms', 'core', 'full', 'other'].includes(v) ? v : 'other';
+}
+const isISO = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+// програми власної ваги: лише числа, так/ні та короткі безпечні рядки (дати, id програми)
+function normProgression(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [id, p] of Object.entries(raw)) {
+    if (!safeId(id) || !p || typeof p !== 'object') continue;
+    const q = {};
+    for (const [k, v] of Object.entries(p)) {
+      if (!/^\w{1,32}$/.test(k)) continue;
+      if (v === null || typeof v === 'boolean') q[k] = v;
+      else if (typeof v === 'number' && Number.isFinite(v)) q[k] = v;
+      else if (typeof v === 'string' && /^[\w-]{1,64}$/.test(v)) q[k] = v;
+    }
+    out[id] = q;
+  }
+  return out;
+}
+// налаштування, що потрапляють у розмітку / адреси модулів
+function normSettings(st, def) {
+  if (!/^[a-z]{2}$/.test(st.lang)) st.lang = def.lang;
+  if (!/^#[0-9a-f]{6}$/i.test(st.flashColor)) st.flashColor = def.flashColor;
+  if (!/^[\w-]{1,24}$/.test(st.theme)) st.theme = def.theme;
+  if (!/^[\w-]{1,32}$/.test(st.soundId)) st.soundId = def.soundId;
+  if (st.vibratePattern != null && !/^[\w-]{1,32}$/.test(st.vibratePattern)) delete st.vibratePattern;
+  if (st.sex !== 'f') st.sex = 'm';
+  st.customSoundName = String(st.customSoundName || '').slice(0, 80);
+  if (st.geminiKey != null && typeof st.geminiKey !== 'string') delete st.geminiKey;
+  return st;
+}
+
 function normalizeExercise(e, i) {
   return {
-    id: e && e.id ? e.id : uid(),
+    id: safeId(e && e.id) || uid(),
     order: e && typeof e.order === 'number' ? e.order : i,
     archived: !!(e && e.archived),
     name: e && e.name != null ? String(e.name) : 'Без назви',
-    icon: (e && e.icon) || '💪',
-    weightType: (e && e.weightType) || 'dumbbell',
+    icon: safeIcon(e && e.icon),
+    weightType: safeWeightType(e && e.weightType),
     weight: Number(e && e.weight) || 0,
     targetSets: Number(e && e.targetSets) || 4,
     targetReps: Number(e && e.targetReps) || 10,
-    muscle: (e && e.muscle) || 'other',
+    muscle: safeMuscle(e && e.muscle),
     // progOn: false — користувач вимкнув програму прогресії для цієї вправи
     // (undefined = авто: увімкнена, якщо вага тіла й назва відома)
     ...(e && e.progOn === false ? { progOn: false } : {}),
@@ -173,12 +220,12 @@ function normalizeExercise(e, i) {
 function normalizeWorkout(w, i, exIds) {
   const items = Array.isArray(w && w.items) ? w.items.filter((id) => exIds.has(id)) : [];
   return {
-    id: w && w.id ? w.id : uid(),
+    id: safeId(w && w.id) || uid(),
     name: w && w.name != null ? String(w.name) : `Тренування ${i + 1}`,
     items,
     order: w && typeof w.order === 'number' ? w.order : i,
     // progId — тренування-програма (вага тіла): відкривається екраном програми
-    ...(w && w.progId ? { progId: String(w.progId) } : {}),
+    ...(w && safeId(w.progId) ? { progId: w.progId } : {}),
   };
 }
 
@@ -192,8 +239,9 @@ function normalizeState(raw) {
     dayStacks: raw.dayStacks && typeof raw.dayStacks === 'object' ? raw.dayStacks : {},
     // глибоке злиття налаштувань — нові ключі не губляться зі старих копій
     settings: { ...def.settings, ...(raw.settings && typeof raw.settings === 'object' ? raw.settings : {}) },
-    progression: raw.progression && typeof raw.progression === 'object' ? raw.progression : {},
+    progression: normProgression(raw.progression),
   };
+  normSettings(s.settings, def.settings);
 
   // тренування (+ міграція зі старого поля stack)
   const exIds = new Set(s.exercises.map((e) => e.id));
@@ -208,6 +256,7 @@ function normalizeState(raw) {
   const wIds = new Set(s.workouts.map((w) => w.id));
   const ds = {};
   for (const iso of Object.keys(s.dayStacks)) {
+    if (!isISO(iso)) continue;
     const v = s.dayStacks[iso];
     let arr = null;
     if (typeof v === 'string' && wIds.has(v)) arr = [v];
@@ -230,17 +279,17 @@ function normalizeState(raw) {
   // записи тренувань
   for (const iso of Object.keys(s.entries)) {
     const byEx = s.entries[iso];
-    if (!byEx || typeof byEx !== 'object') {
+    if (!isISO(iso) || !byEx || typeof byEx !== 'object') {
       delete s.entries[iso];
       continue;
     }
     for (const exId of Object.keys(byEx)) {
       const en = byEx[exId];
-      if (!en || typeof en !== 'object') {
+      if (!safeId(exId) || !en || typeof en !== 'object') {
         delete byEx[exId];
         continue;
       }
-      en.weightType = en.weightType || 'dumbbell';
+      en.weightType = safeWeightType(en.weightType);
       en.weight = Number(en.weight) || 0;
       en.targetSets = Number(en.targetSets) || 4;
       en.targetReps = Number(en.targetReps) || 10;
@@ -248,7 +297,7 @@ function normalizeState(raw) {
         ? en.sets.map((st) => ({
             reps: st && st.reps != null ? Number(st.reps) : null,
             weight: st && st.weight != null ? Number(st.weight) : en.weight,
-            weightType: (st && st.weightType) || en.weightType,
+            weightType: st && st.weightType ? safeWeightType(st.weightType) : en.weightType,
           }))
         : [];
     }
@@ -264,9 +313,10 @@ function normalizeState(raw) {
       : {};
   for (const iso of Object.keys(rawMeas)) {
     const m = rawMeas[iso];
-    if (!m || typeof m !== 'object') continue;
+    if (!isISO(iso) || !m || typeof m !== 'object') continue;
     const clean = {};
     for (const k of Object.keys(m)) {
+      if (!/^\w{1,32}$/.test(k)) continue;
       const raw0 = m[k];
       if (raw0 == null || raw0 === '') continue; // порожнє/null — це «немає значення», а не 0
       const v = Number(raw0);
@@ -287,7 +337,7 @@ function normalizeState(raw) {
   // рецепти: обране й власні (нове поле — старі копії його не мають)
   const rr = raw.recipes && typeof raw.recipes === 'object' ? raw.recipes : {};
   s.recipes = {
-    fav: Array.isArray(rr.fav) ? rr.fav.filter((x) => typeof x === 'string') : [],
+    fav: Array.isArray(rr.fav) ? rr.fav.filter((x) => safeId(x)) : [],
     own: Array.isArray(rr.own) ? rr.own.filter((r) => r && r.id && r.name).map(normalizeRecipe) : [],
   };
 
@@ -297,11 +347,11 @@ function normalizeState(raw) {
     raw.calories && typeof raw.calories === 'object' && !Array.isArray(raw.calories) ? raw.calories : {};
   for (const iso of Object.keys(rawCal)) {
     const list = rawCal[iso];
-    if (!Array.isArray(list)) continue;
+    if (!isISO(iso) || !Array.isArray(list)) continue;
     const clean = list
       .filter((e) => e && typeof e === 'object')
       .map((e) => ({
-        id: e.id ? String(e.id) : uid(),
+        id: safeId(e.id) || uid(),
         name: String(e.name || '').slice(0, 120),
         kcal: Number(e.kcal) || 0,
         prot: Number(e.prot) || 0,
@@ -449,7 +499,7 @@ function normMealPlan(m) {
           name: String((x && x.name) || '').trim().slice(0, 120),
           kcal: num(x && x.kcal), p: num(x && x.p), f: num(x && x.f), c: num(x && x.c),
           ing: cleanStrs(x && x.ing, 20), steps: cleanStrs(x && x.steps, 10, 300),
-          ...(x && x.rid ? { rid: String(x.rid).slice(0, 60) } : {}),
+          ...(x && safeId(x.rid) ? { rid: x.rid } : {}),
           ...(x && Number(x.time) > 0 ? { time: Math.min(600, num(x.time)) } : {}),
         })).filter((x) => x.name),
       })),
@@ -493,11 +543,12 @@ function normSupps(x) {
   const str = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
   const int = (v, lo, hi, d) => Math.min(hi, Math.max(lo, Math.round(Number(v)) || d));
   const rid = () => 'sp-' + Math.random().toString(36).slice(2);
+  const sid = (v) => { const t = str(v, 60); return /^[\w-]+$/.test(t) ? t : ''; };
   const o = x && typeof x === 'object' ? x : {};
   const courses = (Array.isArray(o.courses) ? o.courses : []).slice(0, 40).map((c) => {
     c = c && typeof c === 'object' ? c : {};
     return {
-      id: str(c.id, 60) || rid(),
+      id: sid(c.id) || rid(),
       name: str(c.name, 60),
       start: ISO.test(c.start) ? c.start : todayISO(),
       len: int(c.len, 0, 3650, 0),
@@ -517,7 +568,7 @@ function normSupps(x) {
       return { days: int(s.days, 1, 365, 7), dose: str(s.dose, 12), type: ['daily', 'every', 'off'].includes(s.type) ? s.type : 'daily', n: int(s.n, 2, 60, 2) };
     });
     return {
-      id: str(it.id, 60) || rid(),
+      id: sid(it.id) || rid(),
       course: cids.has(it.course) ? it.course : '',
       name: str(it.name, 80),
       form: FORMS.includes(it.form) ? it.form : 'tab',
@@ -1566,18 +1617,19 @@ export function exportRecentLogs(days = 14) {
 export function importWorkoutFromPlan(title, exList) {
   const ids = [];
   for (const e of exList || []) {
+    if (!e || typeof e !== 'object') continue;
     const ex = addExercise({
-      name: e.name || 'Вправа',
-      icon: e.icon || '💪',
-      weightType: e.weightType || 'dumbbell',
+      name: String(e.name || 'Вправа').slice(0, 80),
+      icon: safeIcon(e.icon),
+      weightType: safeWeightType(e.weightType),
       weight: Number(e.weight) || 0,
-      targetSets: Number(e.targetSets) || 4,
-      targetReps: Number(e.targetReps) || 10,
-      muscle: e.muscle || 'other',
+      targetSets: Math.min(20, Number(e.targetSets) || 4),
+      targetReps: Math.min(500, Number(e.targetReps) || 10),
+      muscle: safeMuscle(e.muscle),
     });
     ids.push(ex.id);
   }
-  const w = addWorkout(title || 'Програма від тренера');
+  const w = addWorkout(String(title || 'Програма від тренера').slice(0, 80));
   setWorkoutItems(w.id, ids);
   saveNow();
   return w;
@@ -1585,7 +1637,9 @@ export function importWorkoutFromPlan(title, exList) {
 
 // --- експорт / імпорт усіх даних ---
 export function exportData() {
-  return JSON.stringify(state, null, 2);
+  // свій ключ ШІ — секрет, у файл копії (який пересилають) не йде
+  const { geminiKey, ...settings } = state.settings || {};
+  return JSON.stringify({ ...state, settings }, null, 2);
 }
 const BAK_KEY = KEY + '.bak';
 export function importData(json) {
@@ -1601,6 +1655,8 @@ export function importData(json) {
     throw new Error('Файл не схожий на резервну копію Gym Log');
   }
   const next = normalizeState(parsed);
+  delete next.settings.geminiKey; // ключ з чужого файлу не приймаємо, свій лишаємо
+  if (state.settings && state.settings.geminiKey) next.settings.geminiKey = state.settings.geminiKey;
   // знімок поточних даних для можливості відкату
   try {
     const cur = localStorage.getItem(KEY);

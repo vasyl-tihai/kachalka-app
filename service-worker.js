@@ -3,7 +3,7 @@
 //   • код застосунку (навігація, *.js, *.css) — network-first: свіжа версія підтягується
 //     при кожному онлайн-запуску, а офлайн працює з кешу;
 //   • іконки/шрифти/маніфест — cache-first (рідко змінюються), із докешуванням у рантаймі.
-const CACHE = 'kachalka-v72';
+const CACHE = 'kachalka-v73';
 // фото рецептів: окремий кеш, який не стирається при кожному оновленні версії
 const IMG_CACHE = 'kachalka-recipe-img-v1';
 const ASSETS = [
@@ -95,7 +95,9 @@ async function networkFirst(req) {
     // no-cache: повз HTTP-кеш браузера (GitHub Pages віддає max-age=600 —
     // без цього телефон міг до 10 хв «оновлюватись» у стару версію)
     const res = await fetch(req, { cache: 'no-cache' });
-    if (res && res.ok) cache.put(req, res.clone());
+    // адреси з параметрами (?code= після входу, ?url= з «Поділитися») у кеш не кладемо
+    const withQuery = req.mode === 'navigate' && new URL(req.url).search;
+    if (res && res.ok && !withQuery) cache.put(req, res.clone());
     return res;
   } catch (e) {
     const hit = await cache.match(req);

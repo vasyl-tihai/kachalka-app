@@ -251,6 +251,20 @@ function updateTabbar(hash) {
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+// адреса картинки з сервера / чужих даних: лише https, свої файли або data:image — без лапок і дужок (CSS url())
+function safeImg(u) {
+  return typeof u === 'string' &&
+    /^(https:\/\/[^\s"'()<>\\]+|[\w/.-]+\.(webp|png|jpe?g)(\?[\w=&.-]*)?|data:image\/[\w+.-]+(;base64)?,[^\s"'()<>\\]+)$/.test(u)
+    ? u : '';
+}
+// картинки, що не завантажились: data-fb — запасна, data-err="rm" — прибрати, "rmp" — прибрати батька
+document.addEventListener('error', (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLImageElement)) return;
+  if (t.dataset.fb) { const f = t.dataset.fb; delete t.dataset.fb; t.src = f; }
+  else if (t.dataset.err === 'rm') t.remove();
+  else if (t.dataset.err === 'rmp' && t.parentNode) t.parentNode.remove();
+}, true);
 function unitFor(type) {
   return type === 'bodyweight' ? '' : T('кг');
 }
@@ -626,11 +640,14 @@ function renderToday() {
   if (manageBtn) manageBtn.onclick = () => go(single ? '#/workout/' + single : '#/calendar');
 }
 
+document.addEventListener('click', (e) => {
+  if (e.target.closest && e.target.closest('[data-act="wsel"]')) document.getElementById('wselToggle')?.click();
+});
 function emptyToday() {
   return `<div class="empty">
     <div class="empty-ico">🗓️</div>
     <p>${T('На цей день не обрано тренування.')}</p>
-    <button class="btn" onclick="document.getElementById('wselToggle').click()">${T('Обрати тренування')}</button>
+    <button class="btn" data-act="wsel">${T('Обрати тренування')}</button>
   </div>`;
 }
 
@@ -646,7 +663,8 @@ function shiftDay(delta) {
 // =====================================================================
 function renderSet(exerciseId) {
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
-  const iso = params.get('date') || selectedISO;
+  const pd = params.get('date');
+  const iso = pd && /^\d{4}-\d{2}-\d{2}$/.test(pd) ? pd : selectedISO;
   selectedISO = iso;
   const ex = S.getExercise(exerciseId);
   if (!ex) return go('#/today');
@@ -3476,6 +3494,7 @@ function renderSettings() {
   fileInput.onchange = () => {
     const f = fileInput.files[0];
     if (!f) return;
+    if (f.size > 5 * 1024 * 1024) return alert(T('Не вдалося прочитати файл'));
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -3585,7 +3604,7 @@ function postCardHTML(p, meId, liked) {
   const a = p.author || {};
   const mine = meId && p.author_id === meId;
   const on = liked.has(p.id);
-  const fb = p.fallback ? ` onerror="this.onerror=null;this.src='${p.fallback}'"` : '';
+  const fb = p.fallback ? ` data-fb="${esc(p.fallback)}"` : '';
   return `<section class="card post-card">
     <div class="post-head">
       <button class="post-user" data-u="${esc(p.author_id)}">${avatarHtml(a)}</button>
@@ -3734,7 +3753,7 @@ async function renderCommunity() {
         await BE.deletePost({ id: b.dataset.id, photo_path: b.dataset.path });
         toast('Допис видалено');
         renderCommunity();
-      } catch (err) { toast('⚠️ ' + err.message); }
+      } catch (err) { toast('⚠️ ' + esc(err.message)); }
     })
   );
   // перемикач «ділитися тренуваннями»
@@ -3750,7 +3769,7 @@ async function renderCommunity() {
       }
     } catch (err) {
       e.target.checked = !e.target.checked;
-      toast('⚠️ ' + err.message);
+      toast('⚠️ ' + esc(err.message));
     }
   };
   // новий допис: фото + підпис
@@ -3772,7 +3791,7 @@ async function renderCommunity() {
           closeModal();
           toast('📸 Опубліковано!');
           renderCommunity();
-        } catch (err) { toast('⚠️ ' + err.message); }
+        } catch (err) { toast('⚠️ ' + esc(err.message)); }
       } },
     ]);
   };
@@ -3834,7 +3853,7 @@ async function renderDemoUser(userId) {
     </section>` : ''}
     ${trainHtml}
     ${posts.length ? `<div class="pgrid">${posts.map((p) =>
-      `<img src="${esc(p.photo_url)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${p.fallback}'"/>`).join('')}</div>` : ''}
+      `<img src="${esc(p.photo_url)}" alt="" loading="lazy"${p.fallback ? ` data-fb="${esc(p.fallback)}"` : ''}/>`).join('')}</div>` : ''}
   `;
   const toR = uBody.querySelector('#toRecipes');
   if (toR) toR.onclick = () => { commSeg = 'recipes'; go('#/community'); };
@@ -3940,7 +3959,7 @@ async function renderUserProfile(userId) {
         renderUserProfile(userId);
       } catch (err) {
         b.disabled = false;
-        toast('⚠️ ' + err.message);
+        toast('⚠️ ' + esc(err.message));
       }
     })
   );
@@ -4076,7 +4095,8 @@ async function renderCoach() {
 // кружечок аватарки: фото або ініціал
 function avatarHtml(prof, big) {
   const cls = big ? 'avatar avatar-lg' : 'avatar';
-  if (prof.avatar_url) return `<span class="${cls}" style="background-image:url('${esc(prof.avatar_url)}')"></span>`;
+  const av = safeImg(prof.avatar_url);
+  if (av) return `<span class="${cls}" style="background-image:url(&quot;${esc(av)}&quot;)"></span>`;
   const ini = (prof.name || '?').trim().charAt(0).toUpperCase();
   return `<span class="${cls}">${esc(ini)}</span>`;
 }
@@ -4594,12 +4614,12 @@ async function renderClientManage(clientId) {
             .map((r) => {
               const items = (r.log_json || [])
                 .map((it) => {
-                  const reps = (it.sets || []).map((s) => s.reps).join('/');
+                  const reps = (Array.isArray(it.sets) ? it.sets : []).map((s) => Number(s && s.reps) || 0).join('/');
                   const w = it.weightType !== 'bodyweight' && it.sets && it.sets.length ? ' · ' + Math.max(...it.sets.map((s) => s.weight || 0)) + 'кг' : '';
-                  return `${esc(it.name)}: ${reps}${w}`;
+                  return `${esc(it.name)}: ${reps}${esc(w)}`;
                 })
                 .join('<br>');
-              return `<div class="req-row"><div><b>${S.prettyDate(r.day_iso)}</b><div class="muted">${items}</div></div></div>`;
+              return `<div class="req-row"><div><b>${esc(S.prettyDate(r.day_iso))}</b><div class="muted">${items}</div></div></div>`;
             })
             .join('')
         : '<p class="muted">Клієнт ще не поділився прогресом (він тисне «📤 Поділитися прогресом» у себе).</p>';
@@ -4715,11 +4735,11 @@ function guideMediaHTML(id, cls = '') {
   // мініатюра — перший кадр; велика — смужка з 9 кадрів (tools/exercise3d/anim.py), рух туди-назад робить CSS
   // (@keyframes exRun). Немає файлу — блок ховається
   if (cls === 'mini') {
-    return `<div class="guide-media mini"><img src="img/exercises/${id}_0.webp?v=${EX_IMG_V}" alt="" loading="lazy" onerror="this.parentNode.remove()"/></div>`;
+    return `<div class="guide-media mini"><img src="img/exercises/${id}_0.webp?v=${EX_IMG_V}" alt="" loading="lazy" data-err="rmp"/></div>`;
   }
   const src = `img/exercises/${id}_anim.webp?v=${EX_IMG_V}`;
   return `<div class="guide-media"><div class="gm-anim" style="background-image:url('${src}')"></div>
-    <img src="${src}" alt="" hidden onerror="this.parentNode.remove()"/></div>`;
+    <img src="${src}" alt="" hidden data-err="rmp"/></div>`;
 }
 
 async function renderGuides() {
@@ -4849,7 +4869,7 @@ function recipeCardHTML(r) {
   // власне фото — з IndexedDB; вбудований рецепт — img/recipes/<id>.webp (немає файлу — лишається емодзі)
   const media = r.own
     ? (r.photo ? `<img class="rc-photo" data-photo="${esc(r.id)}" alt=""/>` : '')
-    : `<img class="rc-photo" src="img/recipes/${esc(r.id)}.webp" loading="lazy" alt="" onerror="this.remove()"/>`;
+    : `<img class="rc-photo" src="img/recipes/${esc(r.id)}.webp" loading="lazy" alt="" data-err="rm"/>`;
   const tags = [r.time ? `⏱ ${r.time} ${T('хв')}` : '', T(RCAT1[r.cat] || ''), r.goal !== 'any' ? T(RGOAL[r.goal]) : '', r.own ? `👤 ${T('Мій')}` : '']
     .filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join('');
   return `<article class="rcard" data-id="${esc(r.id)}" ${yt ? `data-yt="${yt}"` : ''}>
@@ -4932,7 +4952,7 @@ async function renderRecipes() {
       if (!yt) return;
       const box = card.querySelector('.rc-video');
       if (e.isIntersecting && !box.firstChild) {
-        box.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${yt}?autoplay=1&mute=1&playsinline=1&loop=1&playlist=${yt}&controls=0&rel=0" allow="autoplay; encrypted-media" title="video"></iframe>`;
+        box.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${yt}?autoplay=1&mute=1&playsinline=1&loop=1&playlist=${yt}&controls=0&rel=0" allow="autoplay; encrypted-media" sandbox="allow-scripts allow-same-origin allow-presentation" referrerpolicy="strict-origin-when-cross-origin" title="video"></iframe>`;
       } else if (!e.isIntersecting) box.innerHTML = '';
     });
   }, { root: feed, threshold: 0.6 });
@@ -5639,7 +5659,7 @@ function renderMeal(di, mi) {
         <div class="appbar-title">${T('Рецепт')}</div></div>
     </header>
     ${base ? `<div class="ml-photo" style="background:linear-gradient(135deg,${base.bg[0]},${base.bg[1]})"><span>${base.emoji}</span>
-      <img src="img/recipes/${base.id}.webp" alt="" loading="lazy" onerror="this.remove()"/></div>` : ''}
+      <img src="img/recipes/${base.id}.webp" alt="" loading="lazy" data-err="rm"/></div>` : ''}
     <section class="card">
       <h2 class="ml-name">${esc(m.name)}</h2>
       <div class="ml-macros">

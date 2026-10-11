@@ -115,8 +115,9 @@ async function analyzeGemini(b64, apiKey, lang) {
     let res;
     try {
       res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        // ключ — у заголовку, не в адресі (адреси потрапляють у журнали)
+        { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body }
       );
     } catch (e) {
       throw new Error('offline');
