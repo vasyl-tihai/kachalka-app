@@ -492,3 +492,95 @@ function uaAuthError(error) {
   if (m.toLowerCase().includes('fetch')) return 'Немає з’єднання з сервером — перевір інтернет';
   return m;
 }
+
+// ---- блокування, скарги, звернення (backend/patch-5-moderation.sql) ----
+// id людей, яких я заблокував (порожньо без входу)
+export async function myBlocks() {
+  const sb = await client();
+  const s = await getSession();
+  if (!sb || !s) return new Set();
+  const { data, error } = await sb.from('blocks').select('blocked_id').eq('blocker_id', s.user.id);
+  if (error) throw new Error(error.message);
+  return new Set((data || []).map((r) => r.blocked_id));
+}
+export async function listBlocked() {
+  const sb = await client();
+  const s = await getSession();
+  if (!sb || !s) return [];
+  const { data, error } = await sb
+    .from('blocks')
+    .select('blocked_id, created_at')
+    .eq('blocker_id', s.user.id)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  const rows = data || [];
+  // імена — окремим запитом: профіль заблокованого може бути закритий правилами
+  const names = {};
+  if (rows.length) {
+    const { data: ps } = await sb.from('profiles').select('id,name,avatar_url').in('id', rows.map((r) => r.blocked_id));
+    for (const p of ps || []) names[p.id] = p;
+  }
+  return rows.map((r) => ({ id: r.blocked_id, ...(names[r.blocked_id] || { name: '' }) }));
+}
+export async function blockUser(userId) {
+  if (!isUUID(userId)) throw new Error('bad id');
+  const sb = await client();
+  const s = await getSession();
+  const { error } = await sb.from('blocks').upsert({ blocker_id: s.user.id, blocked_id: userId }, { onConflict: 'blocker_id,blocked_id' });
+  if (error) throw new Error(error.message);
+}
+export async function unblockUser(userId) {
+  const sb = await client();
+  const s = await getSession();
+  const { error } = await sb.from('blocks').delete().eq('blocker_id', s.user.id).eq('blocked_id', userId);
+  if (error) throw new Error(error.message);
+}
+// скарга: type — post | user | chat; повторна скарга на те саме — не помилка
+export async function report({ type, targetId, userId, reason, note }) {
+  const sb = await client();
+  const s = await getSession();
+  if (!sb || !s) throw new Error('auth');
+  const { error } = await sb.from('reports').insert({
+    reporter_id: s.user.id,
+    target_type: type,
+    target_id: String(targetId).slice(0, 64),
+    target_user: isUUID(userId) ? userId : null,
+    reason,
+    note: String(note || '').slice(0, 1000),
+  });
+  if (error && error.code !== '23505') throw new Error(error.message);
+}
+// звернення в підтримку: можна без входу. Прямий запит до REST (без supabase-js): стара збережена сесія
+// не тримає відправку, а без сервера помилка приходить одразу — тоді звернення чекає в черзі на пристрої
+export async function sendSupport({ topic, text, email, version, lang }) {
+  if (!configured) throw new Error('no-server');
+  let session = null;
+  try {
+    session = await Promise.race([getSession(), new Promise((ok) => setTimeout(() => ok(null), 2000))]);
+  } catch (e) { /* без входу */ }
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 10000);
+  try {
+    const res = await fetch(SUPABASE_URL + '/rest/v1/support_requests', {
+      method: 'POST',
+      signal: ac.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: 'Bearer ' + (session ? session.access_token : SUPABASE_ANON_KEY),
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({
+        user_id: session ? session.user.id : null,
+        topic,
+        text: String(text).slice(0, 3000),
+        email: String(email || '').slice(0, 200),
+        app_version: String(version || '').slice(0, 40),
+        lang: String(lang || '').slice(0, 5),
+      }),
+    });
+    if (!res.ok) throw new Error('http ' + res.status);
+  } finally {
+    clearTimeout(timer);
+  }
+}

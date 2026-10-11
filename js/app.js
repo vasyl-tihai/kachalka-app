@@ -128,6 +128,8 @@ const routes = [
   { re: /^#\/body$/, render: renderBody },
   { re: /^#\/history(?:\/(.+))?$/, render: renderHistory },
   { re: /^#\/settings$/, render: renderSettings },
+  { re: /^#\/support$/, render: renderSupport },
+  { re: /^#\/blocked$/, render: renderBlocked },
   { re: /^#\/coach$/, render: renderCoach },
   { re: /^#\/community$/, render: renderCommunityHub },
   { re: /^#\/user\/(.+)$/, render: renderUserProfile },
@@ -3350,6 +3352,14 @@ function renderSettings() {
     </section>
 
     <section class="card">
+      <div class="card-label">💬 ${T('Підтримка')}</div>
+      <div class="btn-col">
+        <button class="btn ghost" id="supportBtn">✉️ ${T('Написати нам')}</button>
+        ${BE.configured ? `<button class="btn ghost" id="blockedBtn">🚫 ${T('Заблоковані')}</button>` : ''}
+      </div>
+    </section>
+
+    <section class="card">
       <div class="card-label">${T('Дані')}</div>
       <div class="btn-col">
         <button class="btn ghost" id="exportBtn">⬇️ ${T('Експорт (резервна копія)')}</button>
@@ -3364,6 +3374,9 @@ function renderSettings() {
   `;
   screenEl.querySelector('#backBtn').onclick = () => history.back();
   screenEl.querySelector('#coachBtn').onclick = () => go('#/community');
+  screenEl.querySelector('#supportBtn').onclick = () => go('#/support');
+  const blockedBtn = screenEl.querySelector('#blockedBtn');
+  if (blockedBtn) blockedBtn.onclick = () => go('#/blocked');
 
   // мова — застосовується одразу
   screenEl.querySelector('#langSel').onchange = (e) => {
@@ -3600,17 +3613,68 @@ function roleLabel(p) {
   return p.role === 'trainer' ? `🧑‍🏫 ${T('Тренер')}` : p.role === 'kitchen' ? `🍳 ${T('Рецепти')}` : `🏋️ ${T('Атлет')}`;
 }
 
+// ---- скарги й блокування (правила Play для спільнот; сервер — backend/patch-5-moderation.sql) ----
+const REPORT_REASONS = [
+  ['spam', 'Спам або реклама'], ['abuse', 'Образи чи цькування'], ['sexual', 'Непристойне'],
+  ['dangerous', 'Небезпечне (препарати, шкода здоровʼю)'], ['fake', 'Фейк або шахрайство'], ['other', 'Інше'],
+];
+let blockedIds = new Set(); // кого я заблокував — оновлюється на екранах спільноти
+async function refreshBlocks() {
+  try { blockedIds = await BE.myBlocks(); } catch (e) { /* таблиці ще немає / без мережі — нічого не ховаємо */ }
+  return blockedIds;
+}
+const modErr = (e) => toast('⚠️ ' + esc(e && e.message === 'auth' ? T('Увійди в акаунт (вкладка «Спільнота»), щоб користуватись цим') : (e && e.message) || ''));
+function openReport({ type, targetId, userId, name, onDone }) {
+  openModal(T('Поскаржитись'), `
+    <p class="muted small">${T('Скаргу перегляне команда Gym Log. Автор не дізнається, хто поскаржився.')}</p>
+    <div class="rep-list">${REPORT_REASONS.map(([id, l], i) =>
+      `<label class="rep-row"><input type="radio" name="rep" value="${id}" ${i ? '' : 'checked'}/><span>${T(l)}</span></label>`).join('')}</div>
+    <div class="field"><label>${T('Коментар (необовʼязково)')}</label><textarea id="repNote" maxlength="1000" rows="3"></textarea></div>
+    ${userId && !blockedIds.has(userId) ? `<label class="rep-row"><input type="checkbox" id="repBlock"/><span>${T('Також заблокувати')}${name ? ' ' + esc(name) : ''}</span></label>` : ''}
+  `, [{ label: T('Надіслати скаргу'), class: 'primary', onClick: async (root) => {
+    const reason = root.querySelector('input[name="rep"]:checked').value;
+    try {
+      await BE.report({ type, targetId, userId, reason, note: root.querySelector('#repNote').value.trim() });
+      const blk = root.querySelector('#repBlock');
+      if (blk && blk.checked) { await BE.blockUser(userId); blockedIds.add(userId); }
+      closeModal();
+      toast('✅ ' + T('Дякуємо! Скаргу надіслано'));
+      if (onDone) onDone();
+    } catch (e) { modErr(e); }
+  } }]);
+}
+async function toggleBlock(userId, onDone) {
+  const was = blockedIds.has(userId);
+  if (!was && !confirm(T('Заблокувати? Ви не бачитимете дописів і повідомлень одне одного.'))) return;
+  try {
+    if (was) { await BE.unblockUser(userId); blockedIds.delete(userId); toast(T('Розблоковано')); }
+    else { await BE.blockUser(userId); blockedIds.add(userId); toast('🚫 ' + T('Заблоковано')); }
+    if (onDone) onDone();
+  } catch (e) { modErr(e); }
+}
+// меню «⋯»: скарга + блокування людини
+function openPersonMenu({ type, targetId, userId, name, onDone }) {
+  const blocked = blockedIds.has(userId);
+  openModal(name || T('Дії'), `<p class="muted small">${T('Що зробити?')}</p>`, [
+    { label: '🚩 ' + T('Поскаржитись'), class: 'ghost', onClick: () => { closeModal(); openReport({ type, targetId, userId, name, onDone }); } },
+    { label: blocked ? T('Розблокувати') : '🚫 ' + T('Заблокувати'), class: blocked ? 'ghost' : 'danger',
+      onClick: () => { closeModal(); toggleBlock(userId, onDone); } },
+  ]);
+}
+
 function postCardHTML(p, meId, liked) {
   const a = p.author || {};
   const mine = meId && p.author_id === meId;
   const on = liked.has(p.id);
   const fb = p.fallback ? ` data-fb="${esc(p.fallback)}"` : '';
+  const ugc = !(p.official || a.official || a.sample); // вітрина — наші дописи, скаржитись нема на що
   return `<section class="card post-card">
     <div class="post-head">
       <button class="post-user" data-u="${esc(p.author_id)}">${avatarHtml(a)}</button>
       <button class="post-author" data-u="${esc(p.author_id)}">${esc(T(a.name || 'Без імені'))}${personBadge(a)}</button>
       <span class="post-date muted">${postDate(p.created_at)}</span>
       ${mine ? `<button class="set-del post-del" data-id="${p.id}" data-path="${esc(p.photo_path || '')}" title="${T('Видалити')}">✕</button>` : ''}
+      ${!mine && meId && ugc ? `<button class="set-del post-more" data-more="${esc(p.id)}" title="${T('Поскаржитись')}">⋯</button>` : ''}
     </div>
     <img class="post-img" src="${esc(p.photo_url)}" alt="" loading="lazy"${fb}/>
     <div class="post-acts">
@@ -3662,7 +3726,10 @@ async function renderCommunity() {
           BE.listPosts(),
           BE.listPeople(),
           BE.mySharedTraining().catch(() => null),
+          refreshBlocks(),
         ]), 8000);
+        posts = posts.filter((p) => !blockedIds.has(p.author_id));
+        people = people.filter((p) => !blockedIds.has(p.id));
       } catch (e) { if (e.message !== 'timeout') loadErr = e; }
     }
   }
@@ -3743,6 +3810,13 @@ async function renderCommunity() {
     const text = `${T(a.name || '')}: ${a.official || a.sample ? T(p.caption || '') : p.caption || ''}\n\n— Gym Log`;
     if (navigator.share) navigator.share({ text }).catch(() => {});
     else navigator.clipboard.writeText(text).then(() => toast(T('Скопійовано')), () => {});
+  }));
+  // «⋯» на чужому дописі: скарга / заблокувати автора
+  body.querySelectorAll('[data-more]').forEach((b) => (b.onclick = (e) => {
+    e.stopPropagation();
+    const p = posts.find((x) => String(x.id) === b.dataset.more);
+    if (!p) return;
+    openPersonMenu({ type: 'post', targetId: p.id, userId: p.author_id, name: (p.author || {}).name, onDone: () => renderCommunity() });
   }));
   // видалити свій допис
   body.querySelectorAll('.post-del').forEach((b) =>
@@ -3880,6 +3954,9 @@ async function renderUserProfile(userId) {
   if (!session) return go('#/community');
 
   let prof = null, posts = [], sharedTr = null, slots = [];
+  await refreshBlocks();
+  const isMe = session.user.id === userId;
+  const blocked = blockedIds.has(userId);
   try {
     prof = await BE.getProfile(userId);
     [posts, sharedTr] = await Promise.all([
@@ -3907,6 +3984,7 @@ async function renderUserProfile(userId) {
 
   // «як людина тренується» — якщо відкрила доступ
   let trainHtml = '';
+  if (blocked) { sharedTr = null; posts = []; }
   if (sharedTr && sharedTr.data && Object.keys(sharedTr.data).length) {
     const days = Object.keys(sharedTr.data).sort().reverse().slice(0, 7);
     trainHtml = `<section class="card">
@@ -3932,9 +4010,12 @@ async function renderUserProfile(userId) {
         </div>
       </div>
       ${prof.bio ? `<p class="profile-bio">${esc(prof.bio)}</p>` : ''}
-      <div class="btn-row">
-        <button class="btn ghost" id="chatBtn">💬 Написати</button>
-      </div>
+      ${isMe ? '' : `<div class="btn-row">
+        ${blocked ? '' : `<button class="btn ghost" id="chatBtn">💬 ${T('Написати')}</button>`}
+        <button class="btn ghost" id="repUser">🚩 ${T('Поскаржитись')}</button>
+        <button class="btn ${blocked ? 'ghost' : 'danger'}" id="blkUser">${blocked ? T('Розблокувати') : '🚫 ' + T('Заблокувати')}</button>
+      </div>`}
+      ${blocked ? `<p class="muted small">🚫 ${T('Ти заблокував цю людину: її дописи й повідомлення приховано.')}</p>` : ''}
     </section>
     ${prof.role === 'trainer' ? `<section class="card">
       <div class="card-label">📅 ${T('Записатися на тренування')}</div>
@@ -3949,7 +4030,12 @@ async function renderUserProfile(userId) {
         ${p.caption ? `<p class="post-cap">${esc(p.caption)}</p>` : ''}
       </section>`).join('')}</div>` : ''}
   `;
-  uBody.querySelector('#chatBtn').onclick = () => go('#/chat/' + userId);
+  const chatBtn = uBody.querySelector('#chatBtn');
+  if (chatBtn) chatBtn.onclick = () => go('#/chat/' + userId);
+  const repUser = uBody.querySelector('#repUser');
+  if (repUser) repUser.onclick = () => openReport({ type: 'user', targetId: userId, userId, name: prof.name, onDone: () => renderUserProfile(userId) });
+  const blkUser = uBody.querySelector('#blkUser');
+  if (blkUser) blkUser.onclick = () => toggleBlock(userId, () => renderUserProfile(userId));
   uBody.querySelectorAll('.book-slot').forEach((b) =>
     b.addEventListener('click', async () => {
       b.disabled = true;
@@ -4642,6 +4728,7 @@ async function renderChat(otherId) {
       <button class="icon-btn" id="backChat">‹</button>
       <div class="appbar-titles"><div class="appbar-kicker">Повідомлення</div>
         <div class="appbar-title" id="chatName">…</div></div>
+      <button class="icon-btn" id="chatMore" title="${T('Поскаржитись')}">⋯</button>
       <button class="icon-btn" id="refreshChat" title="Оновити">↻</button>
     </header>
     <div class="chat-log" id="chatLog"><p class="muted center">Завантаження…</p></div>
@@ -4654,12 +4741,24 @@ async function renderChat(otherId) {
   let me = null;
   try { me = await BE.myId(); } catch (e) {}
   if (!me) return go('#/coach');
+  await refreshBlocks();
 
+  let otherName = '';
   try {
     const p = await BE.getProfile(otherId);
+    otherName = p.name || '';
     const nm = screenEl.querySelector('#chatName');
     if (nm) nm.textContent = p.name || 'Співрозмовник';
   } catch (e) {}
+  screenEl.querySelector('#chatMore').onclick = () =>
+    openPersonMenu({ type: 'chat', targetId: otherId, userId: otherId, name: otherName, onDone: () => renderChat(otherId) });
+  if (blockedIds.has(otherId)) {
+    screenEl.querySelector('#chatLog').innerHTML = `<p class="muted center">🚫 ${T('Ти заблокував цю людину: її дописи й повідомлення приховано.')}</p>
+      <div class="btn-col"><button class="btn ghost" id="unblkChat">${T('Розблокувати')}</button></div>`;
+    screenEl.querySelector('.chat-input').remove();
+    screenEl.querySelector('#unblkChat').onclick = () => toggleBlock(otherId, () => renderChat(otherId));
+    return;
+  }
 
   const load = async () => {
     try {
@@ -4684,7 +4783,10 @@ async function renderChat(otherId) {
     if (!text) return;
     inp.value = '';
     try { await BE.sendMessage(otherId, text); await load(); }
-    catch (e) { alert('⚠️ ' + e.message); }
+    catch (e) {
+      // RLS не пускає, коли співрозмовник заблокував
+      alert('⚠️ ' + (/row-level security/i.test(e.message) ? T('Не вдалося надіслати: людина обмежила повідомлення') : e.message));
+    }
   };
   screenEl.querySelector('#chatSend').onclick = send;
   screenEl.querySelector('#chatText').addEventListener('keydown', (e) => {
@@ -6238,6 +6340,111 @@ function openBarcodeScanner(onCode) {
 }
 
 // =====================================================================
+//  ПІДТРИМКА: «Написати нам» (#/support) і «Заблоковані» (#/blocked)
+// =====================================================================
+const SUPPORT_TOPICS = [
+  ['bug', '🐞 Помилка'], ['idea', '💡 Ідея'], ['billing', '💳 Оплата'], ['data', '🗑️ Видалити мої дані'], ['other', '✉️ Інше'],
+];
+// звернення, які не вдалося надіслати (немає сервера / мережі), — чекають тут і йдуть при наступному запуску
+const SUP_Q = 'kachalka-support-queue';
+function supQueue() {
+  try { const q = JSON.parse(localStorage.getItem(SUP_Q) || '[]'); return Array.isArray(q) ? q : []; } catch (e) { return []; }
+}
+function setSupQueue(q) {
+  try { if (q.length) localStorage.setItem(SUP_Q, JSON.stringify(q.slice(-20))); else localStorage.removeItem(SUP_Q); } catch (e) {}
+}
+async function flushSupport() {
+  const q = supQueue();
+  if (!q.length || !BE.configured || !navigator.onLine) return 0;
+  const rest = [];
+  for (const r of q) {
+    try { await BE.sendSupport(r); } catch (e) { rest.push(r); }
+  }
+  setSupQueue(rest);
+  return q.length - rest.length;
+}
+function renderSupport() {
+  let topic = 'bug';
+  const waiting = supQueue().length;
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backSup">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">💬 ${T('Підтримка')}</div>
+        <div class="appbar-title">${T('Написати нам')}</div></div>
+    </header>
+    <p class="muted side">${T('Помилка, ідея, питання про оплату чи прохання видалити дані — напиши, ми прочитаємо кожне звернення.')}</p>
+    <section class="card">
+      <div class="field"><label>${T('Тема')}</label>
+        <div class="type-chips" id="supTopics">${SUPPORT_TOPICS.map(([id, l]) =>
+          `<button class="tchip ${id === topic ? 'on' : ''}" data-topic="${id}">${T(l)}</button>`).join('')}</div>
+      </div>
+      <p class="muted small" id="supDataHint" hidden>${T('Вкажи пошту акаунта. Дані на телефоні стираються в Налаштуваннях → «Стерти всі дані»; дані на сервері (профіль, дописи, повідомлення) видалимо за твоїм зверненням.')}</p>
+      <div class="field"><label>${T('Повідомлення')}</label>
+        <textarea id="supText" rows="6" maxlength="3000" placeholder="${T('Опиши, що сталося або що хочеш запропонувати')}"></textarea></div>
+      <div class="field"><label>${T('Пошта для відповіді (необовʼязково)')}</label>
+        <input type="email" id="supMail" maxlength="200" autocomplete="email" placeholder="name@example.com"/></div>
+      <p class="muted small">${T('Разом зі зверненням надсилаються лише версія застосунку й мова — без твоїх тренувань.')}</p>
+      ${waiting ? `<p class="muted small">📮 ${T('Чекають відправки')}: ${waiting}</p>` : ''}
+      <div class="btn-col"><button class="btn primary" id="supSend">✉️ ${T('Надіслати')}</button></div>
+    </section>`;
+  screenEl.querySelector('#backSup').onclick = () => go('#/settings');
+  screenEl.querySelector('#supTopics').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-topic]');
+    if (!b) return;
+    topic = b.dataset.topic;
+    screenEl.querySelectorAll('#supTopics .tchip').forEach((c) => c.classList.toggle('on', c === b));
+    screenEl.querySelector('#supDataHint').hidden = topic !== 'data';
+  });
+  const btn = screenEl.querySelector('#supSend');
+  btn.onclick = async () => {
+    const text = screenEl.querySelector('#supText').value.trim();
+    const email = screenEl.querySelector('#supMail').value.trim();
+    if (text.length < 5) return toast(T('Напиши трохи більше'));
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return toast(T('Перевір пошту'));
+    const req = { topic, text, email, version: APP_VERSION, lang: S.getSettings().lang };
+    btn.disabled = true;
+    try {
+      await BE.sendSupport(req);
+      toast('✅ ' + T('Дякуємо! Звернення надіслано'));
+    } catch (e) {
+      setSupQueue([...supQueue(), req]);
+      toast('📮 ' + T('Немає звʼязку із сервером — звернення збережено й надішлеться пізніше'));
+    }
+    go('#/settings');
+  };
+}
+async function renderBlocked() {
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backBl">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">💬 ${T('Підтримка')}</div>
+        <div class="appbar-title">${T('Заблоковані')}</div></div>
+    </header>
+    <section class="card" id="blList"><p class="muted">${T('Завантаження…')}</p></section>`;
+  screenEl.querySelector('#backBl').onclick = () => go('#/settings');
+  const box = screenEl.querySelector('#blList');
+  let session = null;
+  if (BE.configured) {
+    try { session = await Promise.race([BE.getSession(), new Promise((ok) => setTimeout(() => ok(null), 3000))]); } catch (e) {}
+  }
+  if (!location.hash.startsWith('#/blocked')) return;
+  if (!session) { box.innerHTML = `<p class="muted">${T('Увійди в акаунт (вкладка «Спільнота»), щоб користуватись цим')}</p>`; return; }
+  let list = [];
+  try { list = await BE.listBlocked(); } catch (e) { box.innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`; return; }
+  if (!location.hash.startsWith('#/blocked')) return;
+  box.innerHTML = list.length
+    ? `<div class="pick-list">${list.map((p) => `<div class="pick-row fc-row person-row">
+        ${avatarHtml(p)}<span class="pick-name">${esc(p.name || T('Без імені'))}</span>
+        <button class="mini" data-unb="${esc(p.id)}">${T('Розблокувати')}</button></div>`).join('')}</div>`
+    : `<p class="muted">${T('Ти нікого не блокував.')}</p>`;
+  box.querySelectorAll('[data-unb]').forEach((b) => (b.onclick = async () => {
+    b.disabled = true;
+    try { await BE.unblockUser(b.dataset.unb); blockedIds.delete(b.dataset.unb); toast(T('Розблоковано')); renderBlocked(); }
+    catch (e) { b.disabled = false; modErr(e); }
+  }));
+}
+
+// =====================================================================
 //  МОДАЛКА + ТОСТ
 // =====================================================================
 function openModal(title, bodyHtml, actions = []) {
@@ -6310,6 +6517,7 @@ let pendingShare = '';
   }
 }
 router();
+if (supQueue().length) setTimeout(() => flushSupport().catch(() => {}), 5000); // звернення, що чекали на звʼязок
 
 // повернення після входу через Google: в URL є ?code=... — обміняти на сесію
 if (BE.configured && (location.search.includes('code=') || location.search.includes('error_description='))) {
