@@ -48,9 +48,11 @@ export async function importRecipe({ file, url, lang }) {
   else body.url = url;
   let r;
   try {
+    // сервер вимагає вхід в акаунт: Authorization: Bearer <JWT> (без входу відповість 401)
+    const { functionHeaders } = await import('./backend.js');
     r = await fetch(URL_FN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+      headers: await functionHeaders(),
       body: JSON.stringify(body),
     });
   } catch {
@@ -58,6 +60,8 @@ export async function importRecipe({ file, url, lang }) {
   }
   const d = await r.json().catch(() => ({}));
   if (r.ok && d.recipe) return d.recipe;
+  if (r.status === 401) throw new Error('auth');
+  if (r.status === 429 && d.error === 'limit') throw new Error('limit');
   throw new Error(d.error || 'api-' + r.status);
 }
 
@@ -69,5 +73,7 @@ export function importError(e) {
   if (m === 'no-recipe') return 'Не знайшов рецепта — у джерелі немає списку інгредієнтів. Додай вручну';
   if (m === 'source-unavailable') return 'Не вдалося відкрити посилання — перевір його або встав текст вручну';
   if (m === 'quota') return 'Забагато імпортів сьогодні — спробуй завтра';
+  if (m === 'auth') return 'Увійди в акаунт (вкладка «Спільнота»), щоб користуватись цим';
+  if (m === 'limit') return 'Ліміт на сьогодні вичерпано — спробуй завтра';
   return 'Не вдалося імпортувати рецепт — спробуй ще раз';
 }

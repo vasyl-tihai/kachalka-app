@@ -41,15 +41,19 @@ async function call(body) {
   if (!(await serverAvailable())) throw new Error('no-server');
   let r;
   try {
+    // сервер вимагає вхід в акаунт: Authorization: Bearer <JWT> (без входу відповість 401)
+    const { functionHeaders } = await import('./backend.js');
     r = await fetch(URL_FN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+      headers: await functionHeaders(),
       body: JSON.stringify(body),
     });
   } catch {
     throw new Error('offline');
   }
   const d = await r.json().catch(() => ({}));
+  if (r.status === 401) throw new Error('auth');
+  if (r.status === 429 && d.error === 'limit') throw new Error('limit');
   if (!r.ok) throw new Error(d.error || 'api-' + r.status);
   return d;
 }
@@ -78,6 +82,8 @@ export function errorText(e) {
   if (m === 'no-products') return 'Не знайшов продуктів на фото — сфотографуй чек ближче й рівно';
   if (m === 'few-products') return 'Замало продуктів для меню — додай ще або увімкни «Можна докупити»';
   if (m === 'quota') return 'Забагато запитів сьогодні — спробуй завтра';
+  if (m === 'auth') return 'Увійди в акаунт (вкладка «Спільнота»), щоб користуватись цим';
+  if (m === 'limit') return 'Ліміт на сьогодні вичерпано — спробуй завтра';
   return 'Не вдалося скласти меню — спробуй ще раз';
 }
 

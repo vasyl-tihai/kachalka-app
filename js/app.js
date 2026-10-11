@@ -2778,7 +2778,7 @@ async function renderPro() {
 async function applyPurchase(res) {
   const ver = await BILL.verify(res);
   if (ver.error) {
-    toast(`⚠️ ${T('Не вдалося підтвердити покупку')}`);
+    toast(`⚠️ ${T(ver.error === 'auth' ? 'Увійди в акаунт (вкладка «Спільнота»), щоб користуватись цим' : 'Не вдалося підтвердити покупку')}`);
     return;
   }
   BILL.setSubscription(ver);

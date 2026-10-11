@@ -33,9 +33,11 @@ export async function proxyAvailable() {
 async function analyzeProxy(b64, lang) {
   let res;
   try {
+    // сервер вимагає вхід в акаунт: Authorization: Bearer <JWT> (без входу відповість 401)
+    const { functionHeaders } = await import('./backend.js');
     res = await fetch(PROXY_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+      headers: await functionHeaders(),
       body: JSON.stringify({ image: b64, lang }),
     });
   } catch (e) {
@@ -46,7 +48,12 @@ async function analyzeProxy(b64, lang) {
     return parseResult(d.result);
   }
   if (res.status === 404) throw new Error('no-proxy');
-  if (res.status === 429) throw new Error('quota');
+  if (res.status === 401) throw new Error('auth');
+  if (res.status === 429) {
+    // {error:'limit'} — наш денний ліміт; інакше «зачекай» від ШІ
+    const d = await res.json().catch(() => ({}));
+    throw new Error(d && d.error === 'limit' ? 'limit' : 'quota');
+  }
   throw new Error('api-' + res.status);
 }
 
@@ -201,6 +208,8 @@ export function errorMessage(e) {
   if (m === 'bad-format') return 'Це не схоже на ключ OpenAI (sk-…) чи Gemini (AIza…) — перевір, звідки ти його скопіював';
   if (m === 'bad-key') return 'Невірний ключ API — перевір його';
   if (m === 'quota') return 'Ліміт запитів вичерпано — спробуй за хвилину';
+  if (m === 'auth') return 'Увійди в акаунт (вкладка «Спільнота»), щоб користуватись цим';
+  if (m === 'limit') return 'Ліміт на сьогодні вичерпано — спробуй завтра';
   if (m === 'offline') return 'Немає з’єднання з інтернетом';
   if (m === 'parse') return 'Не вдалося розібрати відповідь — спробуй ще раз';
   return 'Помилка аналізу';

@@ -10,7 +10,7 @@
 // калорій рахує ліміт сама й вимагає дійсну підписку (backend/SUBSCRIPTION.md).
 // Тут ми лише не даємо витрачати запити й показуємо чесний стан.
 import * as S from './store.js';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './backend-config.js';
+import { SUPABASE_URL } from './backend-config.js';
 
 const VERIFY_URL = SUPABASE_URL ? SUPABASE_URL + '/functions/v1/subscription' : '';
 
@@ -209,25 +209,28 @@ export async function restore() {
 }
 
 /**
- * Звірка покупки з сервером: Edge Function «subscription» питає Google Play
- * Developer API і повертає дату, до якої підписка дійсна.
- * Поки функцію не розгорнули (404) — довіряємо відповіді Play на пристрої,
- * щоб застосунок не був зламаний до підняття бекенду.
+ * Звірка покупки з сервером: Edge Function «subscription» (потрібен вхід в акаунт) питає Google Play
+ * Developer API, зберігає підписку й повертає { active, expiresAt }.
+ * Підписку без підтвердження сервера НЕ видаємо: будь-яка невдача (немає функції, мережі, входу,
+ * відмова сервера) повертає { error } — виклик не змінює збережений стан, тож лишається те, що було.
  */
 export async function verify({ token, productId, source }) {
-  const fallback = { until: S.dateToISO(new Date(Date.now() + 31 * 86400000)), productId, source, unverified: true };
-  if (!VERIFY_URL || !token) return fallback;
+  if (!VERIFY_URL || !token) return { error: 'no-server' };
   try {
+    const { functionHeaders } = await import('./backend.js');
     const res = await fetch(VERIFY_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+      headers: await functionHeaders(),
       body: JSON.stringify({ token, productId, source }),
     });
-    if (res.status === 404) return fallback; // функції ще немає
-    const data = await res.json();
-    if (!res.ok || !data.until) return { error: (data && data.error) || 'verify-failed' };
-    return { until: data.until, productId, source };
+    if (res.status === 404) return { error: 'no-server' }; // функції ще немає
+    if (res.status === 401) return { error: 'auth' };
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { error: (data && data.error) || 'verify-failed' };
+    if (!data.active || !data.expiresAt) return { error: 'expired' };
+    // expiresAt — ISO-час; у застосунку підписка живе датою (sub.until)
+    return { until: S.dateToISO(new Date(data.expiresAt)), productId, source };
   } catch (e) {
-    return fallback; // немає мережі — не блокуємо того, хто щойно заплатив
+    return { error: 'offline' };
   }
 }

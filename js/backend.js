@@ -28,6 +28,19 @@ export async function getSession() {
   return data.session || null;
 }
 
+/**
+ * Заголовки для викликів Edge Functions (/functions/v1/…): apikey + Authorization: Bearer <JWT користувача>,
+ * якщо він увійшов в акаунт. Без входу Authorization немає — функція відповість 401 {error:'auth'}.
+ */
+export async function functionHeaders() {
+  const h = { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY };
+  try {
+    const s = await getSession();
+    if (s && s.access_token) h.Authorization = 'Bearer ' + s.access_token;
+  } catch (e) { /* без сесії — запит піде без Authorization */ }
+  return h;
+}
+
 export async function signUp(email, password, name) {
   const sb = await client();
   const { data, error } = await sb.auth.signUp({
