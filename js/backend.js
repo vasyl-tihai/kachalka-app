@@ -244,6 +244,55 @@ export async function deletePost(post) {
   }
 }
 
+// ---- лайки й коментарі (backend/patch-6-likes-comments.sql; лічильники — posts.like_count / comment_count) ----
+// які з цих дописів я лайкнув
+export async function myLikes(postIds) {
+  const sb = await client();
+  const s = await getSession();
+  const ids = (postIds || []).filter(isUUID);
+  if (!sb || !s || !ids.length) return new Set();
+  const { data, error } = await sb.from('post_likes').select('post_id').eq('user_id', s.user.id).in('post_id', ids);
+  if (error) throw new Error(error.message);
+  return new Set((data || []).map((r) => r.post_id));
+}
+export async function setLike(postId, on) {
+  const sb = await client();
+  const s = await getSession();
+  if (!sb || !s) throw new Error('auth');
+  const q = on
+    ? sb.from('post_likes').insert({ post_id: postId, user_id: s.user.id })
+    : sb.from('post_likes').delete().eq('post_id', postId).eq('user_id', s.user.id);
+  const { error } = await q;
+  if (error && error.code !== '23505') throw new Error(error.message); // 23505 — уже лайкнуто
+}
+export async function listComments(postId) {
+  const sb = await client();
+  const { data, error } = await sb
+    .from('post_comments')
+    .select('id,post_id,author_id,body,created_at, author:author_id(name,avatar_url,role)')
+    .eq('post_id', postId)
+    .order('created_at', { ascending: true })
+    .limit(200);
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+export async function addComment(postId, body) {
+  const sb = await client();
+  const s = await getSession();
+  if (!sb || !s) throw new Error('auth');
+  const { error } = await sb.from('post_comments').insert({
+    post_id: postId,
+    author_id: s.user.id,
+    body: String(body || '').trim().slice(0, 500),
+  });
+  if (error) throw new Error(/too many/.test(error.message) ? 'too-many' : error.message);
+}
+export async function deleteComment(id) {
+  const sb = await client();
+  const { error } = await sb.from('post_comments').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
 // ---- публічні тренування («як я тренуюсь») — вмикає сам користувач ----
 export async function shareTraining(dataJson) {
   const sb = await client();

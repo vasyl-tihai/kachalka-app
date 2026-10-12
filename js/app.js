@@ -240,7 +240,7 @@ function updateTabbar(hash) {
       (b.dataset.hash === '#/today' && hash === '#/') ||
       (b.dataset.hash === '#/calendar' && hash.startsWith('#/workout/')) ||
       (b.dataset.hash === '#/workouts' && (hash.startsWith('#/program') || hash.startsWith('#/gym/'))) ||
-      (b.dataset.hash === '#/ai' && (hash === '#/calories' || hash === '#/mealplan' || hash.startsWith('#/meal/') || hash.startsWith('#/supp') || hash.startsWith('#/course/') || hash === '#/smart' || hash === '#/formcheck' || hash.startsWith('#/guide'))) ||
+      (b.dataset.hash === '#/ai' && (hash === '#/calories' || hash === '#/mealplan' || hash.startsWith('#/meal/') || hash.startsWith('#/supps') || hash.startsWith('#/supp/') || hash === '#/supptpl' || hash.startsWith('#/course/') || hash === '#/smart' || hash === '#/formcheck' || hash.startsWith('#/guide'))) ||
       (b.dataset.hash === '#/progress' && (hash.startsWith('#/history') || hash.startsWith('#/body'))) ||
       (b.dataset.hash === '#/community' &&
         (hash.startsWith('#/user') || hash.startsWith('#/recipe') || hash.startsWith('#/coach') || hash.startsWith('#/chat') || hash.startsWith('#/client')));
@@ -251,6 +251,9 @@ function updateTabbar(hash) {
 }
 
 // ---------- утиліти ----------
+// назва вправи / тренування для показу: стандартні (є в словнику) — мовою інтерфейсу, власні — як записала людина.
+// Збережену назву не перекладаємо: за українською назвою шукаються техніка (guideFor) та іконки (exicons).
+function exN(x) { return x && x.name ? T(x.name) : ''; }
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -277,8 +280,8 @@ function typeLabel(id) {
 }
 function fmtKg(n) {
   // компактний тоннаж: 1234 → «1.2 т», 850 → «850 кг»
-  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')} т`;
-  return `${Math.round(n)} кг`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')} ${T('т')}`;
+  return `${Math.round(n)} ${T('кг')}`;
 }
 // час у секундах → «хв:сек» (або просто секунди, якщо < 60)
 function fmtMMSS(sec) {
@@ -332,7 +335,7 @@ function barsChart(values, labelFor) {
 
 // лінійний графік (SVG) для замірів тіла
 function lineChartSVG(rows) {
-  if (!rows || rows.length < 2) return '<p class="muted center">Замало даних для графіка — потрібно ≥2 записи.</p>';
+  if (!rows || rows.length < 2) return `<p class="muted center">${T('Замало даних для графіка — потрібно ≥2 записи.')}</p>`;
   const vals = rows.map((r) => r.value);
   const min = Math.min(...vals);
   const max = Math.max(...vals);
@@ -367,12 +370,12 @@ function bestsText(b) {
 function celebratePRs(records, ex) {
   if (!records.length) return;
   const parts = records.map((r) => {
-    if (r.type === 'weight') return `${r.value} кг`;
-    if (r.type === 'reps') return `${r.value} повт.`;
-    if (r.type === 'orm') return `≈${r.value} кг (1ПМ)`;
+    if (r.type === 'weight') return `${r.value} ${T('кг')}`;
+    if (r.type === 'reps') return `${r.value} ${T('повт.')}`;
+    if (r.type === 'orm') return `≈${r.value} ${T('кг')} (${T('1ПМ')})`;
     return '';
   });
-  toast(`🏆 Новий рекорд! <b>${esc(ex.name)}</b><br>${parts.join(' · ')}`, 'pr');
+  toast(`🏆 Новий рекорд! <b>${esc(exN(ex))}</b><br>${parts.join(' · ')}`, 'pr');
   if (navigator.vibrate) navigator.vibrate([60, 40, 120]);
 }
 
@@ -387,7 +390,7 @@ function exCard(iso, id) {
   const target = (entry && entry.targetSets) || ex.targetSets;
   const w = entry ? entry.weight : ex.weight;
   const wt = entry ? entry.weightType : ex.weightType;
-  const wText = wt === 'bodyweight' ? 'вага тіла' : `${w} кг`;
+  const wText = wt === 'bodyweight' ? T('вага тіла') : `${w} ${T('кг')}`;
   const pct = target ? Math.min(100, Math.round((done / target) * 100)) : 0;
   const complete = done >= target && target > 0;
   const anim = exIconHTML(ex); // анімована іконка вправи; немає — емодзі
@@ -398,7 +401,7 @@ function exCard(iso, id) {
     <button class="ex-card ${complete ? 'done' : ''}" data-id="${id}">
       <span class="ex-ico">${anim || `<span class="glyph">${ex.icon || '💪'}</span>`}</span>
       <span class="ex-main">
-        <span class="ex-name">${esc(ex.name)}</span>
+        <span class="ex-name">${esc(exN(ex))}</span>
         <span class="ex-sub">${progSubLabel(id) || `${esc(typeLabel(wt))} · ${wText}`}${volTxt}</span>
       </span>
       <span class="ex-meta">
@@ -504,7 +507,7 @@ function dayStatsCard(iso) {
     reps += v.reps;
     tonnage += v.tonnage;
     for (const st of en.sets) secs += Number(st.sec) || 0;
-    rows.push(`<div class="ds-row"><span class="ds-nm">${esc(ex ? ex.name : '')}</span>
+    rows.push(`<div class="ds-row"><span class="ds-nm">${esc(exN(ex))}</span>
       <span class="ds-val">${en.sets.map((x) => x.reps).join(' · ')}</span></div>`);
   }
   if (!sets) {
@@ -535,18 +538,18 @@ function renderToday() {
 
   const wChips = workouts.length
     ? workouts
-        .map((w) => `<button class="wchip ${sel.has(w.id) ? 'on' : ''}" data-w="${w.id}">${esc(w.name)}</button>`)
+        .map((w) => `<button class="wchip ${sel.has(w.id) ? 'on' : ''}" data-w="${w.id}">${esc(exN(w))}</button>`)
         .join('')
     : `<span class="muted">${T('Немає тренувань — додай у вкладці «Тренування»')}</span>`;
 
-  const summary = groups.length ? groups.map((g) => esc(g.workout.name)).join(' + ') : T('Обрати тренування');
+  const summary = groups.length ? groups.map((g) => esc(exN(g.workout))).join(' + ') : T('Обрати тренування');
 
   const listHtml = groups.length
     ? groups
         .map((g) => {
           const head =
             groups.length > 1
-              ? `<button class="grp-head" data-w="${g.workout.id}"><span>${esc(g.workout.name)}</span><span class="grp-edit">✏️</span></button>`
+              ? `<button class="grp-head" data-w="${g.workout.id}"><span>${esc(exN(g.workout))}</span><span class="grp-edit">✏️</span></button>`
               : '';
           const cards = g.items.map((id) => exCard(iso, id)).join('') || `<p class="muted side">${T('Порожнє тренування')}</p>`;
           return `<div class="grp">${head}${cards}</div>`;
@@ -718,7 +721,7 @@ function renderSet(exerciseId) {
         <button class="icon-btn" id="backBtn">‹</button>
         <div class="set-ico">${exIconHTML(ex) || `<span class="glyph big">${ex.icon || '💪'}</span>`}</div>
         <div class="set-titles">
-          <div class="set-name">${esc(ex.name)}</div>
+          <div class="set-name">${esc(exN(ex))}</div>
           <div class="set-date">${dateLine}</div>
           ${GD.guideFor(ex) ? `<button class="how-link" id="howBtn">ℹ️ ${T('Як виконувати')}</button>` : ''}
         </div>
@@ -1488,7 +1491,7 @@ function renderCamera(exerciseId) {
   let counter = new FC.RepCounter(pattern);
 
   const chips = FC.PATTERNS.map(
-    (p) => `<button class="pchip ${p.id === pattern.id ? 'on' : ''}" data-p="${p.id}">${patternIconHTML(p.id)} ${esc(p.label)}</button>`
+    (p) => `<button class="pchip ${p.id === pattern.id ? 'on' : ''}" data-p="${p.id}">${patternIconHTML(p.id)} ${esc(T(p.label))}</button>`
   ).join('');
 
   screenEl.innerHTML = `
@@ -1496,23 +1499,23 @@ function renderCamera(exerciseId) {
       <header class="set-top">
         <button class="icon-btn" id="backBtn">‹</button>
         <div class="set-titles">
-          <div class="set-name">${esc(ex.name)}</div>
-          <div class="set-date">Камера-тренер · на пристрої</div>
+          <div class="set-name">${esc(exN(ex))}</div>
+          <div class="set-date">${T('Камера-тренер · на пристрої')}</div>
         </div>
         <button class="icon-btn" id="flipCam" title="${T('Перемкнути камеру')}">🤳</button>
       </header>
       <div class="cam-stage">
         <video id="camVideo" playsinline muted></video>
         <canvas id="camCanvas"></canvas>
-        <div class="cam-rep"><span id="repN">0</span><small>повт.</small></div>
+        <div class="cam-rep"><span id="repN">0</span><small>${T('повт.')}</small></div>
         <div class="cam-angle" id="camAngle"></div>
-        <div class="cam-status" id="camStatus">Завантаження моделі…</div>
+        <div class="cam-status" id="camStatus">${T('Завантаження моделі…')}</div>
       </div>
       <div class="pchips" id="pchips">${chips}</div>
       <div class="cam-fb" id="camFb"></div>
       <div class="day-actions">
-        <button class="btn primary" id="camLog">✓ Записати повторення</button>
-        <button class="btn ghost" id="camReset">↺ Скинути лічильник</button>
+        <button class="btn primary" id="camLog">✓ ${T('Записати повторення')}</button>
+        <button class="btn ghost" id="camReset">↺ ${T('Скинути лічильник')}</button>
       </div>
     </div>`;
 
@@ -1583,13 +1586,13 @@ function renderCamera(exerciseId) {
   };
   screenEl.querySelector('#camLog').onclick = () => {
     const n = counter.reps;
-    if (n <= 0) { toast('Ще немає зарахованих повторень'); return; }
+    if (n <= 0) { toast(T('Ще немає зарахованих повторень')); return; }
     const entry = S.ensureEntry(iso, exerciseId);
     S.addSet(iso, exerciseId, { reps: n, weight: entry.weight });
     if (navigator.vibrate) navigator.vibrate(40);
     stop();
-    const wTxt = entry.weightType === 'bodyweight' ? 'вага тіла' : entry.weight + ' кг';
-    toast(`Записано ${n} ${plural(n, 'повторення', 'повторення', 'повторень')} · ${wTxt}`);
+    const wTxt = entry.weightType === 'bodyweight' ? T('вага тіла') : entry.weight + ' ' + T('кг');
+    toast(`${T('Записано')} ${n} ${plural(n, 'повторення', 'повторення', 'повторень')} · ${wTxt}`);
     go('#/set/' + exerciseId);
   };
   screenEl.querySelector('#pchips').addEventListener('click', (e) => {
@@ -1608,7 +1611,7 @@ function renderCamera(exerciseId) {
   (async () => {
     // камера потребує захищеного контексту (https або localhost)
     if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      statusEl.textContent = 'Камера потребує HTTPS (або localhost). Відкрий застосунок захищеним з’єднанням.';
+      statusEl.textContent = T('Камера потребує HTTPS (або localhost). Відкрий застосунок захищеним з’єднанням.');
       statusEl.classList.add('err');
       return;
     }
@@ -1617,27 +1620,27 @@ function renderCamera(exerciseId) {
       await startStream();
     } catch (err) {
       statusEl.textContent = err && err.name === 'NotAllowedError'
-        ? 'Доступ до камери заборонено. Дозволь камеру у браузері та онови сторінку.'
-        : 'Не вдалося увімкнути камеру.';
+        ? T('Доступ до камери заборонено. Дозволь камеру у браузері та онови сторінку.')
+        : T('Не вдалося увімкнути камеру.');
       statusEl.classList.add('err');
       return;
     }
     // встигли піти з екрана, поки висів дозвіл → не лишати камеру ввімкненою
     if (!running) { if (stream) stream.getTracks().forEach((t) => t.stop()); stream = null; return; }
     // 2) модель
-    statusEl.textContent = 'Завантаження AI-моделі…';
+    statusEl.textContent = T('Завантаження AI-моделі…');
     try {
       landmarker = await getLandmarker('VIDEO');
     } catch (err) {
       statusEl.textContent = navigator.onLine
-        ? 'Не вдалося завантажити AI-модель. Онови сторінку.'
-        : 'Перший запуск камери потребує інтернету (завантажити модель ~17 МБ). Увімкни мережу один раз.';
+        ? T('Не вдалося завантажити AI-модель. Онови сторінку.')
+        : T('Перший запуск камери потребує інтернету (завантажити модель ~17 МБ). Увімкни мережу один раз.');
       statusEl.classList.add('err');
       stop();
       return;
     }
     if (!running) return;
-    statusEl.textContent = 'Стань боком до камери, у повний зріст';
+    statusEl.textContent = T('Стань боком до камери, у повний зріст');
     loop();
   })();
 
@@ -1675,7 +1678,7 @@ function renderCamera(exerciseId) {
       // не крутити вічно мертвий конвеєр (втрата GPU-контексту тощо)
       if (++failCount >= 30) {
         stop();
-        statusEl.textContent = 'Помилка розпізнавання. Перезайди на екран камери.';
+        statusEl.textContent = T('Помилка розпізнавання. Перезайди на екран камери.');
         statusEl.classList.remove('hide');
         statusEl.classList.add('err');
       }
@@ -1688,7 +1691,7 @@ function renderCamera(exerciseId) {
       if (now - lastGood > GRACE_MS) {
         cctx.clearRect(0, 0, canvas.width, canvas.height);
         smooth = null;
-        statusEl.textContent = 'Не бачу людину в кадрі';
+        statusEl.textContent = T('Не бачу людину в кадрі');
         statusEl.classList.remove('hide');
         angleEl.textContent = '';
       }
@@ -1700,7 +1703,7 @@ function renderCamera(exerciseId) {
     cctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!world) {
       drawPose(cctx, norm);
-      statusEl.textContent = 'Не вдається оцінити кут';
+      statusEl.textContent = T('Не вдається оцінити кут');
       statusEl.classList.remove('hide');
       angleEl.textContent = '';
       return;
@@ -1712,7 +1715,7 @@ function renderCamera(exerciseId) {
     });
     drawPose(cctx, norm, { highlight: reading.triplet });
     if (!reading.ok) {
-      statusEl.textContent = pattern.view === 'side' ? 'Стань боком — не видно суглобів' : 'Зайди повністю в кадр';
+      statusEl.textContent = pattern.view === 'side' ? T('Стань боком — не видно суглобів') : T('Зайди повністю в кадр');
       statusEl.classList.remove('hide');
       angleEl.textContent = '';
       return;
@@ -1854,7 +1857,7 @@ function myWorkoutsHTML() {
       <button class="ex-card" data-p="${w.progId}">
         <span class="ex-ico"><span class="glyph">${S.PROG_ICONS[w.progId] || '🤸'}</span></span>
         <span class="ex-main">
-          <span class="ex-name">🎯 ${esc(w.name)}</span>
+          <span class="ex-name">🎯 ${esc(exN(w))}</span>
           <span class="ex-sub">${sub}</span>
         </span>
         <span class="ex-meta"><span class="chev">›</span></span>
@@ -1864,7 +1867,7 @@ function myWorkoutsHTML() {
       <button class="ex-card" data-w="${w.id}">
         <span class="ex-ico"><span class="glyph">🏋️</span></span>
         <span class="ex-main">
-          <span class="ex-name">${esc(w.name)}</span>
+          <span class="ex-name">${esc(exN(w))}</span>
           <span class="ex-sub">${exs.length} ${plural(exs.length, 'вправа', 'вправи', 'вправ')}${preview ? ' · ' + preview : ''}</span>
         </span>
         <span class="ex-meta"><span class="chev">›</span></span>
@@ -2191,7 +2194,7 @@ function openDayPlanEditor(dow) {
       (w) => `<label class="pick-row">
         <input type="checkbox" data-id="${w.id}" ${cur.has(w.id) ? 'checked' : ''}/>
         <span class="pick-ico">🏋️</span>
-        <span class="pick-name">${esc(w.name)}</span>
+        <span class="pick-name">${esc(exN(w))}</span>
       </label>`
     )
     .join('');
@@ -2273,7 +2276,7 @@ function addTemplate(tpl) {
     }).id;
   });
   S.setWorkoutItems(w.id, ids);
-  toast(`${T('Додано в «Мої тренування»')}: ${esc(w.name)}`);
+  toast(`${T('Додано в «Мої тренування»')}: ${esc(exN(w))}`);
   router();
 }
 
@@ -2309,7 +2312,7 @@ function renderWorkoutDetail(workoutId) {
       <div class="ex-row" data-id="${ex.id}">
         <span class="ex-ico">${exIconHTML(ex) || `<span class="glyph">${ex.icon || '💪'}</span>`}</span>
         <span class="ex-main">
-          <span class="ex-name">${esc(ex.name)}</span>
+          <span class="ex-name">${esc(exN(ex))}</span>
           <span class="ex-sub">${progSubLabel(ex.id)
             || `${esc(typeLabel(ex.weightType))} · ${ex.weightType === 'bodyweight' ? T('вага тіла') : ex.weight + ' ' + T('кг')} · ${ex.targetSets}×${ex.targetReps}`}</span>
         </span>
@@ -2326,11 +2329,11 @@ function renderWorkoutDetail(workoutId) {
     <header class="appbar">
       <button class="icon-btn" id="backW">‹</button>
       <div class="appbar-titles"><div class="appbar-kicker">${T('Тренування')}</div>
-        <div class="appbar-title">${edit ? T('Редагування') : esc(w.name)}</div></div>
+        <div class="appbar-title">${edit ? T('Редагування') : esc(exN(w))}</div></div>
       <button class="icon-btn ${edit ? 'on' : ''}" id="toggleEdit" title="${edit ? T('Готово') : T('Редагувати')}">${edit ? '✓' : '✏️'}</button>
     </header>
     ${edit ? `<div class="field" style="margin-bottom:12px"><label>${T('Назва тренування')}</label>
-      <input type="text" id="wNameEdit" value="${esc(w.name)}"/></div>` : ''}
+      <input type="text" id="wNameEdit" value="${esc(exN(w))}"/></div>` : ''}
     ${edit ? '' : `<p class="muted side">${T('Лише перегляд. Натисни ✏️, щоб змінити вправи, порядок і назву.')}</p>`}
     <div class="list ex-list">${rows || `<div class="empty"><div class="empty-ico">📋</div><p>${T('Поки немає вправ.')}</p></div>`}</div>
     ${edit
@@ -2347,7 +2350,7 @@ function renderWorkoutDetail(workoutId) {
 
   const saveName = () => {
     const inp = screenEl.querySelector('#wNameEdit');
-    if (inp) S.updateWorkout(workoutId, { name: inp.value.trim() || w.name });
+    if (inp) { const v = inp.value.trim(); S.updateWorkout(workoutId, { name: !v || v === exN(w) ? w.name : v }); }
   };
   screenEl.querySelector('#backW').onclick = () => {
     if (edit) saveName();
@@ -2360,7 +2363,7 @@ function renderWorkoutDetail(workoutId) {
   screenEl.querySelector('#editBtn')?.addEventListener('click', enterEdit);
   // видалення доступне і з перегляду (не треба заходити в редагування)
   screenEl.querySelector('#delWorkoutView')?.addEventListener('click', () => {
-    if (confirm(T('Видалити тренування «{name}»? Вправи в бібліотеці залишаться.', { name: w.name }))) {
+    if (confirm(T('Видалити тренування «{name}»? Вправи в бібліотеці залишаться.', { name: exN(w) }))) {
       S.deleteWorkout(workoutId);
       workoutEditMode = false;
       go('#/calendar');
@@ -2382,7 +2385,7 @@ function renderWorkoutDetail(workoutId) {
       go('#/workout/' + copy.id);
     };
     screenEl.querySelector('#delWorkout').onclick = () => {
-      if (confirm(T('Видалити тренування «{name}»? Вправи в бібліотеці залишаться.', { name: w.name }))) {
+      if (confirm(T('Видалити тренування «{name}»? Вправи в бібліотеці залишаться.', { name: exN(w) }))) {
         S.deleteWorkout(workoutId);
         workoutEditMode = false;
         go('#/calendar');
@@ -2451,7 +2454,7 @@ function openAddExercise(workoutId) {
         .map((ex) => `<label class="pick-row">
           <input type="checkbox" data-id="${ex.id}"/>
           <span class="pick-ico">${exIconHTML(ex) || ex.icon || '💪'}</span>
-          <span class="pick-name">${esc(ex.name)} <span class="muted">· ${ex.weightType === 'bodyweight' ? T('вага тіла') : ex.weight + ' ' + T('кг')}</span></span>
+          <span class="pick-name">${esc(exN(ex))} <span class="muted">· ${ex.weightType === 'bodyweight' ? T('вага тіла') : ex.weight + ' ' + T('кг')}</span></span>
         </label>`)
         .join('')
     : `<p class="muted">${T('Усі вправи з бібліотеки вже у цьому тренуванні. Створи нову.')}</p>`;
@@ -2494,7 +2497,7 @@ function openExerciseForm(id, opts = {}) {
   const e = ex || { name: '', icon: '💪', weightType: 'dumbbell', weight: 10, targetSets: 4, targetReps: 12, muscle: 'other' };
   openModal(id ? T('Редагувати вправу') : T('Нова вправа'), `
     <div class="field"><label>${T('Назва')}</label>
-      <input type="text" id="exName" value="${esc(e.name)}" placeholder="${T('Напр. Жим гантель лежачи')}"/></div>
+      <input type="text" id="exName" value="${esc(exN(e))}" placeholder="${T('Напр. Жим гантель лежачи')}"/></div>
     <div class="field"><label>${T('Значок')}</label>
       <div class="emoji-grid" id="emojiGrid">
         ${EMOJI.map((em) => `<button type="button" class="em ${em === e.icon ? 'on' : ''}" data-em="${em}">${em}</button>`).join('')}
@@ -2518,7 +2521,7 @@ function openExerciseForm(id, opts = {}) {
     </label>` : ''}
   `, [
     ...(id ? [{ label: T('Видалити'), class: 'danger', onClick: () => {
-      if (confirm(T('Видалити вправу «{name}»? Вона зникне з усіх тренувань та історії.', { name: e.name }))) {
+      if (confirm(T('Видалити вправу «{name}»? Вона зникне з усіх тренувань та історії.', { name: exN(e) }))) {
         S.deleteExercise(id);
         closeModal();
         opts.onChange && opts.onChange();
@@ -2526,7 +2529,7 @@ function openExerciseForm(id, opts = {}) {
     } }] : []),
     { label: T('Зберегти'), class: 'primary', onClick: (root) => {
       const data = {
-        name: root.querySelector('#exName').value.trim() || T('Без назви'),
+        name: ((v) => (e.name && v === exN(e) ? e.name : v || T('Без назви')))(root.querySelector('#exName').value.trim()),
         icon: root.querySelector('.em.on')?.dataset.em || '💪',
         weightType: root.querySelector('#exType').value,
         muscle: root.querySelector('#exMuscle').value,
@@ -2567,7 +2570,7 @@ function renderProgress() {
   const weeklyVals = weekly.map((w) => w.tonnage);
   const weeklyChart = weeklyVals.some((v) => v > 0)
     ? `<div class="chart-card">
-        <div class="card-label">Тоннаж по тижнях (останні 8)</div>
+        <div class="card-label">${T('Тоннаж по тижнях (останні 8)')}</div>
         <div class="bars">${barsChart(weeklyVals, (v) => fmtKg(v))}</div>
       </div>`
     : '';
@@ -2575,11 +2578,11 @@ function renderProgress() {
   const maxMus = muscles.length ? muscles[0].tonnage : 1;
   const muscleRows = muscles.length
     ? `<div class="chart-card">
-        <div class="card-label">Навантаження за групами (30 днів)</div>
+        <div class="card-label">${T('Навантаження за групами (30 днів)')}</div>
         ${muscles
           .map(
             (m) => `<div class="mus-row">
-              <span class="mus-name">${esc(m.label)}</span>
+              <span class="mus-name">${esc(T(m.label))}</span>
               <span class="mus-bar"><i style="width:${Math.max(4, Math.round((m.tonnage / maxMus) * 100))}%"></i></span>
               <span class="mus-val">${fmtKg(m.tonnage)}</span>
             </div>`
@@ -2594,9 +2597,9 @@ function renderProgress() {
         <div class="rec-list">
           ${lifts
             .map((l) => {
-              const val = l.bodyweight ? `${l.maxReps} повт.` : `${l.maxWeight} кг · 1ПМ ≈${Math.round(l.max1RM)} кг`;
+              const val = l.bodyweight ? `${l.maxReps} ${T('повт.')}` : `${l.maxWeight} ${T('кг')} · ${T('1ПМ')} ≈${Math.round(l.max1RM)} ${T('кг')}`;
               return `<div class="rec-row"><span class="rec-ico">${exIconHTML(l.ex) || l.ex.icon || '💪'}</span>
-                <span class="rec-name">${esc(l.ex.name)}</span>
+                <span class="rec-name">${esc(exN(l.ex))}</span>
                 <span class="rec-val">${val}</span></div>`;
             })
             .join('')}
@@ -2612,10 +2615,10 @@ function renderProgress() {
     </header>
     ${statStrip()}
     <div class="ov-grid">
-      <div class="ov-card"><div class="ov-val">${fmtKg(w7.tonnage)}</div><div class="ov-lbl">тоннаж за тиждень</div></div>
-      <div class="ov-card"><div class="ov-val">${fmtKg(w30.tonnage)}</div><div class="ov-lbl">тоннаж за місяць</div></div>
-      <div class="ov-card"><div class="ov-val">${w30.sets}</div><div class="ov-lbl">підходів за місяць</div></div>
-      <div class="ov-card"><div class="ov-val">${w30.reps}</div><div class="ov-lbl">повторень за місяць</div></div>
+      <div class="ov-card"><div class="ov-val">${fmtKg(w7.tonnage)}</div><div class="ov-lbl">${T('тоннаж за тиждень')}</div></div>
+      <div class="ov-card"><div class="ov-val">${fmtKg(w30.tonnage)}</div><div class="ov-lbl">${T('тоннаж за місяць')}</div></div>
+      <div class="ov-card"><div class="ov-val">${w30.sets}</div><div class="ov-lbl">${T('підходів за місяць')}</div></div>
+      <div class="ov-card"><div class="ov-val">${w30.reps}</div><div class="ov-lbl">${T('повторень за місяць')}</div></div>
     </div>
     ${weeklyChart}
     ${muscleRows}
@@ -2808,16 +2811,11 @@ const SMART_STATUS = {
 
 // «3 спостереження» / «7 спостережень» — щоб підпис читався як людський текст
 function smartObsWord(n) {
-  const d = n % 10, dd = n % 100;
-  if (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) return `${n} спостереження`;
-  return `${n} спостережень`;
+  return `${n} ${PL(n, 'спостереження', 'спостереження', 'спостережень')}`;
 }
 
 function smartGapWord(n) {
-  const d = n % 10, dd = n % 100;
-  if (d === 1 && dd !== 11) return `${n} день`;
-  if (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) return `${n} дні`;
-  return `${n} днів`;
+  return `${n} ${PL(n, 'день', 'дні', 'днів')}`;
 }
 
 function renderSmart() {
@@ -2827,12 +2825,12 @@ function renderSmart() {
   const readyRows = prof
     .map((m) => {
       const st = SMART_STATUS[m.status];
-      const since = m.daysSince == null ? 'ще не тренував' : `${smartGapWord(m.daysSince)} тому`;
+      const since = m.daysSince == null ? T('ще не тренував') : T('{n} тому', { n: smartGapWord(m.daysSince) });
       return `<div class="mus-row rd-row">
-        <span class="mus-name">${esc(m.label)}</span>
+        <span class="mus-name">${esc(T(m.label))}</span>
         <span class="mus-bar"><i class="rd-${m.status}" style="width:${Math.max(4, m.pct)}%"></i></span>
         <span class="mus-val">${st.ico} ${m.pct}%</span>
-        <span class="rd-sub">${since} · оптимум ${smartGapWord(m.optimal)}${m.status === 'ready' ? '' : ` · далі ${S.prettyDate(m.nextISO)}`}</span>
+        <span class="rd-sub">${since} · ${T('оптимум {n}', { n: smartGapWord(m.optimal) })}${m.status === 'ready' ? '' : ` · ${T('далі {d}', { d: S.prettyDate(m.nextISO) })}`}</span>
       </div>`;
     })
     .join('');
@@ -2844,45 +2842,45 @@ function renderSmart() {
           const sign = b.delta > 0 ? '+' : '';
           const cls = b.delta > 0.5 ? 'up' : b.delta < -0.5 ? 'down' : '';
           const on = m.best && b.gap === m.best.gap ? ' on' : '';
-          return `<span class="gap-chip${on} ${cls}">${b.gap}д <b>${sign}${b.delta.toFixed(1)}%</b><small>×${b.n}</small></span>`;
+          return `<span class="gap-chip${on} ${cls}">${T('{n}д', { n: b.gap })} <b>${sign}${b.delta.toFixed(1)}%</b><small>×${b.n}</small></span>`;
         })
         .join('');
       const verdict = m.best
-        ? `найкраще через <b>${smartGapWord(m.best.gap)}</b> · ${m.best.delta > 0 ? '+' : ''}${m.best.delta.toFixed(1)}% за ${smartObsWord(m.samples)}`
+        ? T('найкраще через <b>{gap}</b> · {d}% за {obs}', { gap: smartGapWord(m.best.gap), d: (m.best.delta > 0 ? '+' : '') + m.best.delta.toFixed(1), obs: smartObsWord(m.samples) })
         : m.samples === 0
-          ? `даних ще немає — поки ${smartGapWord(SM.DEFAULT_GAP)}`
-          : `замало даних (${m.samples} з ${SM.MIN_SAMPLES}) — поки ${smartGapWord(SM.DEFAULT_GAP)}`;
+          ? T('даних ще немає — поки {n}', { n: smartGapWord(SM.DEFAULT_GAP) })
+          : T('замало даних ({a} з {b}) — поки {n}', { a: m.samples, b: SM.MIN_SAMPLES, n: smartGapWord(SM.DEFAULT_GAP) });
       return `<div class="gap-block">
-        <div class="gap-head"><span>${esc(m.label)}</span><span class="muted">${verdict}</span></div>
+        <div class="gap-head"><span>${esc(T(m.label))}</span><span class="muted">${verdict}</span></div>
         ${bars ? `<div class="gap-chips">${bars}</div>` : ''}
       </div>`;
     })
     .join('');
 
   const advice = ready.length
-    ? `<b>${ready.slice(0, 3).map((m) => esc(m.label)).join(', ')}</b>${ready.length > 3 ? ` та ще ${ready.length - 3}` : ''} — вже відновилися, сьогодні можна навантажувати.`
+    ? `<b>${ready.slice(0, 3).map((m) => esc(T(m.label))).join(', ')}</b>${ready.length > 3 ? ` ${T('та ще {n}', { n: ready.length - 3 })}` : ''} ${T('— вже відновилися, сьогодні можна навантажувати.')}`
     : prof.length
-      ? `Усі групи ще відновлюються. Найближча — <b>${esc(prof[0].label)}</b> (${S.prettyDate(prof[0].nextISO)}).`
-      : 'Записуй підходи — після кількох тренувань тут зʼявиться твій особистий графік відновлення.';
+      ? T('Усі групи ще відновлюються. Найближча — <b>{name}</b> ({date}).', { name: esc(T(prof[0].label)), date: S.prettyDate(prof[0].nextISO) })
+      : T('Записуй підходи — після кількох тренувань тут зʼявиться твій особистий графік відновлення.');
 
   screenEl.innerHTML = `
     <header class="appbar">
       <button class="icon-btn" id="backBtn">‹</button>
-      <div class="appbar-titles"><div class="appbar-kicker">Розумний тренер</div>
-        <div class="appbar-title">Відновлення</div></div>
+      <div class="appbar-titles"><div class="appbar-kicker">${T('Розумний тренер')}</div>
+        <div class="appbar-title">${T('Відновлення')}</div></div>
     </header>
     <section class="card smart-tip"><div class="st-ico">🧠</div><div class="st-txt">${advice}</div></section>
     ${prof.length ? `
     <section class="card">
-      <div class="card-label">Готовність груп сьогодні</div>
+      <div class="card-label">${T('Готовність груп сьогодні')}</div>
       ${readyRows}
     </section>
     <section class="card">
-      <div class="card-label">Твій інтервал відпочинку</div>
-      <p class="muted side">Скільки в середньому додавав результат після паузи в N днів. Зелене — твій найкращий інтервал.</p>
+      <div class="card-label">${T('Твій інтервал відпочинку')}</div>
+      <p class="muted side">${T('Скільки в середньому додавав результат після паузи в N днів. Зелене — твій найкращий інтервал.')}</p>
       ${gapRows}
     </section>` : ''}
-    <p class="muted side">Рахується на пристрої: для кожної вправи беруться сусідні тренування — розрив у днях і зміна найкращого підходу (1ПМ або повторення). Значення усереднюються по групі мʼязів. Потрібно щонайменше ${SM.MIN_SAMPLES} пари, інакше показується типова пауза ${smartGapWord(SM.DEFAULT_GAP)}.</p>
+    <p class="muted side">${T('Рахується на пристрої: для кожної вправи беруться сусідні тренування — розрив у днях і зміна найкращого підходу (1ПМ або повторення). Значення усереднюються по групі мʼязів. Потрібно щонайменше {min} пари, інакше показується типова пауза {gap}.', { min: SM.MIN_SAMPLES, gap: smartGapWord(SM.DEFAULT_GAP) })}</p>
   `;
   screenEl.querySelector('#backBtn').onclick = () => go('#/progress');
 }
@@ -3195,7 +3193,7 @@ function renderHistory(exerciseId) {
   const current = exerciseId || (recent || list[0] || {}).id;
 
   const chips = list
-    .map((ex) => `<button class="hchip ${ex.id === current ? 'on' : ''}" data-id="${ex.id}">${exIconHTML(ex) || ex.icon} ${esc(ex.name)}</button>`)
+    .map((ex) => `<button class="hchip ${ex.id === current ? 'on' : ''}" data-id="${ex.id}">${exIconHTML(ex) || ex.icon} ${esc(exN(ex))}</button>`)
     .join('');
 
   const ex = S.getExercise(current);
@@ -3222,7 +3220,7 @@ function renderHistory(exerciseId) {
     <header class="appbar">
       <button class="icon-btn" id="backBtn">‹</button>
       <div class="appbar-titles"><div class="appbar-kicker">${T('Історія по вправі')}</div>
-        <div class="appbar-title">${ex ? esc(ex.name) : T('Вправи')}</div></div>
+        <div class="appbar-title">${ex ? esc(exN(ex)) : T('Вправи')}</div></div>
       <button class="icon-btn" id="setBtn" title="Налаштування">⚙️</button>
     </header>
     <div class="hchips">${chips}</div>
@@ -3356,7 +3354,7 @@ function renderSettings() {
     </section>
 
     <section class="card">
-      <div class="card-label">👥 ${T('Спільнота')} <span class="muted">(бета)</span></div>
+      <div class="card-label">👥 ${T('Спільнота')} <span class="muted">(${T('бета')})</span></div>
       <button class="btn ghost" id="coachBtn">${T('Відкрити спільноту')}</button>
     </section>
 
@@ -3559,11 +3557,11 @@ function downscalePhoto(file, maxDim = 1280, quality = 0.85) {
       cv.height = h;
       cv.getContext('2d').drawImage(img, 0, 0, w, h);
       URL.revokeObjectURL(url);
-      cv.toBlob((b) => (b ? resolve(b) : reject(new Error('Не вдалося обробити фото'))), 'image/jpeg', quality);
+      cv.toBlob((b) => (b ? resolve(b) : reject(new Error(T('Не вдалося обробити фото')))), 'image/jpeg', quality);
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('Не вдалося прочитати фото'));
+      reject(new Error(T('Не вдалося прочитати фото')));
     };
     img.src = url;
   });
@@ -3599,8 +3597,9 @@ function renderCommunityHub() {
   return commSeg === 'recipes' ? renderRecipes() : renderCommunity();
 }
 
-// лайки — поки без сервера, лише на цьому пристрої
+// лайки: дописи з сервера — у post_likes (patch-6), дописи вітрини — лише на цьому пристрої
 const LIKES_KEY = 'kachalka-likes';
+const isServerId = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id));
 function likedSet() {
   try { return new Set(JSON.parse(localStorage.getItem(LIKES_KEY) || '[]')); } catch { return new Set(); }
 }
@@ -3687,11 +3686,67 @@ function postCardHTML(p, meId, liked) {
     </div>
     <img class="post-img" src="${esc(p.photo_url)}" alt="" loading="lazy"${fb}/>
     <div class="post-acts">
-      <button class="post-act ${on ? 'on' : ''}" data-like="${esc(p.id)}">${on ? '♥' : '♡'}</button>
+      <button class="post-act ${on ? 'on' : ''}" data-like="${esc(p.id)}"><span class="pa-ic">${on ? '♥' : '♡'}</span><span class="pa-n">${p.like_count > 0 ? p.like_count : ''}</span></button>
+      ${isServerId(p.id) ? `<button class="post-act" data-cmt="${esc(p.id)}"><span class="pa-ic">💬</span><span class="pa-n">${p.comment_count > 0 ? p.comment_count : ''}</span></button>` : ''}
       <button class="post-act" data-share="${esc(p.id)}">📤</button>
     </div>
     ${p.caption ? `<p class="post-cap">${esc(p.official || a.official || a.sample ? T(p.caption) : p.caption)}</p>` : ''}
   </section>`;
+}
+
+// коментарі до допису: список + поле вводу; видалити свій або будь-який під своїм дописом, «⋯» — скарга
+function openComments(post, meId, onCount) {
+  openModal(T('Коментарі'), `
+    <div class="cmt-list" id="cmtList"><p class="muted small">${T('Завантаження…')}</p></div>
+    <div class="cmt-new">
+      <textarea id="cmtText" maxlength="500" rows="2" placeholder="${T('Напиши коментар…')}"></textarea>
+      <button class="btn primary" id="cmtSend">${T('Надіслати')}</button>
+    </div>`);
+  const root = document.querySelector('.modal');
+  const list = root.querySelector('#cmtList');
+  const canDel = (c) => meId && (c.author_id === meId || post.author_id === meId);
+  const load = async () => {
+    let items;
+    try { items = (await BE.listComments(post.id)).filter((c) => !blockedIds.has(c.author_id)); }
+    catch (e) { list.innerHTML = `<p class="muted small">⚠️ ${esc(e.message)}</p>`; return; }
+    if (!root.isConnected) return;
+    onCount(items.length);
+    list.innerHTML = items.length ? items.map((c) => {
+      const a = c.author || {};
+      return `<div class="cmt">
+        <button class="post-user" data-cu="${esc(c.author_id)}">${avatarHtml(a)}</button>
+        <div class="cmt-main">
+          <div class="cmt-head"><b>${esc(a.name || T('Без імені'))}</b> <span class="muted">${postDate(c.created_at)}</span></div>
+          <div class="cmt-body bubble">${esc(c.body)}</div>
+        </div>
+        ${canDel(c) ? `<button class="set-del" data-cdel="${esc(c.id)}" title="${T('Видалити')}">✕</button>`
+          : meId ? `<button class="set-del post-more" data-cmore="${esc(c.id)}" title="${T('Поскаржитись')}">⋯</button>` : ''}
+      </div>`;
+    }).join('') : `<p class="muted small">${T('Поки без коментарів. Будь першим!')}</p>`;
+    list.querySelectorAll('[data-cu]').forEach((el) => (el.onclick = () => { closeModal(); go('#/user/' + el.dataset.cu); }));
+    list.querySelectorAll('[data-cdel]').forEach((el) => (el.onclick = async () => {
+      if (!confirm(T('Видалити коментар?'))) return;
+      try { await BE.deleteComment(el.dataset.cdel); load(); } catch (e) { modErr(e); }
+    }));
+    list.querySelectorAll('[data-cmore]').forEach((el) => (el.onclick = () => {
+      const c = items.find((x) => x.id === el.dataset.cmore);
+      if (c) openPersonMenu({ type: 'comment', targetId: c.id, userId: c.author_id, name: (c.author || {}).name,
+        onDone: () => openComments(post, meId, onCount) });
+    }));
+    list.scrollTop = list.scrollHeight;
+  };
+  const send = root.querySelector('#cmtSend'), ta = root.querySelector('#cmtText');
+  send.onclick = async () => {
+    const text = ta.value.trim();
+    if (!text || send.disabled) return;
+    send.disabled = true;
+    try { await BE.addComment(post.id, text); ta.value = ''; await load(); }
+    catch (e) {
+      if (e.message === 'too-many') toast('⚠️ ' + T('Забагато коментарів — спробуй за хвилину'));
+      else modErr(e);
+    } finally { send.disabled = false; }
+  };
+  load();
 }
 
 function personRowHTML(p) {
@@ -3724,7 +3779,7 @@ async function renderCommunity() {
   if (sessP) sessP.catch(() => {});
   const { demoData } = await import('./demo.js');
   const D = demoData();
-  let session = null, posts = [], people = [], shared = null, loadErr = null;
+  let session = null, posts = [], people = [], shared = null, loadErr = null, serverLiked = new Set();
   // сервер може не відповідати (старий Supabase видалено; збережена сесія безкінечно оновлює токен) —
   // не тримати екран на «Завантаженні», а показати вітрину
   const inTime = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('timeout')), ms))]);
@@ -3740,6 +3795,7 @@ async function renderCommunity() {
         ]), 8000);
         posts = posts.filter((p) => !blockedIds.has(p.author_id));
         people = people.filter((p) => !blockedIds.has(p.id));
+        if (posts.length) serverLiked = await inTime(BE.myLikes(posts.map((p) => p.id)), 4000).catch(() => new Set());
       } catch (e) { if (e.message !== 'timeout') loadErr = e; }
     }
   }
@@ -3772,7 +3828,8 @@ async function renderCommunity() {
   }
   if (loadErr) top += `<section class="card"><p class="muted">⚠️ ${esc(loadErr.message)}</p></section>`;
 
-  const liked = likedSet();
+  // локально пам'ятаємо лише лайки вітрини; лайки справжніх дописів — з сервера
+  const liked = new Set([...[...likedSet()].filter((id) => !isServerId(id)), ...serverLiked]);
   const realPeople = people.filter((p) => p.id !== meId);
   const official = D.people.filter((p) => p.official);
   // приклади профілів — лише поки справжніх людей менше 5
@@ -3808,10 +3865,37 @@ async function renderCommunity() {
     el.addEventListener('click', () => go('#/user/' + el.dataset.u))
   );
   const byPost = (id) => posts.find((p) => p.id === id) || D.posts.find((p) => p.id === id);
-  body.querySelectorAll('[data-like]').forEach((b) => (b.onclick = () => {
-    const on = toggleLike(b.dataset.like);
-    b.classList.toggle('on', on);
-    b.textContent = on ? '♥' : '♡';
+  body.querySelectorAll('[data-like]').forEach((b) => (b.onclick = async () => {
+    const id = b.dataset.like;
+    const ic = b.querySelector('.pa-ic'), n = b.querySelector('.pa-n');
+    const paint = (on, cnt) => {
+      b.classList.toggle('on', on);
+      ic.textContent = on ? '♥' : '♡';
+      if (cnt != null) n.textContent = cnt > 0 ? cnt : '';
+    };
+    if (!isServerId(id)) { paint(toggleLike(id)); return; }
+    const p = posts.find((x) => x.id === id);
+    if (!p || b.disabled) return;
+    const on = !liked.has(id);
+    const was = p.like_count || 0;
+    p.like_count = Math.max(0, was + (on ? 1 : -1));
+    if (on) liked.add(id); else liked.delete(id);
+    paint(on, p.like_count);
+    b.disabled = true;
+    try { await BE.setLike(id, on); }
+    catch (e) {
+      p.like_count = was;
+      if (on) liked.delete(id); else liked.add(id);
+      paint(!on, was);
+      modErr(e);
+    } finally { b.disabled = false; }
+  }));
+  body.querySelectorAll('[data-cmt]').forEach((b) => (b.onclick = () => {
+    const p = posts.find((x) => x.id === b.dataset.cmt);
+    if (p) openComments(p, meId, (cnt) => {
+      p.comment_count = cnt;
+      b.querySelector('.pa-n').textContent = cnt > 0 ? cnt : '';
+    });
   }));
   body.querySelectorAll('[data-share]').forEach((b) => (b.onclick = () => {
     const p = byPost(b.dataset.share);
@@ -3832,10 +3916,10 @@ async function renderCommunity() {
   body.querySelectorAll('.post-del').forEach((b) =>
     b.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (!confirm('Видалити цей допис?')) return;
+      if (!confirm(T('Видалити цей допис?'))) return;
       try {
         await BE.deletePost({ id: b.dataset.id, photo_path: b.dataset.path });
-        toast('Допис видалено');
+        toast(T('Допис видалено'));
         renderCommunity();
       } catch (err) { toast('⚠️ ' + esc(err.message)); }
     })
@@ -3846,10 +3930,10 @@ async function renderCommunity() {
     try {
       if (e.target.checked) {
         await BE.shareTraining(S.exportRecentLogs(14));
-        toast('🏋️ Тепер інші бачать твої тренування');
+        toast('🏋️ ' + T('Тепер інші бачать твої тренування'));
       } else {
         await BE.unshareTraining();
-        toast('Тренування приховано');
+        toast(T('Тренування приховано'));
       }
     } catch (err) {
       e.target.checked = !e.target.checked;
@@ -3860,20 +3944,20 @@ async function renderCommunity() {
   const addPost = body.querySelector('#addPost');
   if (addPost) addPost.onclick = () => {
     openModal(T('Додати фото'), `
-      <div class="field"><label>Фото</label>
+      <div class="field"><label>${T('Фото')}</label>
         <input type="file" id="postFile" accept="image/*"/></div>
       <div class="field"><label>${T('Підпис (необовʼязково)')}</label>
-        <input type="text" id="postCap" maxlength="200" placeholder="Як пройшло тренування?"/></div>
+        <input type="text" id="postCap" maxlength="200" placeholder="${T('Як пройшло тренування?')}"/></div>
     `, [
       { label: T('Опублікувати'), class: 'primary', onClick: async (root) => {
         const f = root.querySelector('#postFile').files[0];
-        if (!f) { toast('Спершу обери фото'); return; }
-        toast('Завантажую фото…');
+        if (!f) { toast(T('Спершу обери фото')); return; }
+        toast(T('Завантажую фото…'));
         try {
           const blob = await downscalePhoto(f);
           await BE.addPost(blob, root.querySelector('#postCap').value.trim());
           closeModal();
-          toast('📸 Опубліковано!');
+          toast('📸 ' + T('Опубліковано!'));
           renderCommunity();
         } catch (err) { toast('⚠️ ' + esc(err.message)); }
       } },
@@ -3956,7 +4040,7 @@ async function renderUserProfile(userId) {
         <div class="appbar-title" id="uTitle">…</div>
       </div>
     </header>
-    <div id="uBody"><section class="card"><p class="muted">Завантаження…</p></section></div>`;
+    <div id="uBody"><section class="card"><p class="muted">${T('Завантаження…')}</p></section></div>`;
   screenEl.querySelector('#backBtn').onclick = () => go('#/community');
   if (/^(demo-|sample-|kachalka-)/.test(userId)) return renderDemoUser(userId); // вітрина — без сервера
   if (!BE.configured) return go('#/community');
@@ -3982,7 +4066,7 @@ async function renderUserProfile(userId) {
   if (!location.hash.startsWith('#/user/')) return;
   const uBody = screenEl.querySelector('#uBody');
   const titleEl = screenEl.querySelector('#uTitle');
-  if (titleEl) titleEl.textContent = prof.name || 'Без імені';
+  if (titleEl) titleEl.textContent = prof.name || T('Без імені');
 
   const freeSlots = (slots || []).filter((s) => s.status === 'free').slice(0, 8);
   const slotRow = (s) => {
@@ -4002,7 +4086,7 @@ async function renderUserProfile(userId) {
       <div class="bhist">
         ${days.map((iso) => {
           const items = sharedTr.data[iso] || [];
-          const txt = items.map((it) => `${esc(it.name)} ${it.sets.length}×`).join(', ');
+          const txt = items.map((it) => `${esc(T(it.name))} ${it.sets.length}×`).join(', ');
           return `<div class="bhist-row"><span class="bhist-date">${S.prettyDate(iso)}</span>
             <span class="bhist-vals">${txt}</span></div>`;
         }).join('')}
@@ -4015,8 +4099,8 @@ async function renderUserProfile(userId) {
       <div class="profile-head">
         ${avatarHtml(prof, true)}
         <div>
-          <div class="profile-name">${esc(prof.name || 'Без імені')}</div>
-          <div class="profile-role">${prof.role === 'trainer' ? '🧑‍🏫 Тренер' : '🏋️ Атлет'}${prof.city ? ' · ' + esc(prof.city) : ''}</div>
+          <div class="profile-name">${esc(prof.name || T('Без імені'))}</div>
+          <div class="profile-role">${prof.role === 'trainer' ? '🧑‍🏫 ' + T('Тренер') : '🏋️ ' + T('Атлет')}${prof.city ? ' · ' + esc(prof.city) : ''}</div>
         </div>
       </div>
       ${prof.bio ? `<p class="profile-bio">${esc(prof.bio)}</p>` : ''}
@@ -4030,7 +4114,7 @@ async function renderUserProfile(userId) {
     ${prof.role === 'trainer' ? `<section class="card">
       <div class="card-label">📅 ${T('Записатися на тренування')}</div>
       ${freeSlots.length ? `<div class="slot-list">${freeSlots.map(slotRow).join('')}</div>`
-        : `<p class="muted">Немає вільних слотів — напиши тренеру в чат.</p>`}
+        : `<p class="muted">${T('Немає вільних слотів — напиши тренеру в чат.')}</p>`}
     </section>` : ''}
     ${trainHtml}
     ${posts.length ? `<div class="card-label side-label">📸 ${T('Фото з тренувань')}</div>
@@ -4051,7 +4135,7 @@ async function renderUserProfile(userId) {
       b.disabled = true;
       try {
         await BE.bookSlot(b.dataset.id, '');
-        toast('✅ Заявку надіслано! Тренер підтвердить запис.');
+        toast('✅ ' + T('Заявку надіслано! Тренер підтвердить запис.'));
         renderUserProfile(userId);
       } catch (err) {
         b.disabled = false;
@@ -4144,17 +4228,14 @@ async function renderCoach() {
   if (!BE.configured) {
     coachShell(`
       <section class="card">
-        <div class="card-label">Сервер ще не підключено</div>
-        <p class="muted">Кабінет тренера — це записи клієнтів, призначення тренувань і
-        контроль прогресу. Для цього потрібен безкоштовний сервер.</p>
-        <p class="muted">Власнику: створи проєкт за інструкцією
-        <b>backend/SUPABASE_SETUP.md</b> (на ПК) і надішли Claude два рядки —
-        Project URL і anon-ключ. Після цього тут з'явиться вхід.</p>
+        <div class="card-label">${T('Сервер ще не підключено')}</div>
+        <p class="muted">${T('Кабінет тренера — це записи клієнтів, призначення тренувань і контроль прогресу. Для цього потрібен безкоштовний сервер.')}</p>
+        <p class="muted">${T('Власнику: створи проєкт за інструкцією <b>backend/SUPABASE_SETUP.md</b> (на ПК) і надішли Claude два рядки — Project URL і anon-ключ. Після цього тут з\'явиться вхід.')}</p>
       </section>`);
     return;
   }
 
-  coachShell('<section class="card"><p class="muted">Завантаження…</p></section>');
+  coachShell(`<section class="card"><p class="muted">${T('Завантаження…')}</p></section>`);
   let session = null;
   try {
     session = await BE.getSession();
@@ -4199,21 +4280,21 @@ function avatarHtml(prof, big) {
 
 // профіль — режим ПЕРЕГЛЯДУ (як у соцмережі)
 function renderProfileView(prof, session) {
-  const roleLabel = prof.role === 'trainer' ? '🧑‍🏫 Тренер' : '🏋️ Клієнт';
+  const roleLabel = prof.role === 'trainer' ? '🧑‍🏫 ' + T('Тренер') : '🏋️ ' + T('Клієнт');
   coachShell(`
     <section class="card profile-card">
       <div class="profile-head">
         ${avatarHtml(prof, true)}
         <div class="profile-id">
-          <div class="profile-name">${esc(prof.name || 'Без імені')}</div>
+          <div class="profile-name">${esc(prof.name || T('Без імені'))}</div>
           <div class="profile-role">${roleLabel}${prof.city ? ' · 📍 ' + esc(prof.city) : ''}</div>
         </div>
       </div>
       ${prof.bio ? `<p class="profile-bio">${esc(prof.bio)}</p>` : ''}
       ${prof.contact ? `<p class="profile-contact">📞 ${esc(prof.contact)}</p>` : ''}
       <div class="profile-meta muted">${esc(session.user.email || '')}</div>
-      <button class="btn primary" id="editProf">✏️ Редагувати профіль</button>
-      <button class="btn ghost" id="logoutBtn">Вийти з акаунта</button>
+      <button class="btn primary" id="editProf">✏️ ${T('Редагувати профіль')}</button>
+      <button class="btn ghost" id="logoutBtn">${T('Вийти з акаунта')}</button>
     </section>
     <div id="roleArea"></div>`);
   screenEl.querySelector('#editProf').onclick = () => { coachEdit = true; renderCoach(); };
@@ -4226,24 +4307,24 @@ function renderProfileEdit(prof, session) {
   const nameVal = prof.name || session.user.user_metadata?.full_name || session.user.user_metadata?.name || '';
   coachShell(`
     <section class="card">
-      <div class="card-label">Редагування профілю <span class="muted">· ${esc(session.user.email || '')}</span></div>
+      <div class="card-label">${T('Редагування профілю')} <span class="muted">· ${esc(session.user.email || '')}</span></div>
       <div class="avatar-edit">
         <span id="avatarPreview">${avatarHtml({ ...prof, name: nameVal }, true)}</span>
-        <button class="btn ghost" id="pickAvatar">📷 Фото</button>
+        <button class="btn ghost" id="pickAvatar">📷 ${T('Фото')}</button>
         <input type="file" id="avatarFile" accept="image/*" hidden/>
       </div>
-      <div class="field"><label>Роль</label>
+      <div class="field"><label>${T('Роль')}</label>
         <div class="type-chips" style="margin-top:6px">
-          <button class="tchip ${prof.role === 'trainer' ? 'on' : ''}" data-role="trainer">🧑‍🏫 Тренер</button>
-          <button class="tchip ${prof.role !== 'trainer' ? 'on' : ''}" data-role="client">🏋️ Клієнт</button>
+          <button class="tchip ${prof.role === 'trainer' ? 'on' : ''}" data-role="trainer">🧑‍🏫 ${T('Тренер')}</button>
+          <button class="tchip ${prof.role !== 'trainer' ? 'on' : ''}" data-role="client">🏋️ ${T('Клієнт')}</button>
         </div>
       </div>
-      <div class="field"><label>Ім'я</label><input type="text" id="pName" value="${esc(nameVal)}"/></div>
-      <div class="field"><label>Місто</label><input type="text" id="pCity" value="${esc(prof.city || '')}"/></div>
-      <div class="field"><label>Про себе</label><input type="text" id="pBio" value="${esc(prof.bio || '')}" placeholder="Досвід, спеціалізація…"/></div>
-      <div class="field"><label>Контакт (телефон/Telegram)</label><input type="text" id="pContact" value="${esc(prof.contact || '')}"/></div>
-      <button class="btn primary" id="saveProf">Зберегти</button>
-      ${prof.name ? '<button class="btn ghost" id="cancelEdit">Скасувати</button>' : ''}
+      <div class="field"><label>${T('Ім\'я')}</label><input type="text" id="pName" value="${esc(nameVal)}"/></div>
+      <div class="field"><label>${T('Місто')}</label><input type="text" id="pCity" value="${esc(prof.city || '')}"/></div>
+      <div class="field"><label>${T('Про себе')}</label><input type="text" id="pBio" value="${esc(prof.bio || '')}" placeholder="${T('Досвід, спеціалізація…')}"/></div>
+      <div class="field"><label>${T('Контакт (телефон/Telegram)')}</label><input type="text" id="pContact" value="${esc(prof.contact || '')}"/></div>
+      <button class="btn primary" id="saveProf">${T('Зберегти')}</button>
+      ${prof.name ? `<button class="btn ghost" id="cancelEdit">${T('Скасувати')}</button>` : ''}
     </section>`);
   let role = prof.role || 'client';
   screenEl.querySelectorAll('.tchip[data-role]').forEach((b) =>
@@ -4257,13 +4338,13 @@ function renderProfileEdit(prof, session) {
   fileInput.onchange = async () => {
     const f = fileInput.files[0];
     if (!f) return;
-    if (f.size > 3 * 1024 * 1024) return alert('Фото завелике (макс. 3 МБ)');
-    toast('Завантаження фото…');
+    if (f.size > 3 * 1024 * 1024) return alert(T('Фото завелике (макс. 3 МБ)'));
+    toast(T('Завантаження фото…'));
     try {
       const url = await BE.uploadAvatar(f);
       prof.avatar_url = url;
       screenEl.querySelector('#avatarPreview').innerHTML = avatarHtml(prof, true);
-      toast('Фото оновлено');
+      toast(T('Фото оновлено'));
     } catch (e) { alert('⚠️ ' + e.message); }
   };
   screenEl.querySelector('#saveProf').onclick = async () => {
@@ -4299,8 +4380,8 @@ const WEEKDAYS = [
   { d: 4, label: 'Чт' }, { d: 5, label: 'Пт' }, { d: 6, label: 'Сб' }, { d: 0, label: 'Нд' },
 ];
 function weekdaysLabel(arr) {
-  if (!arr || !arr.length) return 'будь-коли';
-  return WEEKDAYS.filter((w) => arr.includes(w.d)).map((w) => w.label).join(', ');
+  if (!arr || !arr.length) return T('будь-коли');
+  return WEEKDAYS.filter((w) => arr.includes(w.d)).map((w) => T(w.label)).join(', ');
 }
 const BK_STATUS = {
   requested: '⏳ очікує',
@@ -4309,6 +4390,13 @@ const BK_STATUS = {
   cancelled: '✕ скасовано',
   done: '🏁 завершено',
 };
+// підпис статусу запису: емодзі + переклад тексту
+function bkLabel(st) {
+  const v = BK_STATUS[st];
+  if (!v) return st;
+  const i = v.indexOf(' ');
+  return v.slice(0, i) + ' ' + T(v.slice(i + 1));
+}
 
 // секції кабінету залежно від ролі
 async function renderCoachRole(prof) {
@@ -4316,36 +4404,36 @@ async function renderCoachRole(prof) {
   if (!area()) return;
   if (prof.role === 'trainer') {
     area().innerHTML = `
-      <section class="card"><div class="card-label">📅 Мій розклад</div>
-        <div class="field"><label>Тривалість заняття (яку задаю я)</label>
+      <section class="card"><div class="card-label">📅 ${T('Мій розклад')}</div>
+        <div class="field"><label>${T('Тривалість заняття (яку задаю я)')}</label>
           <div class="type-chips" id="durChips" style="margin-top:6px">
             ${[15, 30, 60, 90, 120].map((m) => `<button class="tchip ${m === 60 ? 'on' : ''}" data-dur="${m}">${durLabel(m)}</button>`).join('')}
           </div>
         </div>
         <div class="day-strip" id="dayStrip"></div>
-        <p class="muted side" style="margin:8px 4px">Обери день → торкайся вільних годин, щоб відкрити запис. Клієнт зможе записатися лише на позначені години й саме на цю тривалість.</p>
-        <div id="hourGrid" class="hour-grid"><p class="muted">Завантаження…</p></div>
+        <p class="muted side" style="margin:8px 4px">${T('Обери день → торкайся вільних годин, щоб відкрити запис. Клієнт зможе записатися лише на позначені години й саме на цю тривалість.')}</p>
+        <div id="hourGrid" class="hour-grid"><p class="muted">${T('Завантаження…')}</p></div>
       </section>
-      <section class="card"><div class="card-label">🛎️ Заявки на тренування</div>
-        <div id="reqList"><p class="muted">Завантаження…</p></div>
+      <section class="card"><div class="card-label">🛎️ ${T('Заявки на тренування')}</div>
+        <div id="reqList"><p class="muted">${T('Завантаження…')}</p></div>
       </section>
-      <section class="card"><div class="card-label">👥 Мої клієнти</div>
-        <div id="clientList"><p class="muted">Завантаження…</p></div>
+      <section class="card"><div class="card-label">👥 ${T('Мої клієнти')}</div>
+        <div id="clientList"><p class="muted">${T('Завантаження…')}</p></div>
       </section>`;
     wireTrainerSlots(prof);
     wireTrainerRequests(prof);
     wireTrainerClients();
   } else {
     area().innerHTML = `
-      <section class="card"><div class="card-label">🧑‍🏫 Знайти тренера й записатися</div>
-        <div id="trainerList"><p class="muted">Завантаження…</p></div>
+      <section class="card"><div class="card-label">🧑‍🏫 ${T('Знайти тренера й записатися')}</div>
+        <div id="trainerList"><p class="muted">${T('Завантаження…')}</p></div>
       </section>
-      <section class="card"><div class="card-label">📋 Мої записи</div>
-        <div id="myBookings"><p class="muted">Завантаження…</p></div>
+      <section class="card"><div class="card-label">📋 ${T('Мої записи')}</div>
+        <div id="myBookings"><p class="muted">${T('Завантаження…')}</p></div>
       </section>
-      <section class="card"><div class="card-label">🏋️ Програми від тренера</div>
-        <div id="myPrograms"><p class="muted">Завантаження…</p></div>
-        <button class="btn ghost" id="shareProgress" style="margin-top:10px">📤 Поділитися прогресом із тренером</button>
+      <section class="card"><div class="card-label">🏋️ ${T('Програми від тренера')}</div>
+        <div id="myPrograms"><p class="muted">${T('Завантаження…')}</p></div>
+        <button class="btn ghost" id="shareProgress" style="margin-top:10px">📤 ${T('Поділитися прогресом із тренером')}</button>
       </section>`;
     wireClientTrainers();
     wireClientBookings();
@@ -4355,9 +4443,9 @@ async function renderCoachRole(prof) {
 
 // підпис тривалості: 15→«15 хв», 60→«1 год», 90→«1,5 год», 120→«2 год»
 function durLabel(m) {
-  if (m < 60) return `${m} хв`;
-  if (m % 60 === 0) return `${m / 60} год`;
-  return `${(m / 60).toFixed(1).replace('.', ',')} год`;
+  if (m < 60) return `${m} ${T('хв')}`;
+  if (m % 60 === 0) return `${m / 60} ${T('год')}`;
+  return `${(m / 60).toFixed(1).replace('.', ',')} ${T('год')}`;
 }
 const SLOT_HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
 function localISO(dayISO, hour) {
@@ -4409,11 +4497,11 @@ async function wireTrainerSlots(prof) {
         const booked = slot.status === 'booked';
         return `<div class="hour-row ${booked ? 'booked' : 'open'}" data-id="${slot.id}" data-free="${!booked}">
           <span class="hr-time">${hh}</span>
-          <span class="hr-info">${booked ? '🔒 зайнято' : '🟢 відкрито'} · ${durLabel(slot.duration_min)}</span>
+          <span class="hr-info">${booked ? '🔒 ' + T('зайнято') : '🟢 ' + T('відкрито')} · ${durLabel(slot.duration_min)}</span>
           ${booked ? '' : '<span class="hr-x">✕</span>'}
         </div>`;
       }
-      return `<div class="hour-row empty" data-h="${h}"><span class="hr-time">${hh}</span><span class="hr-info muted">+ відкрити (${durLabel(selDur)})</span></div>`;
+      return `<div class="hour-row empty" data-h="${h}"><span class="hr-time">${hh}</span><span class="hr-info muted">+ ${T('відкрити')} (${durLabel(selDur)})</span></div>`;
     }).join('');
     grid.querySelectorAll('.hour-row').forEach((row) => {
       row.addEventListener('click', async () => {
@@ -4455,11 +4543,11 @@ async function wireTrainerRequests(prof) {
       ? rows
           .map(
             (b) => `<div class="req-row">
-              <div><b>${esc(b.client?.name || 'Клієнт')}</b> — ${b.slot ? prettyDateTime(b.slot.starts_at) : ''}
-                <div class="muted">${BK_STATUS[b.status] || b.status}${b.client?.contact ? ' · ' + esc(b.client.contact) : ''}</div>
+              <div><b>${esc(b.client?.name || T('Клієнт'))}</b> — ${b.slot ? prettyDateTime(b.slot.starts_at) : ''}
+                <div class="muted">${bkLabel(b.status)}${b.client?.contact ? ' · ' + esc(b.client.contact) : ''}</div>
                 ${b.note ? `<div class="muted">«${esc(b.note)}»</div>` : ''}</div>
               <div class="req-actions">
-                <button class="mini" data-msg="${b.client_id}" title="Написати">💬</button>
+                <button class="mini" data-msg="${b.client_id}" title="${T('Написати')}">💬</button>
                 ${b.status === 'requested'
                   ? `<button class="mini ok" data-ok="${b.id}">✓</button><button class="mini danger" data-no="${b.id}">✕</button>`
                   : b.status === 'confirmed'
@@ -4469,7 +4557,7 @@ async function wireTrainerRequests(prof) {
             </div>`
           )
           .join('')
-      : '<p class="muted">Заявок поки немає.</p>';
+      : `<p class="muted">${T('Заявок поки немає.')}</p>`;
     const act = async (id, st) => { try { await BE.setBookingStatus(id, st); wireTrainerRequests(prof); } catch (e) { alert('⚠️ ' + e.message); } };
     el.querySelectorAll('[data-ok]').forEach((b) => b.addEventListener('click', () => act(+b.dataset.ok, 'confirmed')));
     el.querySelectorAll('[data-no]').forEach((b) => b.addEventListener('click', () => act(+b.dataset.no, 'declined')));
@@ -4490,12 +4578,12 @@ async function wireClientTrainers() {
           .map(
             (tr) => `<button class="ex-card" data-tr="${tr.id}">
               <span class="ex-ico"><span class="glyph">🧑‍🏫</span></span>
-              <span class="ex-main"><span class="ex-name">${esc(tr.name || 'Тренер')}</span>
+              <span class="ex-main"><span class="ex-name">${esc(tr.name || T('Тренер'))}</span>
                 <span class="ex-sub">${esc(tr.city || '')}${tr.bio ? ' · ' + esc(tr.bio) : ''}</span></span>
               <span class="chev">›</span></button>`
           )
           .join('')
-      : '<p class="muted">Поки немає тренерів у каталозі.</p>';
+      : `<p class="muted">${T('Поки немає тренерів у каталозі.')}</p>`;
     el.querySelectorAll('[data-tr]').forEach((b) => b.addEventListener('click', () => openTrainerBooking(b.dataset.tr)));
   } catch (e) {
     if (screenEl.querySelector('#trainerList')) screenEl.querySelector('#trainerList').innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`;
@@ -4508,19 +4596,19 @@ async function openTrainerBooking(trainerId) {
     slots = (await BE.listSlots(trainerId, new Date().toISOString())).filter((s) => s.status === 'free');
   } catch (e) { return alert('⚠️ ' + e.message); }
   const body = slots.length
-    ? `<p class="muted">Обери вільний час:</p><div class="slot-list">${slots
-        .map((s) => `<label class="pick-row"><input type="radio" name="slot" value="${s.id}"/><span class="pick-name">${prettyDateTime(s.starts_at)} · ${s.duration_min} хв</span></label>`)
+    ? `<p class="muted">${T('Обери вільний час:')}</p><div class="slot-list">${slots
+        .map((s) => `<label class="pick-row"><input type="radio" name="slot" value="${s.id}"/><span class="pick-name">${prettyDateTime(s.starts_at)} · ${s.duration_min} ${T('хв')}</span></label>`)
         .join('')}</div>
-      <div class="field" style="margin-top:10px"><label>Коментар (необов'язково)</label><input type="text" id="bkNote" placeholder="Напр. перше тренування"/></div>`
-    : '<p class="muted">У цього тренера поки немає вільних слотів.</p>';
-  openModal('Запис на тренування', body, slots.length ? [
-    { label: 'Записатися', class: 'primary', onClick: async (root) => {
+      <div class="field" style="margin-top:10px"><label>${T('Коментар (необов\'язково)')}</label><input type="text" id="bkNote" placeholder="${T('Напр. перше тренування')}"/></div>`
+    : `<p class="muted">${T('У цього тренера поки немає вільних слотів.')}</p>`;
+  openModal(T('Запис на тренування'), body, slots.length ? [
+    { label: T('Записатися'), class: 'primary', onClick: async (root) => {
       const sel = root.querySelector('input[name="slot"]:checked');
       if (!sel) return;
       try {
         await BE.bookSlot(+sel.value, root.querySelector('#bkNote').value.trim());
         closeModal();
-        toast('Заявку надіслано ✅');
+        toast(T('Заявку надіслано') + ' ✅');
         wireClientBookings();
       } catch (e) { alert('⚠️ ' + e.message); }
     } },
@@ -4536,16 +4624,16 @@ async function wireClientBookings() {
       ? rows
           .map(
             (b) => `<div class="req-row">
-              <div><b>${esc(b.trainer?.name || 'Тренер')}</b> — ${b.slot ? prettyDateTime(b.slot.starts_at) : ''}
-                <div class="muted">${BK_STATUS[b.status] || b.status}${b.status === 'confirmed' && b.trainer?.contact ? ' · ' + esc(b.trainer.contact) : ''}</div></div>
+              <div><b>${esc(b.trainer?.name || T('Тренер'))}</b> — ${b.slot ? prettyDateTime(b.slot.starts_at) : ''}
+                <div class="muted">${bkLabel(b.status)}${b.status === 'confirmed' && b.trainer?.contact ? ' · ' + esc(b.trainer.contact) : ''}</div></div>
               <div class="req-actions">
-                <button class="mini" data-msg="${b.trainer_id}" title="Написати">💬</button>
-                ${b.status === 'requested' || b.status === 'confirmed' ? `<button class="mini danger" data-cancel="${b.id}">Скасувати</button>` : ''}
+                <button class="mini" data-msg="${b.trainer_id}" title="${T('Написати')}">💬</button>
+                ${b.status === 'requested' || b.status === 'confirmed' ? `<button class="mini danger" data-cancel="${b.id}">${T('Скасувати')}</button>` : ''}
               </div>
             </div>`
           )
           .join('')
-      : '<p class="muted">Ти ще нікуди не записаний.</p>';
+      : `<p class="muted">${T('Ти ще нікуди не записаний.')}</p>`;
     el.querySelectorAll('[data-cancel]').forEach((b) =>
       b.addEventListener('click', async () => { try { await BE.setBookingStatus(+b.dataset.cancel, 'cancelled'); wireClientBookings(); } catch (e) { alert('⚠️ ' + e.message); } })
     );
@@ -4567,11 +4655,11 @@ async function wireTrainerClients() {
             (c) => `<button class="ex-card" data-c="${c.id}">
               <span class="ex-ico"><span class="glyph">🏋️</span></span>
               <span class="ex-main"><span class="ex-name">${esc(c.name)}</span>
-                <span class="ex-sub">програми · прогрес · чат</span></span>
+                <span class="ex-sub">${T('програми · прогрес · чат')}</span></span>
               <span class="chev">›</span></button>`
           )
           .join('')
-      : '<p class="muted">Клієнти зʼявляться тут після їхніх записів до тебе.</p>';
+      : `<p class="muted">${T('Клієнти зʼявляться тут після їхніх записів до тебе.')}</p>`;
     el.querySelectorAll('[data-c]').forEach((b) => b.addEventListener('click', () => go('#/client/' + b.dataset.c)));
   } catch (e) {
     if (screenEl.querySelector('#clientList')) screenEl.querySelector('#clientList').innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`;
@@ -4590,19 +4678,19 @@ async function wireClientPrograms() {
             .map((a) => {
               const n = (a.workout_json || []).length;
               return `<div class="req-row">
-                <div><b>${esc(a.title)}</b> <span class="muted">· ${esc(a.trainer?.name || 'тренер')}</span>
+                <div><b>${esc(a.title)}</b> <span class="muted">· ${esc(a.trainer?.name || T('тренер'))}</span>
                   <div class="muted">📅 ${weekdaysLabel(a.weekdays)} · ${n} ${plural(n, 'вправа', 'вправи', 'вправ')}</div></div>
-                <button class="mini ok" data-imp="${a.id}" title="Додати в щоденник">＋</button>
+                <button class="mini ok" data-imp="${a.id}" title="${T('Додати в щоденник')}">＋</button>
               </div>`;
             })
             .join('')
-        : '<p class="muted">Тренер ще не призначив програму.</p>';
+        : `<p class="muted">${T('Тренер ще не призначив програму.')}</p>`;
     el?.querySelectorAll('[data-imp]').forEach((b) =>
       b.addEventListener('click', () => {
         const a = rows.find((x) => String(x.id) === b.dataset.imp);
         if (!a) return;
         S.importWorkoutFromPlan(a.title, a.workout_json);
-        toast('Додано в щоденник ✅');
+        toast(T('Додано в щоденник') + ' ✅');
       })
     );
   } catch (e) {
@@ -4612,10 +4700,10 @@ async function wireClientPrograms() {
     try {
       if (!rows.length) rows = await BE.myAssignments();
       const trainerId = rows[0]?.trainer_id;
-      if (!trainerId) return toast('Спершу тренер має призначити програму');
+      if (!trainerId) return toast(T('Спершу тренер має призначити програму'));
       const logs = S.exportRecentLogs(21);
       const n = await BE.pushLogs(logs, trainerId);
-      toast(n ? `Надіслано днів: ${n} ✅` : 'Немає записів за останні 3 тижні');
+      toast(n ? `${T('Надіслано днів')}: ${n} ✅` : T('Немає записів за останні 3 тижні'));
     } catch (e) { alert('⚠️ ' + e.message); }
   });
 }
@@ -4628,33 +4716,33 @@ async function renderClientManage(clientId) {
   screenEl.innerHTML = `
     <header class="appbar">
       <button class="icon-btn" id="backC">‹</button>
-      <div class="appbar-titles"><div class="appbar-kicker">Клієнт</div><div class="appbar-title" id="cName">…</div></div>
-      <button class="icon-btn" id="msgC" title="Написати">💬</button>
+      <div class="appbar-titles"><div class="appbar-kicker">${T('Клієнт')}</div><div class="appbar-title" id="cName">…</div></div>
+      <button class="icon-btn" id="msgC" title="${T('Написати')}">💬</button>
     </header>
-    <section class="card"><div class="card-label">➕ Призначити програму</div>
-      <div class="field"><label>Тренування (з моїх)</label><select id="asgW" class="sel"></select></div>
-      <div class="field"><label>Назва програми</label><input type="text" id="asgTitle" placeholder="Напр. Важкий день"/></div>
-      <div class="field"><label>Дні тижня</label>
+    <section class="card"><div class="card-label">➕ ${T('Призначити програму')}</div>
+      <div class="field"><label>${T('Тренування (з моїх)')}</label><select id="asgW" class="sel"></select></div>
+      <div class="field"><label>${T('Назва програми')}</label><input type="text" id="asgTitle" placeholder="${T('Напр. Важкий день')}"/></div>
+      <div class="field"><label>${T('Дні тижня')}</label>
         <div class="type-chips" id="asgDays" style="margin-top:6px">
-          ${WEEKDAYS.map((w) => `<button class="tchip" data-wd="${w.d}">${w.label}</button>`).join('')}
+          ${WEEKDAYS.map((w) => `<button class="tchip" data-wd="${w.d}">${T(w.label)}</button>`).join('')}
         </div></div>
-      <button class="btn primary" id="asgBtn">Призначити</button>
+      <button class="btn primary" id="asgBtn">${T('Призначити')}</button>
     </section>
-    <section class="card"><div class="card-label">Призначені програми</div><div id="asgList"><p class="muted">…</p></div></section>
-    <section class="card"><div class="card-label">📈 Прогрес клієнта</div><div id="logList"><p class="muted">…</p></div></section>`;
+    <section class="card"><div class="card-label">${T('Призначені програми')}</div><div id="asgList"><p class="muted">…</p></div></section>
+    <section class="card"><div class="card-label">📈 ${T('Прогрес клієнта')}</div><div id="logList"><p class="muted">…</p></div></section>`;
   screenEl.querySelector('#backC').onclick = () => go('#/coach');
   screenEl.querySelector('#msgC').onclick = () => go('#/chat/' + clientId);
   try {
     const p = await BE.getProfile(clientId);
     const nm = screenEl.querySelector('#cName');
-    if (nm) nm.textContent = p.name || 'Клієнт';
+    if (nm) nm.textContent = p.name || T('Клієнт');
   } catch (e) {}
 
   const myW = S.getWorkouts();
   const sel = screenEl.querySelector('#asgW');
   sel.innerHTML = myW.length
-    ? myW.map((w) => `<option value="${w.id}">${esc(w.name)} (${w.items.length})</option>`).join('')
-    : '<option value="">— спершу створи тренування —</option>';
+    ? myW.map((w) => `<option value="${w.id}">${esc(exN(w))} (${w.items.length})</option>`).join('')
+    : `<option value="">${T('— спершу створи тренування —')}</option>`;
   const titleInp = screenEl.querySelector('#asgTitle');
   if (myW[0]) titleInp.value = myW[0].name;
   sel.onchange = () => { titleInp.value = S.getWorkout(sel.value)?.name || ''; };
@@ -4668,14 +4756,14 @@ async function renderClientManage(clientId) {
   );
   screenEl.querySelector('#asgBtn').onclick = async () => {
     const w = S.getWorkout(sel.value);
-    if (!w) return toast('Немає тренування — створи у вкладці «Тренування»');
+    if (!w) return toast(T('Немає тренування — створи у вкладці «Тренування»'));
     const exList = w.items
       .map((id) => S.getExercise(id))
       .filter(Boolean)
       .map((e) => ({ name: e.name, icon: e.icon, weightType: e.weightType, weight: e.weight, targetSets: e.targetSets, targetReps: e.targetReps, muscle: e.muscle }));
     try {
       await BE.assignWorkout({ clientId, title: titleInp.value.trim() || w.name, workoutJson: exList, weekdays: [...days] });
-      toast('Програму призначено ✅');
+      toast(T('Програму призначено') + ' ✅');
       loadAsg();
     } catch (e) { alert('⚠️ ' + e.message); }
   };
@@ -4688,10 +4776,10 @@ async function renderClientManage(clientId) {
       el.innerHTML = rows.length
         ? rows
             .map((a) => `<div class="req-row"><div><b>${esc(a.title)}</b>
-              <div class="muted">📅 ${weekdaysLabel(a.weekdays)} · ${(a.workout_json || []).length} вправ</div></div>
+              <div class="muted">📅 ${weekdaysLabel(a.weekdays)} · ${(a.workout_json || []).length} ${PL((a.workout_json || []).length, 'вправа', 'вправи', 'вправ')}</div></div>
               <button class="mini danger" data-del="${a.id}">✕</button></div>`)
             .join('')
-        : '<p class="muted">Ще нічого не призначено.</p>';
+        : `<p class="muted">${T('Ще нічого не призначено.')}</p>`;
       el.querySelectorAll('[data-del]').forEach((b) =>
         b.addEventListener('click', async () => { try { await BE.deleteAssignment(+b.dataset.del); loadAsg(); } catch (e) { alert('⚠️ ' + e.message); } })
       );
@@ -4711,14 +4799,14 @@ async function renderClientManage(clientId) {
               const items = (r.log_json || [])
                 .map((it) => {
                   const reps = (Array.isArray(it.sets) ? it.sets : []).map((s) => Number(s && s.reps) || 0).join('/');
-                  const w = it.weightType !== 'bodyweight' && it.sets && it.sets.length ? ' · ' + Math.max(...it.sets.map((s) => s.weight || 0)) + 'кг' : '';
+                  const w = it.weightType !== 'bodyweight' && it.sets && it.sets.length ? ' · ' + Math.max(...it.sets.map((s) => s.weight || 0)) + T('кг') : '';
                   return `${esc(it.name)}: ${reps}${esc(w)}`;
                 })
                 .join('<br>');
               return `<div class="req-row"><div><b>${esc(S.prettyDate(r.day_iso))}</b><div class="muted">${items}</div></div></div>`;
             })
             .join('')
-        : '<p class="muted">Клієнт ще не поділився прогресом (він тисне «📤 Поділитися прогресом» у себе).</p>';
+        : `<p class="muted">${T('Клієнт ще не поділився прогресом (він тисне «📤 Поділитися прогресом» у себе).')}</p>`;
     } catch (e) {
       const el = screenEl.querySelector('#logList');
       if (el) el.innerHTML = `<p class="muted">⚠️ ${esc(e.message)}</p>`;
@@ -4736,14 +4824,14 @@ async function renderChat(otherId) {
   screenEl.innerHTML = `
     <header class="appbar">
       <button class="icon-btn" id="backChat">‹</button>
-      <div class="appbar-titles"><div class="appbar-kicker">Повідомлення</div>
+      <div class="appbar-titles"><div class="appbar-kicker">${T('Повідомлення')}</div>
         <div class="appbar-title" id="chatName">…</div></div>
       <button class="icon-btn" id="chatMore" title="${T('Поскаржитись')}">⋯</button>
-      <button class="icon-btn" id="refreshChat" title="Оновити">↻</button>
+      <button class="icon-btn" id="refreshChat" title="${T('Оновити')}">↻</button>
     </header>
-    <div class="chat-log" id="chatLog"><p class="muted center">Завантаження…</p></div>
+    <div class="chat-log" id="chatLog"><p class="muted center">${T('Завантаження…')}</p></div>
     <div class="chat-input">
-      <input type="text" id="chatText" placeholder="Напиши повідомлення…" autocomplete="off"/>
+      <input type="text" id="chatText" placeholder="${T('Напиши повідомлення…')}" autocomplete="off"/>
       <button class="btn primary" id="chatSend">▶</button>
     </div>`;
   screenEl.querySelector('#backChat').onclick = () => history.back();
@@ -4758,7 +4846,7 @@ async function renderChat(otherId) {
     const p = await BE.getProfile(otherId);
     otherName = p.name || '';
     const nm = screenEl.querySelector('#chatName');
-    if (nm) nm.textContent = p.name || 'Співрозмовник';
+    if (nm) nm.textContent = p.name || T('Співрозмовник');
   } catch (e) {}
   screenEl.querySelector('#chatMore').onclick = () =>
     openPersonMenu({ type: 'chat', targetId: otherId, userId: otherId, name: otherName, onDone: () => renderChat(otherId) });
@@ -4779,7 +4867,7 @@ async function renderChat(otherId) {
         ? msgs
             .map((m) => `<div class="bubble ${m.from_id === me ? 'mine' : 'their'}">${esc(m.text)}</div>`)
             .join('')
-        : '<p class="muted center">Повідомлень ще немає. Напиши першим 👋</p>';
+        : `<p class="muted center">${T('Повідомлень ще немає. Напиши першим')} 👋</p>`;
       log.scrollTop = log.scrollHeight;
     } catch (e) {
       const log = screenEl.querySelector('#chatLog');
@@ -4914,7 +5002,7 @@ function renderAI(toForm) {
       const p = pid ? FC.patternById(pid) : null;
       return `<button class="pick-row fc-row" data-id="${e.id}">
         <span class="pick-ico">${exIconHTML(e) || e.icon}</span>
-        <span class="pick-name">${esc(e.name)}</span>
+        <span class="pick-name">${esc(exN(e))}</span>
         <span class="fc-pat">${p ? `${patternIconHTML(p.id)} ${T(p.label)}` : T('обрати рух')}</span></button>`;
     })
     .join('');

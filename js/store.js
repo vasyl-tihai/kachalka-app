@@ -1,4 +1,18 @@
 // store.js — локальне сховище даних (localStorage) + стан додатку
+
+// Мова телефону для першого запуску: перша з налаштувань телефону, яка є в застосунку; інакше (і для російської) — англійська.
+// Оголошення функції (не const) — піднімається, тож доступна load() під час імпорту модуля (див. TDZ у CLAUDE.md).
+function phoneLang() {
+  try {
+    const ours = ['uk', 'en', 'pl', 'de', 'es', 'fr', 'it'];
+    const list = (typeof navigator !== 'undefined' && (navigator.languages || [navigator.language])) || [];
+    for (const l of list) {
+      const c = String(l || '').slice(0, 2).toLowerCase();
+      if (ours.includes(c)) return c;
+    }
+  } catch { /* немає navigator — англійська */ }
+  return 'en';
+}
 // Уся інформація зберігається на пристрої, працює офлайн.
 import { dateNames } from './i18n.js';
 
@@ -122,7 +136,7 @@ function defaultState() {
     settings: {
       restSeconds: 60,
       restStep: 30,
-      lang: 'uk', // мова інтерфейсу
+      lang: phoneLang(), // мова інтерфейсу: при першому запуску — мова телефону, якщо вона серед наших 7, інакше англійська
       theme: 'neon', // оформлення за замовчуванням: neon | classic | tablo | light
       soundOn: true, // звук у кінці відпочинку
       soundId: 'triple', // яка мелодія ('custom' — свій звук)

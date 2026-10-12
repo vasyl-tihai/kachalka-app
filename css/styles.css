@@ -374,7 +374,7 @@ input, select { font-family: inherit; }
   display: grid; place-items: center; position: relative; font-weight: 700; font-size: 1rem;
   min-width: 0;
 }
-.cal-cell.empty { background: transparent; border: none; }
+.cal-cell.empty { background: transparent; border: none; padding: 0; } /* .empty — ще й клас порожнього екрана (padding 40px): без цього перший тиждень вищий */
 .cal-cell.trained { background: rgba(54,215,122,.14); border-color: rgba(54,215,122,.5); color: #b7f5d2; }
 /* план тренувань: пропущений день / запланований (сьогодні чи майбутній) */
 .cal-cell.missed { background: rgba(255,91,91,.12); border-color: rgba(255,91,91,.45); color: #ffb3b3; }
@@ -638,7 +638,7 @@ input, select { font-family: inherit; }
 .aih-txt .muted { font-size: .82rem; line-height: 1.3; }
 .aih-list .pick-ico { font-size: 1.4rem; }
 /* «Чек → меню» */
-.kseg { grid-template-columns: 1fr 1fr; }
+.cseg.kseg { grid-template-columns: 1fr 1fr; }
 .rc-head { margin: 12px 0 6px; font-weight: 800; }
 .rc-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .rc-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 6px 6px 10px; border-radius: 999px; background: var(--bg-card2); border: 1px solid var(--line); font-size: .85rem; }
@@ -1276,6 +1276,20 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
 .post-acts { display: flex; gap: 6px; margin: 8px 0 0; }
 .post-act { border: 0; background: none; color: var(--txt); font: inherit; font-size: 1.35rem; line-height: 1; padding: 4px 6px; cursor: pointer; }
 .post-act.on { color: #ff4d6d; }
+.post-act { display: inline-flex; align-items: center; gap: 5px; }
+.post-act .pa-n { font-size: .9rem; font-weight: 700; color: var(--txt); }
+.post-act .pa-n:empty { display: none; }
+.post-act:disabled { opacity: .6; }
+/* коментарі до допису */
+.cmt-list { display: flex; flex-direction: column; gap: 12px; max-height: 52vh; overflow-y: auto; margin-bottom: 12px; }
+.cmt { display: flex; gap: 10px; align-items: flex-start; }
+.cmt .avatar { width: 32px; height: 32px; font-size: .8rem; flex: 0 0 auto; }
+.cmt-main { flex: 1; min-width: 0; }
+.cmt-head { font-size: .82rem; margin-bottom: 3px; }
+.cmt-body { background: var(--bg-card2); border-radius: 12px; padding: 8px 11px; font-size: .93rem; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--txt); }
+.cmt-new { display: flex; gap: 8px; align-items: flex-end; }
+.cmt-new textarea { flex: 1; min-width: 0; resize: none; }
+.cmt-new .btn { flex: 0 0 auto; width: auto; padding: 10px 14px; }
 .post-card .post-img { aspect-ratio: 4 / 5; max-height: none; }
 .pgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; border-radius: 14px; overflow: hidden; margin-bottom: 12px; }
 .pgrid img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: var(--bg-card2); }
