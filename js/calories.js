@@ -58,7 +58,7 @@ async function analyzeProxy(b64, lang) {
 }
 
 /** Стиснути фото до JPEG ≤ maxSide px і повернути чистий base64 (без префікса). */
-async function toBase64Jpeg(file, maxSide = 768) {
+async function toBase64Jpeg(file, maxSide = 512) {
   const bmp = await createImageBitmap(file);
   const k = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
   const w = Math.max(1, Math.round(bmp.width * k));

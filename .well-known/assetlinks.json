@@ -5,7 +5,8 @@
       "namespace": "android_app",
       "package_name": "com.kachalka.app",
       "sha256_cert_fingerprints": [
-        "ЗАМІНИТИ_НА_SHA256_КЛЮЧА_ПІДПИСУ"
+        "9D:E5:25:76:62:B3:54:C9:19:B3:15:25:EF:A0:3B:11:D7:29:F7:89:E9:F0:EF:59:82:94:1B:C3:BF:41:FD:63",
+        "5E:D5:23:4C:5A:08:4C:8E:85:0B:A5:72:CF:50:F8:F7:81:EF:08:18:DB:7C:F6:A9:AF:8D:98:8F:C9:C2:A8:AE"
       ]
     }
   }
