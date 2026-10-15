@@ -49,6 +49,7 @@ async function analyzeProxy(b64, lang) {
   }
   if (res.status === 404) throw new Error('no-proxy');
   if (res.status === 401) throw new Error('auth');
+  if (res.status === 402) throw new Error('premium'); // пробний тиждень минув, підписки немає
   if (res.status === 429) {
     // {error:'limit'} — наш денний ліміт; інакше «зачекай» від ШІ
     const d = await res.json().catch(() => ({}));
@@ -210,6 +211,7 @@ export function errorMessage(e) {
   if (m === 'quota') return 'Ліміт запитів вичерпано — спробуй за хвилину';
   if (m === 'auth') return 'Увійди в акаунт (вкладка «Спільнота»), щоб користуватись цим';
   if (m === 'limit') return 'Ліміт на сьогодні вичерпано — спробуй завтра';
+  if (m === 'premium') return 'Пробний тиждень закінчився — далі з підпискою';
   if (m === 'offline') return 'Немає з’єднання з інтернетом';
   if (m === 'parse') return 'Не вдалося розібрати відповідь — спробуй ще раз';
   return 'Помилка аналізу';
