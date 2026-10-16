@@ -143,7 +143,7 @@ const routes = [
   { re: /^#\/supptpl$/, render: renderSuppTpl },
   { re: /^#\/supp\/([\w-]+)(?:\/([\w-]+))?(?:\/(\w+))?$/, render: renderSuppEdit },
   { re: /^#\/course\/([\w-]+)$/, render: renderCourse },
-  { re: /^#\/recipes$/, render: () => { commSeg = 'recipes'; return renderRecipes(); } },
+  { re: /^#\/recipes$/, render: () => { setCommSeg('recipes'); return renderRecipes(); } },
   { re: /^#\/recipe-new$/, render: () => renderRecipeEdit(null) },
   { re: /^#\/recipe-edit\/(.+)$/, render: renderRecipeEdit },
   { re: /^#\/today$/, render: renderToday },
@@ -3579,7 +3579,13 @@ function postDate(ts) {
 }
 
 // розділ вкладки «Спільнота»: Рецепти (стрічка як у TikTok) | Стрічка (дописи з фото) | Люди
-let commSeg = 'recipes';
+// розділ Спільноти пам'ятаємо до кінця сесії: перезавантаження (нова версія, повернення з вікна паролів Android)
+// не має викидати з «Стрічки» з формою входу назад на «Рецепти»
+let commSeg = (() => { try { const v = sessionStorage.getItem('kachalka-comm-seg'); return ['recipes', 'feed', 'people'].includes(v) ? v : 'recipes'; } catch (e) { return 'recipes'; } })();
+function setCommSeg(v) {
+  commSeg = v;
+  try { sessionStorage.setItem('kachalka-comm-seg', v); } catch (e) { /* приватний режим — не страшно */ }
+}
 const CSEGS = [['recipes', 'Рецепти'], ['feed', 'Стрічка'], ['people', 'Люди']];
 function commSegHTML(cls) {
   return `<div class="${cls}">${CSEGS.map(([id, l]) =>
@@ -3588,7 +3594,7 @@ function commSegHTML(cls) {
 function bindCommSeg(root) {
   root.querySelectorAll('[data-seg]').forEach((b) => (b.onclick = () => {
     if (commSeg === b.dataset.seg) return;
-    commSeg = b.dataset.seg;
+    setCommSeg(b.dataset.seg);
     recipeAt = null;
     if (location.hash !== '#/community') go('#/community');
     else renderCommunityHub();
@@ -4025,7 +4031,7 @@ async function renderDemoUser(userId) {
       `<img src="${esc(p.photo_url)}" alt="" loading="lazy"${p.fallback ? ` data-fb="${esc(p.fallback)}"` : ''}/>`).join('')}</div>` : ''}
   `;
   const toR = uBody.querySelector('#toRecipes');
-  if (toR) toR.onclick = () => { commSeg = 'recipes'; go('#/community'); };
+  if (toR) toR.onclick = () => { setCommSeg('recipes'); go('#/community'); };
   uBody.querySelectorAll('.demo-act').forEach((b) =>
     b.addEventListener('click', () => toast(prof.sample ? T('Це приклад профілю — тут буде справжня дія') : T('Стрічка підписок з’явиться разом із сервером спільноти')))
   );
@@ -6647,7 +6653,10 @@ document.addEventListener('visibilitychange', async () => {
   try {
     const txt = await fetch('./js/version.js', { cache: 'no-store' }).then((r) => (r.ok ? r.text() : ''));
     const m = txt.match(/APP_VERSION\s*=\s*'([^']+)'/);
-    const busy = location.hash.startsWith('#/set/') || location.hash.startsWith('#/camera/');
+    // не перезавантажуємо посеред введення: поле пошти відкриває вікно паролів Android, застосунок «ховається»
+    // й повертається — і людину викидало з форми входу
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement && document.activeElement.tagName) || '');
+    const busy = typing || location.hash.startsWith('#/set/') || location.hash.startsWith('#/camera/');
     if (m && m[1] !== APP_VERSION && !busy) location.reload();
   } catch (e) { /* немає мережі — спробуємо наступного разу */ }
 });
