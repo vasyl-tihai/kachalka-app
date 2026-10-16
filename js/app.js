@@ -2771,6 +2771,7 @@ async function renderPro() {
       b.disabled = false;
       if (!res.ok) {
         if (res.reason === 'no-billing') toast(`⚠️ ${T('Оплату ще не підключено — з’явиться у версії з Google Play')}`);
+        else if (res.reason === 'error') toast(`⚠️ ${T('Не вдалося підтвердити покупку')}<br><small>${esc(res.detail || '')}</small>`, 'pr');
         else if (res.reason !== 'web-checkout') toast(`⚠️ ${T('Покупку скасовано')}`);
         return;
       }

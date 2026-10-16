@@ -154,13 +154,26 @@ export async function playService() {
   return _dgs;
 }
 
+// Play віддає суму рядком «119.000000» — показуємо як «119 ₴» / «$4.99» за мовою застосунку
+function money(p) {
+  const n = Number(p.value);
+  if (!isFinite(n)) return `${p.value} ${p.currency}`;
+  try {
+    return new Intl.NumberFormat(S.getSettings().lang || undefined, {
+      style: 'currency', currency: p.currency, minimumFractionDigits: 0, maximumFractionDigits: 2,
+    }).format(n);
+  } catch (e) {
+    return `${n} ${p.currency}`;
+  }
+}
+
 /** Ціни з Play (у валюті користувача) або [] — тоді показуємо свої підписи. */
 export async function playPrices() {
   const svc = await playService();
   if (!svc) return [];
   try {
     const items = await svc.getDetails(PRODUCTS.map((p) => p.id));
-    return items.map((i) => ({ id: i.itemId, price: i.price ? `${i.price.value} ${i.price.currency}` : '' }));
+    return items.map((i) => ({ id: i.itemId, price: i.price ? money(i.price) : '' }));
   } catch (e) {
     return [];
   }
@@ -184,7 +197,9 @@ export async function buy(productId) {
       // підтвердження покупки має робити сервер після звірки з Google
       return { ok: true, token, source: 'play', productId };
     } catch (e) {
-      return { ok: false, reason: e && e.message ? e.message : 'скасовано' };
+      // AbortError — людина сама закрила вікно Play; решту показуємо з назвою помилки, щоб було що шукати
+      if (e && e.name === 'AbortError') return { ok: false, reason: 'cancel' };
+      return { ok: false, reason: 'error', detail: e ? `${e.name || 'Error'}: ${e.message || ''}`.slice(0, 160) : '' };
     }
   }
   if (WEB_CHECKOUT) {
