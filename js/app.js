@@ -23,6 +23,7 @@ import * as RCP from './receipt.js';
 import { RECIPES } from './recipes-data.js';
 import { SUPP_TEMPLATES, SUPP_PRESETS } from './supp-templates.js';
 import { GYM_PROGRAMS, exIcon } from './gym-programs.js';
+import * as RM from './remind.js';
 
 // мова інтерфейсу — із налаштувань (до першого рендеру)
 setLang(S.getSettings().lang);
@@ -542,7 +543,9 @@ function renderToday() {
         .join('')
     : `<span class="muted">${T('Немає тренувань — додай у вкладці «Тренування»')}</span>`;
 
-  const summary = groups.length ? groups.map((g) => esc(exN(g.workout))).join(' + ') : T('Обрати тренування');
+  const planTm = groups.length ? (S.getSettings().planTimes || {})[String(S.isoToDate(iso).getDay())] : '';
+  const summary = (groups.length ? groups.map((g) => esc(exN(g.workout))).join(' + ') : T('Обрати тренування'))
+    + (planTm ? ` · ⏰ ${planTm}` : '');
 
   const listHtml = groups.length
     ? groups
@@ -603,6 +606,7 @@ function renderToday() {
     ${suppsCard(iso)}
     ${photosCard(iso)}
     <div class="day-actions">
+      ${groups.length ? `<button class="btn ghost" id="addDayW">＋ ${T('Ще одне тренування')}</button>` : ''}
       ${isPast ? '' : `<button class="btn ghost" id="manageW">${single ? '✏️ ' + T('Редагувати це тренування') : '🏋️ ' + T('Керувати тренуваннями')}</button>`}
 
     </div>
@@ -645,6 +649,37 @@ function renderToday() {
   bindPhotos(iso);
   const manageBtn = screenEl.querySelector('#manageW');
   if (manageBtn) manageBtn.onclick = () => go(single ? '#/workout/' + single : '#/calendar');
+  const addDayBtn = screenEl.querySelector('#addDayW');
+  if (addDayBtn) addDayBtn.onclick = () => openAddDayWorkout(iso);
+}
+
+// друге (третє…) тренування того ж дня: додається до «Тренування дня»; ту саму вправу можна робити
+// ще раз — підходи йдуть у той самий запис дня («Виконав підхід» видно завжди)
+function openAddDayWorkout(iso) {
+  const cur = new Set(S.getDayWorkoutIds(iso));
+  const rest = S.getWorkouts().filter((w) => !cur.has(w.id));
+  if (!rest.length) {
+    openModal(T('Ще одне тренування'), `<p>${T('Усі тренування вже додано на цей день')}.</p>`, [
+      { label: '＋ ' + T('Нове тренування'), class: 'primary', onClick: () => { closeModal(); openNewWorkout(); } },
+    ]);
+    return;
+  }
+  openModal(T('Ще одне тренування'), `
+    <div class="list">${rest.map((w) => `
+      <button class="ex-card" data-add-w="${w.id}">
+        <span class="ex-ico"><span class="glyph">${w.progId ? S.PROG_ICONS[w.progId] || '🤸' : '🏋️'}</span></span>
+        <span class="ex-main"><span class="ex-name">${esc(exN(w))}</span>
+          <span class="ex-sub">${w.items.length} ${plural(w.items.length, 'вправа', 'вправи', 'вправ')}</span></span>
+        <span class="ex-meta"><span class="chev">＋</span></span>
+      </button>`).join('')}</div>`);
+  document.querySelectorAll('.modal [data-add-w]').forEach((b) =>
+    b.addEventListener('click', () => {
+      S.toggleDayWorkout(iso, b.dataset.addW);
+      closeModal();
+      toast(`＋ ${esc(exN(S.getWorkout(b.dataset.addW)))}`);
+      renderToday();
+    })
+  );
 }
 
 document.addEventListener('click', (e) => {
@@ -754,7 +789,7 @@ function renderSet(exerciseId) {
         <div class="type-chips" id="typeChips" hidden>
           ${S.WEIGHT_TYPES.map((wt) => `<button class="tchip ${wt.id === entry.weightType ? 'on' : ''}" data-t="${wt.id}">${wt.icon} ${T(wt.label)}</button>`).join('')}
         </div>
-        ${prog ? `<button class="hint-chip" id="progHint">💡 ${T('Час додати вагу — спробуй')} <b>${prog.newWeight} ${T('кг')}</b></button>` : ''}
+        ${prog && !hintOff('prog:' + exerciseId) ? `<div class="hint-box" id="progBox"><button class="hint-chip" id="progHint">💡 ${T('Час додати вагу — спробуй')} <b>${prog.newWeight} ${T('кг')}</b></button>${hintX('prog:' + exerciseId)}</div>` : ''}
       </section>
 
       <!-- ТАЙМЕР ВІДПОЧИНКУ (після останнього підходу — очікування перед наступною вправою) -->
@@ -786,7 +821,7 @@ function renderSet(exerciseId) {
         <div class="set-progress" id="setProgress"></div>
         <div class="prev-line" id="prevLine" hidden></div>
         <!-- порада аналітика: відпочинок/вага/обсяг за твоєю ж історією -->
-        <button class="hint-chip smart" id="smartHint" hidden></button>
+        <div class="hint-box" id="smartBox" hidden><button class="hint-chip smart" id="smartHint"></button>${hintX('smart:' + exerciseId)}</div>
         <div id="wheelMount"></div>
         <!-- секундомір роботи: скільки триває сам підхід -->
         <div class="work-row" id="workMount"></div>
@@ -958,7 +993,7 @@ function renderSet(exerciseId) {
       entry.weight = v;
       const wv = screenEl.querySelector('#wVal');
       if (wv) wv.textContent = v;
-      progBtn.remove();
+      screenEl.querySelector('#progBox')?.remove();
       toast(`${T('Вага оновлена')}: ${v} ${T('кг')}`);
       markWeightUp();
     };
@@ -1117,19 +1152,21 @@ function updateRestMode(iso, exerciseId, waiting) {
 // одним тапом (довший відпочинок / менша вага). Рахується локально по історії.
 function updateSmartHint(iso, exerciseId) {
   const el = screenEl.querySelector('#smartHint');
-  if (!el) return;
+  const box = screenEl.querySelector('#smartBox');
+  if (!el || !box) return;
   let adv = null;
   try {
-    adv = SM.sessionAdvice(iso, exerciseId, live.timer ? live.timer.total : S.getSettings().restSeconds);
+    adv = hintOff('smart:' + exerciseId) ? null
+      : SM.sessionAdvice(iso, exerciseId, live.timer ? live.timer.total : S.getSettings().restSeconds);
   } catch (e) {
     adv = null;
   }
   if (!adv) {
-    el.hidden = true;
+    box.hidden = true;
     el.onclick = null;
     return;
   }
-  el.hidden = false;
+  box.hidden = false;
   el.innerHTML = `🧠 ${esc(adv.text)}${adv.action ? ` <b>— ${T('застосувати')}</b>` : ''}`;
   el.classList.toggle('actionable', !!adv.action);
   el.onclick = !adv.action
@@ -1145,9 +1182,37 @@ function updateSmartHint(iso, exerciseId) {
           if (wv) wv.textContent = adv.action.value;
           toast(`${T('Вага оновлена')}: ${adv.action.value} ${T('кг')}`);
         }
-        el.hidden = true;
+        box.hidden = true;
       };
 }
+
+// ✕ на підказках екрана підходу: закрита підказка не показується для цієї вправи до кінця дня.
+// Зручність одного телефона — localStorage, не стан застосунку (у копію не йде).
+const HINT_OFF_KEY = 'kachalka-hint-off';
+function hintOffList() {
+  try {
+    const v = JSON.parse(localStorage.getItem(HINT_OFF_KEY) || 'null');
+    return v && v.iso === S.todayISO() && Array.isArray(v.keys) ? v.keys : [];
+  } catch (e) {
+    return [];
+  }
+}
+function hintOff(key) {
+  return hintOffList().includes(key);
+}
+function setHintOff(key) {
+  try {
+    localStorage.setItem(HINT_OFF_KEY, JSON.stringify({ iso: S.todayISO(), keys: [...hintOffList(), key].slice(-200) }));
+  } catch (e) { /* приватний режим — закриється лише до перезаходу */ }
+}
+const hintX = (key) => `<button class="hint-x" data-hint-off="${key}" title="${T('Закрити')}" aria-label="${T('Закрити')}">✕</button>`;
+document.addEventListener('click', (e) => {
+  const x = e.target.closest && e.target.closest('[data-hint-off]');
+  if (!x) return;
+  setHintOff(x.dataset.hintOff);
+  const box = x.closest('.hint-box');
+  if (box) box.hidden = true;
+});
 
 // додати виконаний підхід: бере повторення з барабана, святкує рекорди, стартує відпочинок
 function logSet(iso, exerciseId) {
@@ -1325,19 +1390,17 @@ function refreshSets(iso, exerciseId) {
     live.wheel.setTarget(goalNum);
     live.wheel.setValue(suggest, false);
   }
-  // до цілі — велика синя «Виконав підхід» під барабаном; після виконання вона
-  // ховається, а внизу (біля виконаних підходів) зʼявляється «+ додатковий підхід».
-  // Тап по «+» повертає «Виконав підхід» для запису ще одного підходу.
+  // «Виконав підхід» видно ЗАВЖДИ (прохання 17.10): після цілі той самий тап записує ще один підхід —
+  // так само друге тренування дня з тією ж вправою. Окрема «+ додатковий підхід» більше не потрібна.
   const logBtn = screenEl.querySelector('#logBtn');
-  if (logBtn) logBtn.hidden = complete && !armed;
-  // секундомір роботи ховається разом із кнопкою (вправу вже виконано)
+  if (logBtn) logBtn.hidden = false;
   const workRow = screenEl.querySelector('#workMount');
-  if (workRow) workRow.hidden = complete && !armed;
+  if (workRow) workRow.hidden = false;
   // велика кнопка старту — тільки на НАЙПЕРШОМУ підході тренування;
   // далі кожен підхід стартує сам, коли добігає відпочинок
   if (live.work) live.work.setBig(done === 0 && dayLoggedSets(iso) === 0);
   const extraBtn = screenEl.querySelector('#extraBtn');
-  if (extraBtn) extraBtn.hidden = !complete || armed;
+  if (extraBtn) extraBtn.hidden = true;
 
   const sumEl = screenEl.querySelector('#setsSummary');
   if (sumEl) {
@@ -1880,14 +1943,16 @@ function myWorkoutsHTML() {
   const hasPlan = S.scheduleHasAny();
   const dowNums = [1, 2, 3, 4, 5, 6, 0]; // понеділок першим
   const dowNames = dateNames().dowsMon;
+  const planTimes = S.getSettings().planTimes || {};
   const planRows = dowNums
     .map((dow, i) => {
       const ids = (sch[String(dow)] || []).filter((id) => S.getWorkout(id));
       const names = ids.map((id) => esc(S.getWorkout(id).name)).join(' + ');
       const txt = names || (hasPlan ? `<span class="muted">${T('Вихідний')}</span>` : '<span class="muted">—</span>');
+      const tm = names ? planTimes[String(dow)] : '';
       return `<button class="plan-row" data-dow="${dow}">
         <span class="plan-day">${dowNames[i]}</span>
-        <span class="plan-names">${txt}</span>
+        <span class="plan-names">${txt}</span>${tm ? `<span class="plan-time">${tm}</span>` : ''}
         <span class="chev">›</span>
       </button>`;
     })
@@ -1905,6 +1970,7 @@ function myWorkoutsHTML() {
       <div class="card-label">📅 ${T('Тижневий план')}</div>
       <p class="muted" style="margin:0 0 10px">${T('Признач тренування на дні тижня — «Тренування дня» підставиться автоматично.')}</p>
       <div class="plan-list">${planRows}</div>
+      ${hasPlan ? `<button class="btn ghost" id="planRemind" style="margin-top:12px">🔔 ${T('Нагадування в календар')}</button>` : ''}
     </section>`;
 }
 function bindMyWorkouts() {
@@ -1917,6 +1983,63 @@ function bindMyWorkouts() {
   screenEl.querySelector('#addW').onclick = () => openNewWorkout();
   screenEl.querySelectorAll('.plan-row').forEach((r) =>
     r.addEventListener('click', () => openDayPlanEditor(parseInt(r.dataset.dow, 10)))
+  );
+  screenEl.querySelector('#planRemind')?.addEventListener('click', openWorkoutReminders);
+}
+
+// «Нагадати за» — однаково для тренувань і вітамінів (у .ics; Android бере нагадування свого календаря)
+const REMIND_OPTS = [0, 10, 15, 30, 60, 120];
+const remindSelectHTML = () => `<div class="field" style="margin-top:12px"><label>${T('Нагадати за')}</label>
+  <select id="remindMin">${REMIND_OPTS.map((m) => `<option value="${m}" ${S.getSettings().remindMin === m ? 'selected' : ''}>${m ? `${m} ${T('хв')}` : T('у момент початку')}</option>`).join('')}</select></div>`;
+const remindNoteHTML = () => `<p class="muted">${RM.isAndroid
+  ? T('Відкриється календар телефону — натисни «Зберегти». Нагадування календар ставить своє (зазвичай за 30 хв), його можна змінити в тому ж вікні.')
+  : T('Завантажиться файл календаря (.ics) — відкрий його, і подія з нагадуванням додасться в календар.')}</p>`;
+function bindRemindSelect(root) {
+  const sel = root.querySelector('#remindMin');
+  if (sel) sel.onchange = () => S.updateSettings({ remindMin: Number(sel.value) });
+}
+
+// нагадування про тренування: дні тижневого плану з тим самим часом → одна подія, що повторюється щотижня
+function openWorkoutReminders() {
+  const sch = S.getSchedule();
+  const times = S.getSettings().planTimes || {};
+  const groups = {}; // 'HH:MM' → [dow]
+  const noTime = [];
+  for (const dow of [1, 2, 3, 4, 5, 6, 0]) {
+    const ids = (sch[String(dow)] || []).filter((id) => S.getWorkout(id));
+    if (!ids.length) continue;
+    const tm = times[String(dow)];
+    if (tm) (groups[tm] = groups[tm] || []).push(dow);
+    else noTime.push(dow);
+  }
+  const dn = dateNames().dowsMon;
+  const dayName = (dow) => dn[[1, 2, 3, 4, 5, 6, 0].indexOf(dow)];
+  const keys = Object.keys(groups).sort();
+  const rows = keys.map((tm) => `<div class="rem-row">
+      <span class="rem-txt"><b>${tm}</b> · ${groups[tm].map(dayName).join(', ')}</span>
+      <button class="btn primary sm" data-rem="${tm}">📅 ${T('Додати')}</button>
+    </div>`).join('');
+  openModal(`🔔 ${T('Нагадування про тренування')}`, `
+    ${rows || `<p>${T('Спершу постав час тренування: натисни день у тижневому плані.')}</p>`}
+    ${noTime.length ? `<p class="muted">${T('Без часу')}: ${noTime.map(dayName).join(', ')} — ${T('натисни день у тижневому плані, щоб поставити час')}</p>` : ''}
+    ${rows ? remindSelectHTML() + remindNoteHTML() : ''}`);
+  const root = document.querySelector('.modal');
+  bindRemindSelect(root);
+  root.querySelectorAll('[data-rem]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const tm = b.dataset.rem;
+      const dows = groups[tm];
+      const names = [...new Set(dows.flatMap((d) => (sch[String(d)] || []).map((id) => S.getWorkout(id)).filter(Boolean).map((w) => exN(w))))];
+      RM.addToCalendar({
+        title: `🏋️ ${T('Час тренування')} — Gym Log`,
+        desc: `${names.join(' + ')}\n${T('Час іти на тренування!')}`,
+        date: RM.firstDate(dows),
+        time: tm,
+        minutes: 60,
+        rrule: RM.weeklyRule(dows),
+        alarm: S.getSettings().remindMin,
+      }, 'gymlog-training-' + tm.replace(':', ''));
+    })
   );
 }
 
@@ -2198,12 +2321,20 @@ function openDayPlanEditor(dow) {
       </label>`
     )
     .join('');
+  const curTime = (S.getSettings().planTimes || {})[String(dow)] || '';
   openModal(`${T('Тижневий план')} · ${dowNames[idx]}`, `
     <div class="pick-list">${body}</div>
+    <div class="field plan-time-field"><label>⏰ ${T('Час тренування')}</label>
+      <input type="time" id="planTime" value="${curTime}"/></div>
     <p class="muted">${T('Нічого не обрано = вихідний. Конкретну дату можна змінити на екрані «Сьогодні».')}</p>
   `, [
     { label: T('Готово'), class: 'primary', onClick: (root) => {
-      const ids = Array.from(root.querySelectorAll('input:checked')).map((i) => i.dataset.id);
+      const ids = Array.from(root.querySelectorAll('input[data-id]:checked')).map((i) => i.dataset.id);
+      const tm = root.querySelector('#planTime').value;
+      const pt = { ...(S.getSettings().planTimes || {}) };
+      if (/^\d{2}:\d{2}$/.test(tm)) pt[String(dow)] = tm;
+      else delete pt[String(dow)];
+      S.updateSettings({ planTimes: pt });
       S.setScheduleDay(dow, ids);
       closeModal();
       router();
@@ -6070,6 +6201,7 @@ function renderSupps() {
     <button class="pick-row aih-row sp-tpl-row" id="spTpl"><span class="pick-ico">📚</span>
       <span class="aih-txt"><b>${T('Приклади й заготовки')}</b><span class="muted">${T('Поширені схеми вітамінів і заготовки розкладу: гірка, через день, прийом і перерва')}</span></span>
       <span class="fc-pat">›</span></button>
+    ${S.getSupps().length ? `<button class="btn ghost" id="spRemind" style="margin-top:10px">🔔 ${T('Нагадування в календар')}</button>` : ''}
     <div class="btn-row">
       <button class="btn ghost" id="spAddCourse">🗂 ${T('Новий курс')}</button>
       <button class="btn primary" id="spAdd">＋ ${T('Вітамін')}</button>
@@ -6078,6 +6210,7 @@ function renderSupps() {
   screenEl.querySelector('#spAdd').onclick = () => go('#/supp/new');
   screenEl.querySelector('#spAddCourse').onclick = () => go('#/course/new');
   screenEl.querySelector('#spTpl').onclick = () => go('#/supptpl');
+  screenEl.querySelector('#spRemind')?.addEventListener('click', openSuppReminders);
   screenEl.querySelectorAll('.sp-item').forEach((b) => (b.onclick = () => go('#/supp/' + b.dataset.id)));
   screenEl.querySelectorAll('.sp-course').forEach((b) => (b.onclick = () => go('#/course/' + b.dataset.cid)));
   screenEl.querySelectorAll('[data-sv]').forEach((b) => (b.onclick = () => { suppView = b.dataset.sv; suppMonth = null; renderSupps(); }));
@@ -6106,6 +6239,53 @@ function renderSupps() {
   }
   const dl = screenEl.querySelector('#spDoses');
   if (dl) bindSuppDoses(dl, renderSupps);
+}
+
+// нагадування про прийом: усі чинні пункти з тим самим часом → одна щоденна подія в календарі телефону
+// (що саме приймати сьогодні — видно в застосунку: розклади «через день», етапи й перерви календар не повторить)
+function openSuppReminders() {
+  const today = S.todayISO();
+  const groups = {}; // 'HH:MM' → { names:Set, start, end ('' = без кінця) }
+  for (const it of S.getSupps()) {
+    const end = S.suppEnd(it);
+    if (end && end < today) continue; // курс уже скінчився
+    const sp = S.suppSpan(it);
+    const start = sp.start > today ? sp.start : today;
+    for (const tm of it.times) {
+      const g = (groups[tm] = groups[tm] || { names: new Set(), start, end, open: false });
+      g.names.add(it.name);
+      if (start < g.start) g.start = start;
+      if (!end) g.open = true;
+      else if (end > g.end) g.end = end;
+    }
+  }
+  const keys = Object.keys(groups).sort();
+  const rows = keys.map((tm) => `<div class="rem-row">
+      <span class="rem-txt"><b>${tm}</b> · ${esc([...groups[tm].names].join(', '))}</span>
+      <button class="btn primary sm" data-rem="${tm}">📅 ${T('Додати')}</button>
+    </div>`).join('');
+  openModal(`🔔 ${T('Нагадування про прийом')}`, `
+    ${rows || `<p>${T('Немає чинних прийомів.')}</p>`}
+    ${rows ? remindSelectHTML() + remindNoteHTML() : ''}
+    <p class="muted small">${T('Не медична порада')}</p>`);
+  const root = document.querySelector('.modal');
+  bindRemindSelect(root);
+  root.querySelectorAll('[data-rem]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const tm = b.dataset.rem;
+      const g = groups[tm];
+      RM.addToCalendar({
+        title: `💊 ${T('Прийом')} — Gym Log`,
+        desc: `${[...g.names].join(', ')}
+${T('Що саме сьогодні — у Gym Log → Вітаміни.')}`,
+        date: g.start,
+        time: tm,
+        minutes: 15,
+        rrule: 'FREQ=DAILY' + RM.untilPart(g.open ? '' : g.end),
+        alarm: S.getSettings().remindMin,
+      }, 'gymlog-supps-' + tm.replace(':', ''));
+    })
+  );
 }
 
 // ↗ / ↘ біля етапу, якщо доза більша / менша, ніж у попередньому етапі з прийомом (видно «гірку»)

@@ -210,6 +210,13 @@ function normSettings(st, def) {
   if (st.sex !== 'f') st.sex = 'm';
   st.customSoundName = String(st.customSoundName || '').slice(0, 80);
   if (st.geminiKey != null && typeof st.geminiKey !== 'string') delete st.geminiKey;
+  // час тренування за днями тижня { '0'..'6': 'HH:MM' } і «нагадати за N хв» (нагадування — через календар, js/remind.js)
+  const pt = {};
+  if (st.planTimes && typeof st.planTimes === 'object' && !Array.isArray(st.planTimes)) {
+    for (const [k, v] of Object.entries(st.planTimes)) if (/^[0-6]$/.test(k) && /^\d{2}:\d{2}$/.test(v)) pt[k] = v;
+  }
+  st.planTimes = pt;
+  st.remindMin = [0, 10, 15, 30, 60, 120].includes(Number(st.remindMin)) ? Number(st.remindMin) : 30;
   return st;
 }
 
