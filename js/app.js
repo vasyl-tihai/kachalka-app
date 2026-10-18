@@ -543,7 +543,9 @@ function renderToday() {
         .join('')
     : `<span class="muted">${T('Немає тренувань — додай у вкладці «Тренування»')}</span>`;
 
-  const planTm = groups.length ? (S.getSettings().planTimes || {})[String(S.isoToDate(iso).getDay())] : '';
+  // час з тижневого плану — лише якщо на цей день тижня в плані є тренування
+  const dowKey = String(S.isoToDate(iso).getDay());
+  const planTm = groups.length && (S.getSchedule()[dowKey] || []).length ? (S.getSettings().planTimes || {})[dowKey] : '';
   const summary = (groups.length ? groups.map((g) => esc(exN(g.workout))).join(' + ') : T('Обрати тренування'))
     + (planTm ? ` · ⏰ ${planTm}` : '');
 
@@ -947,7 +949,7 @@ function renderSet(exerciseId) {
       if (nextId) {
         const nx = S.getExercise(nextId);
         autoStartWork = true; // відпочинок вийшов → на новій вправі секундомір іде сам
-        toast(`➡️ ${T('Наступна вправа')}: <b>${esc(nx ? nx.name : '')}</b>`);
+        toast(`➡️ ${T('Наступна вправа')}: <b>${esc(nx ? exN(nx) : '')}</b>`);
         go('#/set/' + nextId);
       } else {
         toast(`🎉 ${T('Тренування виконано!')}`);
@@ -1145,7 +1147,7 @@ function updateRestMode(iso, exerciseId, waiting) {
     nextEl.innerHTML = '';
     return;
   }
-  nextEl.innerHTML = `<span class="nu-lab">➡️ ${T('Далі')}:</span> ${nx ? exIconHTML(nx) || `<span class="glyph">${nx.icon || '💪'}</span>` : ''} <b>${esc(nx ? nx.name : '')}</b>`;
+  nextEl.innerHTML = `<span class="nu-lab">➡️ ${T('Далі')}:</span> ${nx ? exIconHTML(nx) || `<span class="glyph">${nx.icon || '💪'}</span>` : ''} <b>${esc(nx ? exN(nx) : '')}</b>`;
 }
 
 // Порада «розумного тренера» на екрані підходу: коротка дія, яку можна застосувати
@@ -2332,7 +2334,7 @@ function openDayPlanEditor(dow) {
       const ids = Array.from(root.querySelectorAll('input[data-id]:checked')).map((i) => i.dataset.id);
       const tm = root.querySelector('#planTime').value;
       const pt = { ...(S.getSettings().planTimes || {}) };
-      if (/^\d{2}:\d{2}$/.test(tm)) pt[String(dow)] = tm;
+      if (ids.length && /^([01]\d|2[0-3]):[0-5]\d$/.test(tm)) pt[String(dow)] = tm; // вихідний — без часу
       else delete pt[String(dow)];
       S.updateSettings({ planTimes: pt });
       S.setScheduleDay(dow, ids);
@@ -6252,17 +6254,16 @@ function openSuppReminders() {
     const sp = S.suppSpan(it);
     const start = sp.start > today ? sp.start : today;
     for (const tm of it.times) {
-      const g = (groups[tm] = groups[tm] || { names: new Set(), start, end, open: false });
+      const key = tm + '|' + (end || '∞'); // різний кінець курсу — окрема подія, щоб нагадування не йшло після кінця
+      const g = (groups[key] = groups[key] || { tm, names: new Set(), start, end });
       g.names.add(it.name);
       if (start < g.start) g.start = start;
-      if (!end) g.open = true;
-      else if (end > g.end) g.end = end;
     }
   }
   const keys = Object.keys(groups).sort();
-  const rows = keys.map((tm) => `<div class="rem-row">
-      <span class="rem-txt"><b>${tm}</b> · ${esc([...groups[tm].names].join(', '))}</span>
-      <button class="btn primary sm" data-rem="${tm}">📅 ${T('Додати')}</button>
+  const rows = keys.map((k, n) => `<div class="rem-row">
+      <span class="rem-txt"><b>${groups[k].tm}</b> · ${esc([...groups[k].names].join(', '))}${groups[k].end ? ` <span class="muted">· ${T('до')} ${S.prettyDate(groups[k].end)}</span>` : ''}</span>
+      <button class="btn primary sm" data-rem="${n}">📅 ${T('Додати')}</button>
     </div>`).join('');
   openModal(`🔔 ${T('Нагадування про прийом')}`, `
     ${rows || `<p>${T('Немає чинних прийомів.')}</p>`}
@@ -6272,8 +6273,8 @@ function openSuppReminders() {
   bindRemindSelect(root);
   root.querySelectorAll('[data-rem]').forEach((b) =>
     b.addEventListener('click', () => {
-      const tm = b.dataset.rem;
-      const g = groups[tm];
+      const g = groups[keys[Number(b.dataset.rem)]];
+      const tm = g.tm;
       RM.addToCalendar({
         title: `💊 ${T('Прийом')} — Gym Log`,
         desc: `${[...g.names].join(', ')}
@@ -6281,7 +6282,7 @@ ${T('Що саме сьогодні — у Gym Log → Вітаміни.')}`,
         date: g.start,
         time: tm,
         minutes: 15,
-        rrule: 'FREQ=DAILY' + RM.untilPart(g.open ? '' : g.end),
+        rrule: 'FREQ=DAILY' + RM.untilPart(g.end),
         alarm: S.getSettings().remindMin,
       }, 'gymlog-supps-' + tm.replace(':', ''));
     })

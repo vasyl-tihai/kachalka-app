@@ -213,7 +213,7 @@ function normSettings(st, def) {
   // час тренування за днями тижня { '0'..'6': 'HH:MM' } і «нагадати за N хв» (нагадування — через календар, js/remind.js)
   const pt = {};
   if (st.planTimes && typeof st.planTimes === 'object' && !Array.isArray(st.planTimes)) {
-    for (const [k, v] of Object.entries(st.planTimes)) if (/^[0-6]$/.test(k) && /^\d{2}:\d{2}$/.test(v)) pt[k] = v;
+    for (const [k, v] of Object.entries(st.planTimes)) if (/^[0-6]$/.test(k) && /^([01]\d|2[0-3]):[0-5]\d$/.test(v)) pt[k] = v;
   }
   st.planTimes = pt;
   st.remindMin = [0, 10, 15, 30, 60, 120].includes(Number(st.remindMin)) ? Number(st.remindMin) : 30;

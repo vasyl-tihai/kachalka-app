@@ -51,6 +51,24 @@ function icsStamp(dt, utc) {
   if (utc) return dt.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
   return `${dt.getFullYear()}${pad(dt.getMonth() + 1)}${pad(dt.getDate())}T${pad(dt.getHours())}${pad(dt.getMinutes())}00`;
 }
+// RFC 5545: рядок не довший за 75 байтів, продовження — з пробілу (кирилиця = 2 байти, емодзі = 4)
+function fold(line) {
+  const enc = new TextEncoder();
+  if (enc.encode(line).length <= 75) return line;
+  const out = [];
+  let cur = '';
+  let max = 75;
+  for (const ch of line) {
+    if (enc.encode(cur + ch).length > max) {
+      out.push(cur);
+      cur = '';
+      max = 74; // наступні рядки починаються з пробілу
+    }
+    cur += ch;
+  }
+  out.push(cur);
+  return out.join('\r\n ');
+}
 export function buildICS(events) {
   const now = new Date();
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Gym Log//Reminders//UK', 'CALSCALE:GREGORIAN'];
@@ -73,7 +91,7 @@ export function buildICS(events) {
     );
   });
   lines.push('END:VCALENDAR');
-  return lines.join('\r\n') + '\r\n';
+  return lines.map(fold).join('\r\n') + '\r\n';
 }
 export function downloadICS(events, name) {
   const blob = new Blob([buildICS(events)], { type: 'text/calendar;charset=utf-8' });
