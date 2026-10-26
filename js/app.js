@@ -272,6 +272,12 @@ document.addEventListener('error', (e) => {
   else if (t.dataset.err === 'rm') t.remove();
   else if (t.dataset.err === 'rmp' && t.parentNode) t.parentNode.remove();
 }, true);
+// поля часу/дати: вікно вибору відкривається від натискання на самі цифри, а не лише на іконку
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLInputElement) || !/^(date|time|datetime-local|month)$/.test(t.type) || t.disabled || t.readOnly) return;
+  try { t.showPicker(); } catch (_) { /* старий браузер або вікно вже відкрите — лишається звичайне поле */ }
+});
 function unitFor(type) {
   return type === 'bodyweight' ? '' : T('кг');
 }

@@ -1,5 +1,6 @@
 /* ===== КАЧАЛКА — тема ===== */
 :root {
+  color-scheme: dark; /* світлі іконки й вікна вибору в полях дати/часу; світла тема ставить light */
   --bg: #000000;
   --bg-card: #0d0d10;
   --bg-card2: #141418;
@@ -1703,6 +1704,9 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
 /* кнопка переходу в календар — у рядку з датою, замість емодзі у шапці */
 .chip.cal-btn { display: grid; place-items: center; padding: 8px 12px; color: var(--blue-soft); }
 .chip.cal-btn svg { width: 22px; height: 22px; display: block; }
+/* іконка годинника/календаря в полях — помітна; вікно відкривається й від натискання на цифри (app.js) */
+input::-webkit-calendar-picker-indicator { opacity: .9; cursor: pointer; }
+input[type="date"], input[type="time"] { cursor: pointer; }
 /* нативна іконка в полі дати дублює кнопку календаря — ховаємо, поле лишається клікабельним */
 .date-input::-webkit-calendar-picker-indicator { opacity: 0; width: 0; padding: 0; margin: 0; }
 
