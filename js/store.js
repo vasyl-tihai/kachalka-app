@@ -133,6 +133,7 @@ function defaultState() {
     recipes: { fav: [], own: [] }, // обрані id рецептів і власні рецепти (фото — в IndexedDB)
     mealPlan: null, // «Чек → меню»: продукти з чека, налаштування й складене меню (normalizeMealPlan)
     supps: { courses: [], items: [], log: {} }, // вітаміни й добавки: що, скільки, коли + відмітки прийому (normalizeSupps)
+    acts: { types: [], log: {} }, // свої види тренувань (велосипед, біг…) і відмітки «зробив» (normalizeActs)
     settings: {
       restSeconds: 60,
       restStep: 30,
@@ -385,6 +386,7 @@ function normalizeState(raw) {
   s.calories = cal;
   s.mealPlan = normalizeMealPlan(raw.mealPlan);
   s.supps = normalizeSupps(raw.supps);
+  s.acts = normalizeActs(raw.acts);
 
   // одноразова міграція: раніше кількість підходів помилково дорівнювала кільк. повторень
   // (напр. 12). Реальні підходи — це 3–5, тож завищені значення (>6) знижуємо до 4.
@@ -544,11 +546,46 @@ export function setMealPlan(m) {
 // { courses: [{ id, name, start: ISO, len: днів (0 = без кінця), stop: ISO|'' (завершено достроково), note }],
 //   items: [{ id, course: id|'', name, form: tab|cap|drop|powder|inj|other, dose, unit, times: ['08:00'],
 //     food: ''|before|with|after, sched: { type: daily|every|week, n, days: [0..6] }, start: ISO (без курсу),
-//     len: днів (0 = без кінця / до кінця курсу), stages: [{ days, dose, type: daily|every|off, n }], route: ''|im|sc, note }],
+//     len: днів (0 = без кінця / до кінця курсу), stages: [{ days, dose, type: daily|every|off, n }], route: ''|im|sc, note, color: 0..8 }],
 //   log: { ISO: { id: [номери прийомів за день] } } }
 // Пункт курсу починається з початком курсу (свого start не має) — зсув курсу зсуває все. Етапи (stages) — розпис
 // по днях: «10 днів щодня 1 мл → 20 днів через день → 14 днів перерва»; з етапами тривалість = сума днів етапів.
 // Як і меню чека: викликається з load() — константи тільки всередині функції (TDZ), помилка не валить решту даних.
+// Свої види тренувань (велосипед, біг…, 28.10): { types: [{ id, name, icon }], log: { ISO: { id: { min, km, note } } } }.
+// Теж з load() — лише всередині функції.
+export function normalizeActs(x) {
+  try {
+    const r = x && typeof x === 'object' && !Array.isArray(x) ? x : {};
+    const types = [];
+    for (const t of Array.isArray(r.types) ? r.types : []) {
+      const id = t && safeId(t.id);
+      const name = t && String(t.name || '').trim().slice(0, 40);
+      if (!id || !name || types.some((y) => y.id === id)) continue;
+      const icon = typeof t.icon === 'string' && t.icon.length <= 8 && !/[<>"'&\w\s]/.test(t.icon) ? t.icon : '🏃';
+      types.push({ id, name, icon });
+      if (types.length >= 12) break;
+    }
+    const ids = new Set(types.map((t) => t.id));
+    const num = (v, max) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.min(max, Math.round(n * 10) / 10) : 0; };
+    const log = {};
+    const rl = r.log && typeof r.log === 'object' && !Array.isArray(r.log) ? r.log : {};
+    for (const iso of Object.keys(rl)) {
+      const day = rl[iso];
+      if (!isISO(iso) || !day || typeof day !== 'object' || Array.isArray(day)) continue;
+      const d = {};
+      for (const id of Object.keys(day)) {
+        if (!ids.has(id)) continue;
+        const e = day[id] && typeof day[id] === 'object' ? day[id] : {};
+        d[id] = { min: num(e.min, 1440), km: num(e.km, 1000), note: String(e.note || '').slice(0, 200) };
+      }
+      if (Object.keys(d).length) log[iso] = d;
+    }
+    return { types, log };
+  } catch (e) {
+    console.warn('Свої види тренувань не прочитано', e);
+    return { types: [], log: {} };
+  }
+}
 export function normalizeSupps(x) {
   try {
     return normSupps(x);
@@ -604,6 +641,7 @@ function normSupps(x) {
       stages,
       route: ['im', 'sc'].includes(it.route) ? it.route : '',
       note: str(it.note, 300),
+      color: int(it.color, 0, 8, 0), // 0 — колір теми, 1..8 — готові кольори (UI_IDEAS 9)
       created: Number(it.created) || Date.now(),
     };
   }).filter((it) => it.name);
@@ -759,6 +797,29 @@ export function courseInfo(id) {
   return { status, end, items: its.length, day: status === 'active' ? daysBetween(c.start, today) + 1 : 0,
     total: end ? daysBetween(c.start, end) + 1 : 0 };
 }
+// підсумок пункту (UI_IDEAS 6): серія — днів поспіль, коли все за розкладом прийнято (сьогодні рахується, лише
+// якщо вже все прийнято, і серію не рве); pct — % прийомів за 30 днів (сьогодні — лише якщо день закрито)
+export function suppStats(it) {
+  const today = todayISO();
+  let streak = 0, due = 0, taken = 0, broken = false;
+  for (let k = 0; k < 400; k++) {
+    const iso = addDaysISO(today, -k);
+    const st = suppDayState(it, iso);
+    if (k < 30 && st && (k > 0 || st.taken >= st.due)) { due += st.due; taken += Math.min(st.taken, st.due); }
+    if (!broken && st) {
+      if (st.taken >= st.due) streak++;
+      else if (k > 0) broken = true;
+    }
+    if (broken && k >= 29) break;
+  }
+  return { streak, pct: due ? Math.round((taken / due) * 100) : null };
+}
+// стан пункту за день: null — прийому не було в розкладі, інакше { due: скільки разів, taken: скільки відмічено }
+export function suppDayState(it, iso) {
+  if (!suppOn(it, iso)) return null;
+  const arr = (state.supps.log[iso] || {})[it.id] || [];
+  return { due: it.times.length, taken: arr.filter((i) => i < it.times.length).length };
+}
 export function toggleSuppDose(iso, id, i) {
   const log = state.supps.log;
   const day = log[iso] || (log[iso] = {});
@@ -769,6 +830,42 @@ export function toggleSuppDose(iso, id, i) {
   if (!Object.keys(day).length) delete log[iso];
   saveNow();
   return k < 0;
+}
+
+// ----- свої види тренувань (28.10): велосипед, біг… — відмітка дня з хвилинами / км -----
+export function actTypes() { return state.acts.types.slice(); }
+export function actType(id) { return state.acts.types.find((t) => t.id === id) || null; }
+export function saveActType(t) {
+  const clean = normalizeActs({ types: [{ ...t, id: t.id || 'ac-' + uid() }] }).types[0];
+  if (!clean) return null;
+  const list = state.acts.types;
+  const i = list.findIndex((x) => x.id === clean.id);
+  if (i >= 0) list[i] = clean; else if (list.length < 12) list.push(clean); else return null;
+  saveNow();
+  return clean;
+}
+export function deleteActType(id) {
+  state.acts.types = state.acts.types.filter((t) => t.id !== id);
+  for (const iso of Object.keys(state.acts.log)) {
+    delete state.acts.log[iso][id];
+    if (!Object.keys(state.acts.log[iso]).length) delete state.acts.log[iso];
+  }
+  saveNow();
+}
+// { id: { min, km, note } } за день
+export function actsOn(iso) { return state.acts.log[iso] || {}; }
+// e = { min, km, note } або null — прибрати відмітку
+export function setActDay(iso, id, e) {
+  if (!isISO(iso) || !actType(id)) return;
+  const log = state.acts.log;
+  if (e) {
+    const clean = normalizeActs({ types: state.acts.types, log: { [iso]: { [id]: e } } }).log[iso];
+    (log[iso] || (log[iso] = {}))[id] = clean[id];
+  } else if (log[iso]) {
+    delete log[iso][id];
+    if (!Object.keys(log[iso]).length) delete log[iso];
+  }
+  saveNow();
 }
 
 export function addCalorieEntry(iso, entry) {
@@ -997,6 +1094,10 @@ export function getDayStack(iso) {
 export function getEntry(iso, exerciseId) {
   return state.entries[iso] && state.entries[iso][exerciseId];
 }
+// усі вправи з записами цього дня (і ті, яких немає в плані дня)
+export function dayEntryIds(iso) {
+  return Object.keys((state.entries && state.entries[iso]) || {});
+}
 // «почати з того, де зупинився»: ціль повторень нового дня — це повторення
 // останнього записаного підходу з найближчого попереднього тренування вправи.
 // Зробив 6 замість 12 → завтра ціль 6 (не 12).
@@ -1223,6 +1324,136 @@ export function streakStats() {
     while (weekSet.has(w)) { weeks++; w--; }
   }
   return { current, longest, weeks };
+}
+
+// --- Прогрес (28.10): серії, теплокарта регулярності, матриця «вправа × 7 днів» ---
+// тренувальний день = є хоча б один підхід АБО відмітка свого виду тренування (state.acts)
+export function activeDays() {
+  const set = trainedDays();
+  try {
+    const log = (state.acts && state.acts.log) || {};
+    for (const iso of Object.keys(log)) if (Object.keys(log[iso] || {}).length) set.add(iso);
+  } catch (e) { /* без своїх видів — лише підходи */ }
+  return set;
+}
+// { current, longest, month, total } — проста серія календарних днів (сьогодні без тренування серію не рве, якщо вчора було)
+export function progressStats() {
+  const today = todayISO();
+  const days = [...activeDays()].filter((d) => d <= today).sort();
+  if (!days.length) return { current: 0, longest: 0, month: 0, total: 0 };
+  let longest = 1, run = 1;
+  for (let i = 1; i < days.length; i++) {
+    run = dayNum(days[i]) - dayNum(days[i - 1]) === 1 ? run + 1 : 1;
+    if (run > longest) longest = run;
+  }
+  let current = 0;
+  if (dayNum(today) - dayNum(days[days.length - 1]) <= 1) {
+    current = 1;
+    for (let i = days.length - 1; i > 0 && dayNum(days[i]) - dayNum(days[i - 1]) === 1; i--) current++;
+  }
+  const ym = today.slice(0, 7);
+  return { current, longest, month: days.filter((d) => d.startsWith(ym)).length, total: days.length };
+}
+// теплокарта: weeks стовпців (від старого до поточного тижня), у кожному 7 клітинок Пн..Нд.
+// рівень: 0 — нічого, 1 — 1–5 підходів (або лише свій вид), 2 — 6–12, 3 — 13–20, 4 — 21+
+// mode 'supp' — добавки: рівень = частка прийнятого від запланованого (1 — до третини … 4 — усе)
+export function heatmapWeeks(weeks = 18, mode = 'train') {
+  if (mode === 'supp') return heatmapSupp(weeks);
+  const today = todayISO();
+  const todayN = dayNum(today);
+  const dow = (isoToDate(today).getDay() + 6) % 7;
+  const startN = todayN - dow - (weeks - 1) * 7;
+  const log = (state.acts && state.acts.log) || {};
+  const out = [];
+  for (let w = 0; w < weeks; w++) {
+    const col = [];
+    for (let r = 0; r < 7; r++) {
+      const n = startN + w * 7 + r;
+      const iso = dateToISO(new Date(n * 86400000 + 12 * 3600000)); // середина доби UTC → той самий календарний день
+      let sets = 0;
+      for (const e of Object.values((state.entries && state.entries[iso]) || {})) {
+        if (e && Array.isArray(e.sets)) sets += e.sets.length;
+      }
+      const acts = Object.keys(log[iso] || {}).length;
+      const level = sets === 0 && !acts ? 0 : sets <= 5 ? 1 : sets <= 12 ? 2 : sets <= 20 ? 3 : 4;
+      col.push({ iso, sets, acts, level, future: n > todayN, today: n === todayN });
+    }
+    out.push(col);
+  }
+  return out;
+}
+function heatmapSupp(weeks) {
+  const today = todayISO();
+  const todayN = dayNum(today);
+  const dow = (isoToDate(today).getDay() + 6) % 7;
+  const startN = todayN - dow - (weeks - 1) * 7;
+  const out = [];
+  for (let w = 0; w < weeks; w++) {
+    const col = [];
+    for (let r = 0; r < 7; r++) {
+      const n = startN + w * 7 + r;
+      const iso = dateToISO(new Date(n * 86400000 + 12 * 3600000));
+      let due = 0, taken = 0;
+      if (n <= todayN) {
+        try {
+          for (const x of suppDosesOn(iso)) { due++; if (x.taken) taken++; }
+        } catch (e) { /* зіпсований пункт — день порожній */ }
+      }
+      const k = due ? taken / due : 0;
+      const level = !taken ? 0 : k < 0.34 ? 1 : k < 0.67 ? 2 : k < 1 ? 3 : 4;
+      col.push({ iso, due, taken, level, future: n > todayN, today: n === todayN });
+    }
+    out.push(col);
+  }
+  return out;
+}
+// матриця «вправа × дні»: останні `days` днів (старий → сьогодні), рядки — вправи з підходами за цей час.
+// клітинка — найкращий підхід дня: { reps, weight, bw, trend: 'up'|'down'|'same'|null, pr } або null.
+// trend — проти попереднього дня з цією вправою (будь-коли раніше); pr — краще за все, що було до цього дня
+function bestOfDay(ex, e) {
+  if (!e || !Array.isArray(e.sets)) return null;
+  let best = null;
+  for (const s of e.sets) {
+    const reps = Number(s.reps) || 0;
+    if (reps <= 0) continue;
+    const bw = (s.weightType || e.weightType || ex.weightType) === 'bodyweight';
+    const weight = Number(s.weight) || 0;
+    const score = bw || !weight ? reps : estimate1RM(weight, reps);
+    if (!best || score > best.score) best = { reps, weight, bw: bw || !weight, score };
+  }
+  return best;
+}
+export function weekMatrix(days = 7, maxRows = 8) {
+  const todayN = dayNum(todayISO());
+  const isos = [];
+  for (let i = days - 1; i >= 0; i--) isos.push(dateToISO(new Date((todayN - i) * 86400000 + 12 * 3600000)));
+  const allDays = Object.keys(state.entries).sort();
+  const rows = [];
+  for (const ex of getExercises({ includeArchived: true })) {
+    // уся історія вправи до першого дня вікна — для порівняння з минулим разом і рекорду
+    let prev = null, max = -1;
+    for (const iso of allDays) {
+      if (iso >= isos[0]) break;
+      const b = bestOfDay(ex, state.entries[iso][ex.id]);
+      if (b) { prev = b; max = Math.max(max, b.score); }
+    }
+    let any = 0;
+    const cells = isos.map((iso) => {
+      const best = bestOfDay(ex, state.entries[iso] && state.entries[iso][ex.id]);
+      if (!best) return null;
+      any++;
+      best.trend = !prev ? null : best.score > prev.score + 1e-9 ? 'up' : best.score < prev.score - 1e-9 ? 'down' : 'same';
+      best.pr = max >= 0 && best.score > max + 1e-9;
+      prev = best;
+      max = Math.max(max, best.score);
+      return best;
+    });
+    if (any) rows.push({ ex, cells, count: any });
+  }
+  // частіше робив → вище; при рівності — та, що робив пізніше
+  const last = (r) => r.cells.reduce((m, c, i) => (c ? i : m), -1);
+  rows.sort((a, b) => b.count - a.count || last(b) - last(a));
+  return { isos, rows: rows.slice(0, maxRows) };
 }
 
 // --- обсяг тренувань (тоннаж) за період ---

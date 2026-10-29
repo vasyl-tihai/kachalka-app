@@ -10,10 +10,10 @@ const EMOJI = {
   // тренування й тіло
   '💪': 'muscle', '🏋': 'dumbbell', '🏋‍♀': 'dumbbell', '🏋‍♂': 'barbell', '🔔': 'kettlebell', '🤸': 'bodyweight',
   '🦵': 'leg', '🪨': 'back', '🏃': 'run', '🚴': 'bike', '🏊': 'swim', '🧎': 'kneel', '🤾': 'bodyweight',
-  '🥊': 'boxing', '🧗': 'climb', '🧘': 'stretch', '🧘‍♀': 'stretch', '🔥': 'flame:warn', '⚡': 'bolt:gold',
+  '🚶': 'walk', '⚽': 'ball', '🥊': 'boxing', '🧗': 'climb', '🧘': 'stretch', '🧘‍♀': 'stretch', '🔥': 'flame:warn', '⚡': 'bolt:gold',
   '🎯': 'target', '🏆': 'trophy:gold', '⏱': 'timer', '🏁': 'finish', '📏': 'ruler', '⚖': 'scale', '🌱': 'sprout:ok',
   '🌿': 'sprout:ok', '🌸': 'flower', '🌺': 'flower', '🧠': 'brain', '♡': 'heart', '♥': 'heart:like', '😴': 'moon',
-  '🌞': 'sun:gold', '⛰': 'mountain', '🧩': 'puzzle', '↕': 'arrows-v', '🔀': 'shuffle', '🧑‍🏫': 'coach',
+  '🌞': 'sun:gold', '🌅': 'sun:gold', '☀': 'sun:gold', '🌙': 'moon', '⏰': 'bell', '⛰': 'mountain', '🧩': 'puzzle', '↕': 'arrows-v', '🔀': 'shuffle', '🧑‍🏫': 'coach',
   // інтерфейс
   '⚠': 'warn:warn', '✅': 'check-circle:ok', '🚫': 'ban:bad', '📅': 'calendar', '🗓': 'calendar', '📆': 'calendar',
   '📋': 'clipboard', '🗑': 'trash', '💬': 'chat', '💊': 'pill', '📈': 'chart-up', '📉': 'chart-down', '📊': 'chart-bar',
@@ -22,7 +22,7 @@ const EMOJI = {
   '🗂': 'folder', '👍': 'thumbs-up', '🤖': 'bot', '⚙': 'gear', '💡': 'bulb:gold', '✉': 'mail', '📧': 'mail',
   '📮': 'mail', '📭': 'mail', '📤': 'upload', '📥': 'download', '⬇': 'download', '⬆': 'upload', '➕': 'plus',
   '🧾': 'receipt', '🎁': 'gift:gold', '🏠': 'home', '🏢': 'building', '🔒': 'lock', '🔑': 'key', '🟢': 'dot:ok',
-  '🟡': 'dot:gold', '🔴': 'dot:bad', '🟥': 'dot:bad', '🚩': 'flag:bad', '🕒': 'clock', '⏳': 'hourglass', '🛒': 'cart',
+  '🟡': 'dot:gold', '⚪': 'tablet', '🔴': 'dot:bad', '🟥': 'dot:bad', '🚩': 'flag:bad', '🕒': 'clock', '⏳': 'hourglass', '🛒': 'cart',
   '🧺': 'cart', '💧': 'drop', '💉': 'syringe', '💾': 'save', '🔁': 'repeat', '🔄': 'repeat', '📌': 'pin', '📍': 'pin',
   '🔊': 'sound', '📳': 'vibrate', '🎵': 'music', '📱': 'phone', '📞': 'phone', '➡': 'arrow-right', '↩': 'undo',
   '👀': 'eye', '👋': 'hand', '🙌': 'hand', '🏷': 'tag', '🐞': 'bug', '💳': 'card', '✏': 'edit', '🛎': 'bell',

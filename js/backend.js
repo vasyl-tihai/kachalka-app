@@ -114,15 +114,28 @@ export async function getMyProfile() {
   if (!sb || !session) return null;
   const { data, error } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
   if (error) throw new Error(error.message);
-  return data;
+  // місце, зал, видимість — в окремій приватній таблиці (backend/patch-8-community-security.sql)
+  const { data: pl } = await sb.from('profile_place').select('region,district,train_at,gym_id,place_vis,discoverable,stats')
+    .eq('id', session.user.id).maybeSingle();
+  return { ...data, ...(pl || {}) };
 }
 
+// поля місця йдуть у profile_place (бачить лише власник), решта — у profiles
+const PLACE_KEYS = ['region', 'district', 'train_at', 'gym_id', 'place_vis', 'discoverable', 'stats'];
 export async function saveMyProfile(patch) {
   const sb = await client();
   const session = await getSession();
   if (!sb || !session) throw new Error('Немає сесії');
-  const { error } = await sb.from('profiles').update(patch).eq('id', session.user.id);
-  if (error) throw new Error(error.message);
+  const base = {}, place = {};
+  for (const [k, v] of Object.entries(patch)) (PLACE_KEYS.includes(k) ? place : base)[k] = v;
+  if (Object.keys(base).length) {
+    const { error } = await sb.from('profiles').update(base).eq('id', session.user.id);
+    if (error) throw new Error(error.message);
+  }
+  if (Object.keys(place).length) {
+    const { error } = await sb.from('profile_place').upsert({ id: session.user.id, ...place });
+    if (error) throw new Error(error.message);
+  }
 }
 
 // ---- послуги тренера ----
@@ -203,44 +216,205 @@ export async function listPeople() {
   return data || [];
 }
 
-// ---- пости спільноти (фото з тренувань) ----
-export async function listPosts(authorId) {
+// ---- «картки атлета»: публічний вигляд профілів (backend/patch-7-community.sql) ----
+// місце вже обрізане сервером за налаштуванням людини (place_vis); контакт — лише в тренерів
+const CARD_COLS = 'id,name,role,avatar_url,bio,train_at,stats,region,city,district,gym_id,gym_name,gym_city,contact,created_at,place_vis,my_discoverable,discoverable';
+// listed = true — лише ті, хто дозволив себе знаходити (тренери — завжди); для друзів і авторів — без цього
+export async function listCards({ ids, role, gymId, city, district, region, q, listed, limit = 100 } = {}) {
   const sb = await client();
-  let q = sb
-    .from('posts')
-    .select('*, author:author_id(name,avatar_url,role)')
-    .order('created_at', { ascending: false })
-    .limit(50);
-  if (authorId) q = q.eq('author_id', authorId);
-  const { data, error } = await q;
+  let qq = sb.from('profile_cards').select(CARD_COLS).limit(Math.min(limit, 100));
+  if (listed) qq = qq.eq('discoverable', true);
+  if (ids) { if (!ids.length) return []; qq = qq.in('id', ids.filter(isUUID)); }
+  if (role) qq = qq.eq('role', role);
+  if (gymId) qq = qq.eq('gym_id', gymId);
+  if (city) qq = qq.ilike('city', likeSafe(city));
+  if (district) qq = qq.ilike('district', likeSafe(district));
+  if (region) qq = qq.ilike('region', likeSafe(region));
+  if (q) qq = qq.ilike('name', '%' + likeSafe(q) + '%');
+  const { data, error } = await qq.order('created_at', { ascending: false });
   if (error) throw new Error(error.message);
   return data || [];
 }
-export async function addPost(blob, caption) {
+export async function getCard(id) {
+  const rows = await listCards({ ids: [id], limit: 1 });
+  return rows[0] || null;
+}
+// % і _ у пошуку — буквально
+const likeSafe = (v) => String(v || '').trim().slice(0, 60).replace(/\*/g, '').replace(/[\\%_]/g, (c) => '\\' + c);
+
+// свої лічильники для картки (серія, тренувань за місяць, рекорди) — оновлює застосунок
+export async function saveMyStats(stats) {
+  const sb = await client();
+  const s = await getSession();
+  if (!sb || !s) return;
+  const { error } = await sb.from('profile_place').upsert({ id: s.user.id, stats });
+  if (error) throw new Error(error.message);
+}
+
+// ---- зали ----
+export async function getGym(id) {
+  const sb = await client();
+  if (!sb || !isUUID(id)) return null;
+  const { data } = await sb.from('gyms').select('id,name,city,region,district').eq('id', id).maybeSingle();
+  return data || null;
+}
+export async function searchGyms(q, city) {
+  const sb = await client();
+  let qq = sb.from('gyms').select('id,name,city,region,district').order('name').limit(30);
+  if (q) qq = qq.ilike('name', '%' + likeSafe(q) + '%');
+  if (city) qq = qq.ilike('city', likeSafe(city));
+  const { data, error } = await qq;
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+export async function addGym({ name, city, region, district }) {
+  const sb = await client();
+  const s = await getSession();
+  if (!sb || !s) throw new Error('auth');
+  const row = { name: String(name || '').trim().slice(0, 80), city: String(city || '').trim().slice(0, 60),
+    region: String(region || '').trim().slice(0, 60), district: String(district || '').trim().slice(0, 60), created_by: s.user.id };
+  const { data, error } = await sb.from('gyms').insert(row).select('id,name,city,region,district').single();
+  if (error && error.code === '23505') {
+    const found = await searchGyms(row.name, row.city);
+    const same = found.find((g) => g.name.toLowerCase() === row.name.toLowerCase());
+    if (same) return same;
+  }
+  if (error) throw new Error(error.code === '42501' ? 'too-many' : error.message);
+  return data;
+}
+
+// ---- друзі: запит → прийняти; рядок friendships (requester, addressee, status) ----
+export async function myFriendships() {
+  const sb = await client();
+  const s = await getSession();
+  if (!sb || !s) return [];
+  const { data, error } = await sb.from('friendships').select('*');
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+export async function requestFriend(userId) {
+  if (!isUUID(userId)) throw new Error('bad id');
+  const sb = await client();
+  const s = await getSession();
+  if (!sb || !s) throw new Error('auth');
+  const { error } = await sb.from('friendships').insert({ requester: s.user.id, addressee: userId });
+  if (error && error.code !== '23505') throw new Error(error.code === '42501' ? 'too-many' : error.message);
+}
+export async function acceptFriend(userId) {
+  if (!isUUID(userId)) throw new Error('bad id');
+  const sb = await client();
+  const s = await getSession();
+  if (!sb || !s) throw new Error('auth');
+  const { error } = await sb.from('friendships').update({ status: 'accepted' }).eq('requester', userId).eq('addressee', s.user.id);
+  if (error) throw new Error(error.message);
+}
+export async function removeFriend(userId) {
+  if (!isUUID(userId)) throw new Error('bad id');
+  const sb = await client();
+  const s = await getSession();
+  if (!sb || !s) throw new Error('auth');
+  const me = s.user.id;
+  const { error } = await sb.from('friendships').delete()
+    .or(`and(requester.eq.${me},addressee.eq.${userId}),and(requester.eq.${userId},addressee.eq.${me})`);
+  if (error) throw new Error(error.message);
+}
+
+// ---- дописи спільноти: фото / тренування / рекорд / до-після ----
+// автора беремо з profile_cards (таблицю profiles чужі не читають); без patch-7 — як раніше
+// без authorId рецепти-дописи (kind = 'recipe', patch-10) у загальну стрічку не йдуть — їх показує «Рецепти → Від людей»
+export async function listPosts(authorId) {
+  const sb = await client();
+  const run = (noRecipes) => {
+    let q = sb.from('posts').select('*').order('created_at', { ascending: false }).limit(60);
+    if (authorId) q = q.eq('author_id', authorId);
+    else if (noRecipes) q = q.neq('kind', 'recipe');
+    return q;
+  };
+  let { data, error } = await run(true);
+  if (error && !authorId) ({ data, error } = await run(false)); // сервер без колонки kind (до patch-7)
+  if (error) throw new Error(error.message);
+  return withAuthors(sb, data || []);
+}
+// стрічка рецептів від людей: kind = 'recipe' (patch-10). Без patch-10 порожньо (рядків такого виду нема)
+export async function listRecipePosts() {
+  const sb = await client();
+  const { data, error } = await sb.from('posts').select('*').eq('kind', 'recipe')
+    .order('created_at', { ascending: false }).limit(60);
+  if (error) throw new Error(error.message);
+  return withAuthors(sb, (data || []).filter((p) => p.meta && typeof p.meta === 'object'));
+}
+async function withAuthors(sb, posts) {
+  const ids = [...new Set(posts.map((p) => p.author_id))];
+  let cards = [];
+  try { cards = await listCards({ ids, limit: ids.length || 1 }); }
+  catch {
+    const { data: old } = await sb.from('posts').select('id, author:author_id(name,avatar_url,role)').in('id', posts.map((p) => p.id));
+    const by = new Map((old || []).map((r) => [r.id, r.author]));
+    posts.forEach((p) => (p.author = by.get(p.id) || {}));
+    return posts;
+  }
+  const by = new Map(cards.map((c) => [c.id, c]));
+  posts.forEach((p) => (p.author = by.get(p.author_id) || {}));
+  return posts;
+}
+// blobs — фото допису: один Blob або масив (до MAX_POST_PHOTOS), необовʼязкове для тренування/рекорду;
+// kind/meta — тип допису й дані картки. Перше фото дублюється в photo_url (його читає старий клієнт),
+// усі — у posts.photos (backend/patch-9-post-photos.sql). Повертає { saved } — скільки фото потрапило в допис.
+export const MAX_POST_PHOTOS = 4;
+let photosCol = true; // false — сервер ще без patch-9 (колонки posts.photos немає): пишемо лише перше фото
+const isNoPhotosColumn = (e) => !!e && (e.code === 'PGRST204' || e.code === '42703' || (/column/i.test(e.message || '') && /photos/.test(e.message || '')));
+export async function addPost(blobs, caption, { kind = 'photo', meta = {} } = {}) {
   const sb = await client();
   const s = await getSession();
   if (!s) throw new Error('Немає сесії');
-  const path = `${s.user.id}/${Date.now()}.jpg`;
-  const { error: upErr } = await sb.storage
-    .from('posts')
-    .upload(path, blob, { contentType: 'image/jpeg' });
-  if (upErr) throw new Error(upErr.message);
-  const { data } = sb.storage.from('posts').getPublicUrl(path);
-  const { error } = await sb.from('posts').insert({
-    author_id: s.user.id,
-    caption: String(caption || '').slice(0, 300),
-    photo_url: data.publicUrl,
-    photo_path: path,
-  });
-  if (error) throw new Error(error.message);
+  const list = (Array.isArray(blobs) ? blobs : blobs ? [blobs] : []).filter(Boolean).slice(0, MAX_POST_PHOTOS);
+  const stamp = Date.now();
+  const paths = [], urls = [];
+  const dropFiles = async (ps) => { if (ps.length) { try { await sb.storage.from('posts').remove(ps); } catch {} } };
+  try {
+    for (let i = 0; i < list.length; i++) {
+      const path = `${s.user.id}/${stamp}${list.length > 1 ? '-' + i : ''}.jpg`;
+      const { error: upErr } = await sb.storage.from('posts').upload(path, list[i], { contentType: 'image/jpeg' });
+      if (upErr) throw new Error(upErr.message);
+      paths.push(path);
+      urls.push(sb.storage.from('posts').getPublicUrl(path).data.publicUrl);
+    }
+  } catch (e) { await dropFiles(paths); throw e; }
+  const row = { author_id: s.user.id, caption: String(caption || '').slice(0, 300), photo_url: urls[0] || null, photo_path: paths[0] || '' };
+  if (kind !== 'photo' || Object.keys(meta).length) Object.assign(row, { kind, meta });
+  let saved = urls.length;
+  let { error } = await sb.from('posts').insert(photosCol && urls.length ? { ...row, photos: urls } : row);
+  if (error && photosCol && urls.length && isNoPhotosColumn(error)) {
+    photosCol = false; // patch-9 ще не накочено — допис із першим фото, зайві файли зі сховища прибираємо
+    ({ error } = await sb.from('posts').insert(row));
+    if (!error) { saved = 1; await dropFiles(paths.slice(1)); }
+  }
+  if (error) {
+    await dropFiles(paths);
+    const err = new Error(error.message);
+    err.code = error.code; // 23514 — порушення CHECK (напр. kind = 'recipe' до patch-10)
+    throw err;
+  }
+  return { saved };
+}
+// шляхи файлів допису у сховищі: photo_path + шляхи з адрес у photos (лише з теки автора)
+function postFilePaths(post) {
+  const out = new Set();
+  if (post.photo_path) out.add(post.photo_path);
+  for (const u of Array.isArray(post.photos) ? post.photos : []) {
+    const m = typeof u === 'string' && u.match(/\/storage\/v1\/object\/public\/posts\/([A-Za-z0-9_.\/-]+)$/);
+    if (m && !m[1].includes('..') && m[1].startsWith(post.author_id + '/')) out.add(m[1]);
+  }
+  return [...out];
 }
 export async function deletePost(post) {
   const sb = await client();
   const { error } = await sb.from('posts').delete().eq('id', post.id);
   if (error) throw new Error(error.message);
   // фото у сховищі прибираємо теж (не критично, якщо не вдасться)
-  if (post.photo_path) {
-    try { await sb.storage.from('posts').remove([post.photo_path]); } catch {}
+  const paths = postFilePaths(post);
+  if (paths.length) {
+    try { await sb.storage.from('posts').remove(paths); } catch {}
   }
 }
 

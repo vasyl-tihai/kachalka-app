@@ -29,18 +29,18 @@ export function demoData() {
   const people = [
     { id: 'kachalka-coach', name: 'Тренер Gym Log', city: '', role: 'trainer', official: true, avatar_url: 'icons/icon-192.png' },
     { id: 'kachalka-kitchen', name: 'Кухня Gym Log', city: '', role: 'kitchen', official: true, avatar_url: 'icons/icon-192.png' },
-    { id: 'sample-t1', name: 'Андрій', city: 'Київ', role: 'trainer', sample: true, avatar_url: pic('sample-t1') },
-    { id: 'sample-t2', name: 'Оксана', city: 'Львів', role: 'trainer', sample: true, avatar_url: pic('sample-t2') },
-    { id: 'sample-t3', name: 'Олег', city: 'Одеса', role: 'trainer', sample: true, avatar_url: pic('sample-t3') },
-    { id: 'sample-t4', name: 'Марта', city: 'Дніпро', role: 'trainer', sample: true, avatar_url: pic('sample-t4') },
-    { id: 'sample-a1', name: 'Ірина', city: 'Харків', role: 'client', sample: true, avatar_url: pic('sample-a1') },
-    { id: 'sample-a2', name: 'Тарас', city: 'Вінниця', role: 'client', sample: true, avatar_url: pic('sample-a2') },
+    { id: 'sample-t1', name: 'Андрій', city: 'Київ', district: 'Оболонь', role: 'trainer', sample: true, avatar_url: pic('sample-t1'), train_at: 'gym', gym_name: 'Приклад: зал «Сталь»', stats: { streak: 12, month: 18, total: 640 } },
+    { id: 'sample-t2', name: 'Оксана', city: 'Львів', district: 'Сихів', role: 'trainer', sample: true, avatar_url: pic('sample-t2'), train_at: 'gym', gym_name: 'Приклад: зал «Форма»', stats: { streak: 5, month: 16, total: 410 } },
+    { id: 'sample-t3', name: 'Олег', city: 'Одеса', role: 'trainer', sample: true, avatar_url: pic('sample-t3'), train_at: 'gym', gym_name: 'Приклад: кросфіт-бокс', stats: { streak: 3, month: 14, total: 520 } },
+    { id: 'sample-t4', name: 'Марта', city: 'Дніпро', role: 'trainer', sample: true, avatar_url: pic('sample-t4'), train_at: 'home', stats: { streak: 2, month: 11, total: 300 } },
+    { id: 'sample-a1', name: 'Ірина', city: 'Харків', role: 'client', sample: true, avatar_url: pic('sample-a1'), train_at: 'gym', gym_name: 'Приклад: зал «Форма»', stats: { streak: 4, month: 12, total: 96 } },
+    { id: 'sample-a2', name: 'Тарас', city: 'Вінниця', role: 'client', sample: true, avatar_url: pic('sample-a2'), train_at: 'home', stats: { streak: 9, month: 15, total: 210 } },
   ];
   const byId = Object.fromEntries(people.map((p) => [p.id, p]));
 
   const bios = {
     'kachalka-coach': 'Офіційний акаунт Gym Log: техніка вправ, відновлення, прості плани для залу й дому.',
-    'kachalka-kitchen': 'Офіційний акаунт Gym Log: 100 рецептів з калоріями й БЖВ — у розділі «Рецепти».',
+    'kachalka-kitchen': 'Офіційний акаунт Gym Log: 120 рецептів з калоріями й БЖВ — у розділі «Рецепти».',
     'sample-t1': 'Так може виглядати профіль тренера: силові, 8 років досвіду, ранкові групи 💪',
     'sample-t2': 'Приклад профілю тренерки: жіночі групи, техніка з нуля, без страху перед залізом 🙌',
     'sample-t3': 'Приклад профілю: функціональний тренінг і кросфіт, перше заняття безкоштовно 🔥',
@@ -66,10 +66,23 @@ export function demoData() {
     ['sample-t2-p2', 'sample-t2', 'Гантелі, гумки й килимок — цього досить для повноцінного тренування вдома.', 80, '🏠'],
     ['sample-t3-p2', 'sample-t3', 'Махи гирею: рух іде від стегон, не від рук.', 96, '🔔'],
   ];
+  // тип допису: рекорд / тренування (картка з вправами, без фото) — для фільтрів «Рекорди» й показу картки тренування
+  const KIND = { 'sample-a1-p1': 'record', 'sample-a2-p1': 'record' };
   const posts = raw.map(([id, author_id, caption, h, emoji]) => ({
     id, author_id, caption, created_at: hoursAgo(h), photo_url: pic(id), fallback: fallbackImg(emoji),
-    photo_path: '', author: byId[author_id],
+    photo_path: '', author: byId[author_id], kind: KIND[id] || 'photo', meta: {},
   }));
+  // приклад допису «тренування дня» — так виглядає картка, яку людина публікує після тренування
+  posts.push({
+    id: 'sample-a1-w1', author_id: 'sample-a1', caption: 'Ноги й спина — пройшло легко 💪', created_at: hoursAgo(14),
+    photo_url: null, photo_path: '', author: byId['sample-a1'], kind: 'workout',
+    meta: { date: dayISO(0), vol: 3586, reps: 143, sets: 13, prs: ['Присідання із вагою'], ex: [
+      { n: 'Присідання із вагою', w: 'barbell', s: [[10, 50], [8, 55], [8, 55], [6, 60]] },
+      { n: 'Станова тяга', w: 'barbell', s: [[8, 60], [8, 60], [6, 65]] },
+      { n: 'Тяга гантель в нахилі', w: 'dumbbell', s: [[12, 14], [12, 14], [10, 16]] },
+      { n: 'Прес', w: 'bodyweight', s: [[20, 0], [20, 0], [15, 0]] },
+    ] },
+  });
 
   // «як людина тренується» — тренування прикладів профілів
   const sets = (n) => Array.from({ length: n }, () => ({ reps: 10, weight: 0 }));

@@ -9,6 +9,7 @@ import { getLandmarker, drawPose } from './pose.js';
 import * as FC from './formcheck.js';
 import { t as T, setLang, LANGS, plural as PL, dateNames } from './i18n.js';
 import { mountBody3D, BODY_PARTS, BODY_BASE } from './body3d.js';
+import { mountEx3D, hasWebGL } from './ex3d.js';
 import * as RC from './recipes.js';
 import * as RI from './recipe-import.js';
 import { exIconHTML, patternIconHTML } from './exicons.js';
@@ -99,7 +100,7 @@ let bodyCompare = false; // «було/стало» на екрані замір
 let bodyDate = null;
 
 // активні «живі» компоненти, які треба знищувати при зміні екрана
-let live = { timer: null, work: null, wheel: null, camera: null, chat: null, body3d: null };
+let live = { timer: null, work: null, wheel: null, camera: null, chat: null, body3d: null, ex3d: null };
 function clearLive() {
   if (live.timer) live.timer.destroy();
   if (live.work) live.work.destroy();
@@ -107,7 +108,8 @@ function clearLive() {
   if (live.camera && live.camera.destroy) live.camera.destroy();
   if (live.chat && live.chat.destroy) live.chat.destroy();
   if (live.body3d) { bodyAngle = live.body3d.angle(); live.body3d.destroy(); }
-  live = { timer: null, work: null, wheel: null, camera: null, chat: null, body3d: null };
+  if (live.ex3d) live.ex3d.destroy();
+  live = { timer: null, work: null, wheel: null, camera: null, chat: null, body3d: null, ex3d: null };
 }
 
 // ---------- маршрутизація ----------
@@ -119,6 +121,7 @@ const routes = [
   { re: /^#\/guides$/, render: renderGuides },
   { re: /^#\/guide\/([\w-]+)$/, render: renderGuide },
   { re: /^#\/calendar$/, render: renderCalendar },
+  { re: /^#\/acts$/, render: renderActs },
   { re: /^#\/gym\/([\w-]+)$/, render: renderGymProgram },
   { re: /^#\/workouts$/, render: renderWorkouts },
   { re: /^#\/workout\/(.+)$/, render: renderWorkoutDetail },
@@ -140,7 +143,8 @@ const routes = [
   { re: /^#\/calories$/, render: renderCalories },
   { re: /^#\/mealplan$/, render: renderMealPlan },
   { re: /^#\/meal\/(\d+)\/(\d+)$/, render: renderMeal },
-  { re: /^#\/supps(?:\/(day|month))?$/, render: (v) => { if (v) suppView = v; renderSupps(); } },
+  // «Місяць» тепер — Календар, вигляд «Вітаміни» (28.10)
+  { re: /^#\/supps(?:\/(day|month))?$/, render: (v) => { if (v === 'month') { setCalView('supp'); location.replace('#/calendar'); return; } renderSupps(); } },
   { re: /^#\/supptpl$/, render: renderSuppTpl },
   { re: /^#\/supp\/([\w-]+)(?:\/([\w-]+))?(?:\/(\w+))?$/, render: renderSuppEdit },
   { re: /^#\/course\/([\w-]+)$/, render: renderCourse },
@@ -532,6 +536,7 @@ function dayStatsCard(iso) {
       <div class="ds-cell"><b>${secs > 0 ? mm + ' ' + T('хв') : '—'}</b><span>${T('під вагою')}</span></div>
     </div>
     <div class="ds-list">${rows.join('')}</div>
+    ${BE.configured ? `<button class="btn ghost ds-share" data-share-day="${iso}">📣 ${T('Поділитися в Спільноті')}</button>` : ''}
   </section>`;
 }
 
@@ -612,6 +617,7 @@ function renderToday() {
     })()}
     ${isPast ? dayStatsCard(iso) : ''}
     ${suppsCard(iso)}
+    ${actsCard(iso)}
     ${photosCard(iso)}
     <div class="day-actions">
       ${groups.length ? `<button class="btn ghost" id="addDayW">＋ ${T('Ще одне тренування')}</button>` : ''}
@@ -646,6 +652,7 @@ function renderToday() {
     };
   screenEl.querySelector('#calBtn').onclick = () => go('#/calendar');
   bindSuppsCard(iso);
+  screenEl.querySelectorAll('[data-aid]').forEach((b) => (b.onclick = () => openActDay(iso, b.dataset.aid, renderToday)));
   const dp = screenEl.querySelector('#datePick');
   dp.onchange = () => {
     if (dp.value) {
@@ -818,6 +825,7 @@ function renderSet(exerciseId) {
       <section class="card fin-card" id="finCard" hidden>
         <div class="fin-txt">🎉 ${T('Тренування виконано!')}</div>
         <button class="btn primary" id="finBtn">${T('Сьогодні')} ›</button>
+        ${BE.configured ? `<button class="btn ghost" data-share-day="${iso}">📣 ${T('Поділитися в Спільноті')}</button>` : ''}
       </section>
 
       <!-- ПОВТОРЕННЯ: барабан + кнопка «Виконав підхід» -->
@@ -1808,6 +1816,13 @@ function renderCamera(exerciseId) {
 //  ЕКРАН: КАЛЕНДАР
 // =====================================================================
 let calYear, calMonth;
+// що показує календар (28.10): all — усе разом, train — зал, supp — добавки, act:<id> — свій вид тренування
+let calView = (() => { try { return sessionStorage.getItem('kachalka-cal-view') || 'all'; } catch (e) { return 'all'; } })();
+const setCalView = (v) => { calView = v; try { sessionStorage.setItem('kachalka-cal-view', v); } catch (e) { /* приватний режим */ } };
+function calIcons(list) {
+  const u = [...new Set(list)];
+  return u.length ? `<span class="cal-ics">${u.slice(0, 3).join('')}${u.length > 3 ? '<em>+</em>' : ''}</span>` : '';
+}
 function renderCalendar() {
   // при вході з іншого екрана показуємо місяць вибраної дати; гортання ‹/› далі не скидається
   if (calNeedsSync || calYear == null) {
@@ -1829,6 +1844,16 @@ function renderCalendar() {
   const plan = new Set(S.getSettings().trainDays || []);
   const sched = S.getSchedule();
   for (const dow of Object.keys(sched)) if ((sched[dow] || []).length) plan.add(Number(dow));
+
+  // вид календаря: неіснуючий (видалений вид, добавок уже немає) → «Усе»
+  const types = S.actTypes();
+  const hasSupps = S.getState().supps.items.length > 0;
+  if ((calView === 'supp' && !hasSupps) || (calView.startsWith('act:') && !S.actType(calView.slice(4)))) setCalView('all');
+  const view = calView;
+  const act = view.startsWith('act:') ? S.actType(view.slice(4)) : null;
+  const seen = new Map(); // значок → підпис (легенда «Усе»)
+  const sum = { days: 0, min: 0, km: 0, ok: 0, withDoses: 0 };
+
   let cells = '';
   for (let i = 0; i < startDow; i++) cells += `<div class="cal-cell empty"></div>`;
   for (let d = 1; d <= daysInMonth; d++) {
@@ -1838,11 +1863,40 @@ function renderCalendar() {
     const planned = plan.has(dt.getDay());
     const isToday = iso === todayIso;
     let cls = '';
-    if (t) cls = 'trained';
-    else if (planned && iso < todayIso) cls = 'missed'; // день минув без тренування
-    else if (planned) cls = 'planned'; // сьогодні (ще попереду) або майбутнє
-    cells += `<button class="cal-cell ${cls} ${isToday ? 'today' : ''}" data-iso="${iso}">
-      <span>${d}</span>${t ? '<i class="cal-dot"></i>' : ''}</button>`;
+    let marks = t ? '<i class="cal-dot"></i>' : '';
+    let ring = false; // «усе заплановане на день зроблено» (28.10, UI_IDEAS п. 7) — лише у виді «Усе»
+    if (view === 'all' || view === 'train') {
+      if (t) cls = 'trained';
+      else if (planned && iso < todayIso) cls = 'missed'; // день минув без тренування
+      else if (planned) cls = 'planned'; // сьогодні (ще попереду) або майбутнє
+    }
+    if (view === 'all') {
+      const ics = [];
+      if (t) { ics.push('🏋️'); seen.set('🏋️', T('тренування')); }
+      const doses = S.suppDosesOn(iso);
+      for (const x of doses) { const f = SUPP_FORMS[x.it.form] || SUPP_FORMS.other; ics.push(suppMark(x.it)); seen.set(f[0], T(f[1]).toLowerCase()); }
+      // заплановане = тренування за планом тижня + прийоми вітамінів; кільце, коли усе це виконано
+      ring = (planned || doses.length > 0) && (!planned || t) && doses.every((x) => x.taken);
+      if (ring) sum.ring = (sum.ring || 0) + 1;
+      const a = S.actsOn(iso);
+      for (const ty of types) if (a[ty.id]) { ics.push(ty.icon); seen.set(ty.icon, ty.name); }
+      marks = calIcons(ics);
+    } else if (view === 'supp') {
+      const ds = S.suppDosesOn(iso);
+      const done = ds.filter((x) => x.taken).length;
+      if (ds.length) {
+        sum.withDoses++;
+        if (done === ds.length) sum.ok++;
+        cls = done === ds.length ? 'trained' : iso < todayIso ? (done ? 'part' : 'missed') : 'planned';
+      }
+      marks = calIcons(ds.map((x) => suppMark(x.it)));
+    } else if (act) {
+      const e = S.actsOn(iso)[act.id];
+      if (e) { cls = 'trained'; sum.days++; sum.min += e.min; sum.km += e.km; }
+      marks = e ? calIcons([act.icon]) : '';
+    }
+    cells += `<button class="cal-cell ${cls} ${isToday ? 'today' : ''} ${marks.includes('cal-ics') ? 'has-ics' : ''} ${ring ? 'calr-done' : ''}" data-iso="${iso}">
+      <span>${d}</span>${marks}</button>`;
   }
 
   // підрахунок місяця
@@ -1851,6 +1905,30 @@ function renderCalendar() {
     return dt.getFullYear() === calYear && dt.getMonth() === calMonth;
   }).length;
   const stk = S.streakStats();
+  const km = Math.round(sum.km * 10) / 10;
+  const statTxt = view === 'supp'
+    ? `💊 ${T('усе прийнято: {n} з {m} дн.', { n: sum.ok, m: sum.withDoses })}`
+    : act
+      ? `${act.icon} ${sum.days} ${plural(sum.days, 'день', 'дні', 'днів')}${sum.min ? ` · ${Math.round(sum.min)} ${T('хв')}` : ''}${km ? ` · ${km} ${T('км')}` : ''}`
+      : `🔥 ${monthTrained} ${plural(monthTrained, 'тренування', 'тренування', 'тренувань')}`;
+  const isTrain = view === 'all' || view === 'train';
+  const cv = (v, label) => `<button class="cv-btn ${view === v ? 'on' : ''}" data-cv="${v}">${label}</button>`;
+  const legend = view === 'supp'
+    ? `<div class="cal-legend">
+        <span><i class="lg done"></i>${T('усе прийнято')}</span>
+        <span><i class="lg part"></i>${T('частково')}</span>
+        <span><i class="lg miss"></i>${T('пропустив')}</span>
+        <span><i class="lg plan"></i>${T('заплановано')}</span>
+      </div>`
+    : isTrain && plan.size
+      ? `<div class="cal-legend">
+          <span><i class="lg done"></i>${T('зробив')}</span>
+          <span><i class="lg miss"></i>${T('пропустив')}</span>
+          <span><i class="lg plan"></i>${T('заплановано')}</span>
+        </div>`
+      : '';
+  const icLegend = view === 'all' && (seen.size || sum.ring)
+    ? `<div class="cal-legend cal-ic-legend">${[...seen].map(([ic, l]) => `<span>${ic} ${esc(l)}</span>`).join('')}${sum.ring ? `<span><i class="lg calr"></i>${T('усе заплановане зроблено')}</span>` : ''}</div>` : '';
 
   screenEl.innerHTML = `
     <header class="appbar">
@@ -1858,35 +1936,46 @@ function renderCalendar() {
         <div class="appbar-title">${monthsFull[calMonth]} ${calYear}</div></div>
       ${gearBtn()}
     </header>
+    <div class="cal-views">
+      ${cv('all', T('Усе'))}${cv('train', `🏋️ ${T('Зал')}`)}${hasSupps ? cv('supp', `💊 ${T('Вітаміни')}`) : ''}
+      ${types.map((ty) => cv('act:' + ty.id, `${ty.icon} ${esc(ty.name)}`)).join('')}
+      <button class="cv-btn cv-add" data-cv="+">＋ ${types.length ? '' : T('Свій вид')}</button>
+    </div>
     <div class="cal-nav">
       <button class="chip" id="prevM">‹</button>
-      <div class="cal-stat">🔥 ${monthTrained} ${plural(monthTrained, 'тренування', 'тренування', 'тренувань')}</div>
+      <div class="cal-stat">${statTxt}</div>
       <button class="chip" id="nextM">›</button>
     </div>
-    <div class="stat-strip">
+    ${isTrain ? `<div class="stat-strip">
       <div class="stat-chip flame"><b>🔥 ${stk.current}</b><span>${plural(stk.current, 'день', 'дні', 'днів')} ${T('поспіль')}</span></div>
       <div class="stat-chip"><b>${stk.longest}</b><span>${T('рекорд серії')}</span></div>
       ${stk.weeks > 1 ? `<div class="stat-chip"><b>${stk.weeks}</b><span>${plural(stk.weeks, 'тиждень', 'тижні', 'тижнів')} ${T('поспіль')}</span></div>` : ''}
-    </div>
+    </div>` : ''}
     <div class="cal-grid head">
       ${dateNames().dowsMon.map((d) => `<div class="cal-dow">${d}</div>`).join('')}
     </div>
     <div class="cal-grid">${cells}</div>
-    ${plan.size
-      ? `<div class="cal-legend">
-          <span><i class="lg done"></i>${T('зробив')}</span>
-          <span><i class="lg miss"></i>${T('пропустив')}</span>
-          <span><i class="lg plan"></i>${T('заплановано')}</span>
-        </div>`
-      : ''}
-    <p class="muted center">${T('Натисни на день, щоб переглянути або записати тренування.')}</p>
-    ${myWorkoutsHTML()}
+    ${legend}${icLegend}
+    <p class="muted center">${view === 'supp' ? T('Натисни на день, щоб відмітити прийоми.')
+      : act ? T('Натисни на день, щоб відмітити тренування.') : T('Натисни на день, щоб переглянути або записати тренування.')}</p>
+    ${isTrain ? myWorkoutsHTML() : ''}
   `;
-  bindMyWorkouts();
+  if (isTrain) bindMyWorkouts();
+  screenEl.querySelectorAll('[data-cv]').forEach((b) => (b.onclick = () => {
+    if (b.dataset.cv === '+') return go('#/acts');
+    setCalView(b.dataset.cv);
+    renderCalendar();
+  }));
   screenEl.querySelector('#prevM').onclick = () => { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); };
   screenEl.querySelector('#nextM').onclick = () => { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); };
   screenEl.querySelectorAll('.cal-cell[data-iso]').forEach((c) =>
-    c.addEventListener('click', () => { selectedISO = c.dataset.iso; go('#/today'); })
+    c.addEventListener('click', () => {
+      const iso = c.dataset.iso;
+      if (view === 'supp') { suppDay = iso; go('#/supps/day'); return; }
+      if (act) { openActDay(iso, act.id, renderCalendar); return; }
+      selectedISO = iso;
+      go('#/today');
+    })
   );
   // дні з фото — маленька позначка в кутку (фото в IndexedDB, тому вже після малювання)
   PH.daysWithPhotos().then((days) => {
@@ -1978,7 +2067,7 @@ function myWorkoutsHTML() {
       <div class="card-label">📅 ${T('Тижневий план')}</div>
       <p class="muted" style="margin:0 0 10px">${T('Признач тренування на дні тижня — «Тренування дня» підставиться автоматично.')}</p>
       <div class="plan-list">${planRows}</div>
-      ${hasPlan ? `<button class="btn ghost" id="planRemind" style="margin-top:12px">🔔 ${T('Нагадування в календар')}</button>` : ''}
+      ${hasPlan ? `<button class="btn ghost" id="planRemind" style="margin-top:12px">⏰ ${T('Нагадування в календар')}</button>` : ''}
     </section>`;
 }
 function bindMyWorkouts() {
@@ -2027,7 +2116,7 @@ function openWorkoutReminders() {
       <span class="rem-txt"><b>${tm}</b> · ${groups[tm].map(dayName).join(', ')}</span>
       <button class="btn primary sm" data-rem="${tm}">📅 ${T('Додати')}</button>
     </div>`).join('');
-  openModal(`🔔 ${T('Нагадування про тренування')}`, `
+  openModal(`⏰ ${T('Нагадування про тренування')}`, `
     ${rows || `<p>${T('Спершу постав час тренування: натисни день у тижневому плані.')}</p>`}
     ${noTime.length ? `<p class="muted">${T('Без часу')}: ${noTime.map(dayName).join(', ')} — ${T('натисни день у тижневому плані, щоб поставити час')}</p>` : ''}
     ${rows ? remindSelectHTML() + remindNoteHTML() : ''}`);
@@ -2698,6 +2787,97 @@ function openExerciseForm(id, opts = {}) {
 // =====================================================================
 //  ЕКРАН: ПРОГРЕС (огляд)
 // =====================================================================
+// --- Прогрес (28.10): 4 лічильники, теплокарта регулярності, матриця «вправа × 7 днів» (UI_IDEAS 7, 8, 10, 11) ---
+const HEAT_WEEKS = 17; // ~4 місяці: на 360 px клітинки ≥ 14 px, більше стовпців — дрібніше за палець
+function progressStatsHTML() {
+  const st = S.progressStats();
+  const chip = (n, label, cls = '') => `<div class="pg-stat ${cls}"><b>${n}</b><span>${T(label)}</span></div>`;
+  return `<div class="pg-stats">
+    ${chip(st.current, 'серія днів', st.current > 0 ? 'flame' : '')}
+    ${chip(st.longest, 'найдовша серія')}
+    ${chip(st.month, 'тренувань цього місяця')}
+    ${chip(st.total, 'тренувань усього')}
+  </div>`;
+}
+// що показує теплокарта: train — тренування (зал + свої види), supp — вітаміни й БАДи (є лише, коли є пункти)
+let heatMode = (() => { try { return sessionStorage.getItem('kachalka-heat') || 'train'; } catch (e) { return 'train'; } })();
+function heatmapHTML() {
+  const hasSupp = S.getSupps().length > 0;
+  const mode = hasSupp && heatMode === 'supp' ? 'supp' : 'train';
+  const cols = S.heatmapWeeks(HEAT_WEEKS, mode);
+  const dn = dateNames();
+  // підпис місяця — над стовпцем, де починається новий місяць (за понеділком тижня); дві підписи впритул не ставимо
+  let months = '';
+  let prev = -1, lastCol = -10;
+  cols.forEach((col, i) => {
+    const m = S.isoToDate(col[0].iso).getMonth();
+    if (m !== prev) {
+      if (i - lastCol >= 3) { months += `<span style="grid-column:${i + 1} / span 3">${dn.monthsShort[m]}</span>`; lastCol = i; }
+      prev = m;
+    }
+  });
+  const cells = cols.map((col) => col.map((c) => c.future
+    ? '<i class="pg-hm fut"></i>'
+    : `<button class="pg-hm l${c.level}${c.today ? ' today' : ''}" data-iso="${c.iso}" title="${esc(S.prettyDate(c.iso))}${
+      mode === 'supp' ? (c.due ? ` · ${c.taken}/${c.due}` : '') : c.sets ? ` · ${c.sets} ${T('підходів')}` : ''}"></button>`).join('')).join('');
+  const seg = hasSupp ? `<div class="pg-hm-seg">${[['train', 'Тренування'], ['supp', 'Вітаміни']].map(([k, l]) =>
+    `<button class="${mode === k ? 'on' : ''}" data-heat="${k}">${T(l)}</button>`).join('')}</div>` : '';
+  const dows = dn.dowsMon.map((d, i) => `<span>${i % 2 === 0 ? d : ''}</span>`).join('');
+  return `<div class="chart-card pg-heat-card${mode === 'supp' ? ' supp' : ''}">
+    <div class="pg-hm-top"><div class="card-label">${T('Регулярність')}</div>${seg}</div>
+    <div class="pg-heat" style="--pg-w:${HEAT_WEEKS}">
+      <div class="pg-hm-months">${months}</div>
+      <div class="pg-hm-body">
+        <div class="pg-hm-dows">${dows}</div>
+        <div class="pg-hm-grid">${cells}</div>
+      </div>
+    </div>
+    <div class="pg-hm-legend"><span>${T('менше')}</span><i class="pg-hm l0"></i><i class="pg-hm l1"></i><i class="pg-hm l2"></i><i class="pg-hm l3"></i><i class="pg-hm l4"></i><span>${T('більше')}</span></div>
+  </div>`;
+}
+// тап по дню → «Сьогодні» на цьому дні (тренування) або екран вітамінів (добавки); перемикач — перемальовує лише картку
+function bindHeat() {
+  const card = screenEl.querySelector('.pg-heat-card');
+  if (!card) return;
+  const supp = card.classList.contains('supp');
+  card.querySelectorAll('.pg-hm[data-iso]').forEach((b) => (b.onclick = () => {
+    if (supp) { suppDay = b.dataset.iso; go('#/supps'); return; }
+    selectedISO = b.dataset.iso;
+    go('#/today');
+  }));
+  card.querySelectorAll('[data-heat]').forEach((b) => (b.onclick = () => {
+    heatMode = b.dataset.heat;
+    try { sessionStorage.setItem('kachalka-heat', heatMode); } catch (e) { /* приватний режим */ }
+    card.outerHTML = heatmapHTML();
+    bindHeat();
+  }));
+}
+function weekMatrixHTML() {
+  const { isos, rows } = S.weekMatrix(7, 8);
+  if (!rows.length) return '';
+  const dn = dateNames();
+  const todayIso = S.todayISO();
+  const head = isos.map((iso) => {
+    const d = S.isoToDate(iso);
+    return `<span class="pg-mx-d${iso === todayIso ? ' today' : ''}">${dn.dows[d.getDay()]}<small>${d.getDate()}</small></span>`;
+  }).join('');
+  const fmt = (n) => String(Math.round(n * 10) / 10).replace(/\.0$/, '');
+  const body = rows.map((r) => `<button class="pg-mx-row" data-ex="${esc(r.ex.id)}">
+      <span class="pg-mx-name">${esc(exN(r.ex))}</span>
+      ${r.cells.map((c) => {
+        if (!c) return '<span class="pg-mx-c none">·</span>';
+        const cls = `pg-mx-c${c.trend === 'up' || c.trend === 'down' ? ' ' + c.trend : ''}${c.pr ? ' pr' : ''}`;
+        const pr = c.pr ? '<i class="pg-mx-pr">🏆</i>' : '';
+        return c.bw ? `<span class="${cls}">${pr}<b>${c.reps}</b></span>`
+          : `<span class="${cls}">${pr}<b>${fmt(c.weight)}</b><small>×${c.reps}</small></span>`;
+      }).join('')}
+    </button>`).join('');
+  return `<div class="chart-card pg-mx-card">
+    <div class="card-label">${T('Вправи за 7 днів')} <span class="muted">· ${T('кг × повт.')}</span></div>
+    <div class="pg-mx"><div class="pg-mx-head"><span></span>${head}</div>${body}</div>
+    <div class="pg-mx-legend"><span><i class="lg up"></i>${T('краще, ніж минулого разу')}</span><span><i class="lg down"></i>${T('слабше')}</span><span>🏆 ${T('рекорд')}</span></div>
+  </div>`;
+}
 function renderProgress() {
   const w7 = S.volumeStats(7);
   const w30 = S.volumeStats(30);
@@ -2752,7 +2932,9 @@ function renderProgress() {
         <div class="appbar-title">${T('Огляд')}</div></div>
       <button class="icon-btn" id="setBtn" title="${T('Налаштування')}">⚙️</button>
     </header>
-    ${statStrip()}
+    ${progressStatsHTML()}
+    ${heatmapHTML()}
+    ${weekMatrixHTML()}
     <div class="ov-grid">
       <div class="ov-card"><div class="ov-val">${fmtKg(w7.tonnage)}</div><div class="ov-lbl">${T('тоннаж за тиждень')}</div></div>
       <div class="ov-card"><div class="ov-val">${fmtKg(w30.tonnage)}</div><div class="ov-lbl">${T('тоннаж за місяць')}</div></div>
@@ -2770,6 +2952,9 @@ function renderProgress() {
     </div>
   `;
   screenEl.querySelector('#setBtn').onclick = () => go('#/settings');
+  // теплокарта: тап по дню → перегляд цього дня (як у календаря)
+  bindHeat();
+  screenEl.querySelectorAll('.pg-mx-row[data-ex]').forEach((b) => (b.onclick = () => go('#/history/' + b.dataset.ex)));
   screenEl.querySelector('#bodyBtn').onclick = () => go('#/body');
   screenEl.querySelector('#histBtn').onclick = () => go('#/history');
   screenEl.querySelector('#smartBtn2').onclick = () => go('#/smart');
@@ -3494,6 +3679,12 @@ function renderSettings() {
     </section>
 
     <section class="card">
+      <div class="card-label">🚴 ${T('Інші види тренувань')}</div>
+      <p class="muted small">${T('Велосипед, біг, плавання… — у кожного свій календар.')}</p>
+      <button class="btn ghost" id="actsBtn">${S.actTypes().length ? S.actTypes().map((t) => `${t.icon} ${esc(t.name)}`).join(' · ') : '＋ ' + T('Додати вид')}</button>
+    </section>
+
+    <section class="card">
       <div class="card-label">👥 ${T('Спільнота')} <span class="muted">(${T('бета')})</span></div>
       <button class="btn ghost" id="coachBtn">${T('Відкрити спільноту')}</button>
     </section>
@@ -3501,6 +3692,7 @@ function renderSettings() {
     <section class="card">
       <div class="card-label">💬 ${T('Підтримка')}</div>
       <div class="btn-col">
+        <button class="btn ghost" id="tourBtn">📖 ${T('Як користуватися')}</button>
         <button class="btn ghost" id="supportBtn">✉️ ${T('Написати нам')}</button>
         ${BE.configured ? `<button class="btn ghost" id="blockedBtn">🚫 ${T('Заблоковані')}</button>` : ''}
       </div>
@@ -3521,7 +3713,9 @@ function renderSettings() {
   `;
   screenEl.querySelector('#backBtn').onclick = () => history.back();
   screenEl.querySelector('#coachBtn').onclick = () => go('#/community');
+  screenEl.querySelector('#actsBtn').onclick = () => go('#/acts');
   screenEl.querySelector('#supportBtn').onclick = () => go('#/support');
+  screenEl.querySelector('#tourBtn').onclick = openTour;
   const blockedBtn = screenEl.querySelector('#blockedBtn');
   if (blockedBtn) blockedBtn.onclick = () => go('#/blocked');
 
@@ -3683,8 +3877,9 @@ function renderSettings() {
 // =====================================================================
 //  ЕКРАН: СПІЛЬНОТА — стрічка фото з тренувань + люди
 // =====================================================================
-// стиснути фото до maxDim px по більшій стороні (JPEG) — не роздуваємо сховище
-function downscalePhoto(file, maxDim = 1280, quality = 0.85) {
+// стиснути фото для допису: довша сторона ≤ maxDim px, JPEG; якщо файл більший за maxBytes — якість знижуємо до 0.6
+// (не роздуваємо сховище; 4 фото в допису ≈ до 800 КБ)
+function downscalePhoto(file, maxDim = 1350, quality = 0.82, maxBytes = 200 * 1024) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -3697,7 +3892,12 @@ function downscalePhoto(file, maxDim = 1280, quality = 0.85) {
       cv.height = h;
       cv.getContext('2d').drawImage(img, 0, 0, w, h);
       URL.revokeObjectURL(url);
-      cv.toBlob((b) => (b ? resolve(b) : reject(new Error(T('Не вдалося обробити фото')))), 'image/jpeg', quality);
+      const enc = (q) => new Promise((ok, no) => cv.toBlob((b) => (b ? ok(b) : no(new Error(T('Не вдалося обробити фото')))), 'image/jpeg', q));
+      (async () => {
+        let q = quality, b = await enc(q);
+        while (b.size > maxBytes && q > 0.6) { q = Math.max(0.6, q - 0.07); b = await enc(q); }
+        return b;
+      })().then(resolve, reject);
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -3705,6 +3905,11 @@ function downscalePhoto(file, maxDim = 1280, quality = 0.85) {
     };
     img.src = url;
   });
+}
+// фото допису: posts.photos (до 4), для старих дописів і вітрини — photo_url; лише безпечні адреси
+function postImgs(p) {
+  const list = Array.isArray(p.photos) && p.photos.length ? p.photos : [p.photo_url];
+  return list.map(safeImg).filter(Boolean).slice(0, 4);
 }
 
 // дата допису: «18 лип · 14:05»
@@ -3717,15 +3922,15 @@ function postDate(ts) {
   return `${d.getDate()} ${names.monthsShort[d.getMonth()]} · ${hh}:${mm}`;
 }
 
-// розділ вкладки «Спільнота»: Рецепти (стрічка як у TikTok) | Стрічка (дописи з фото) | Люди
+// розділ вкладки «Спільнота»: Рецепти (стрічка як у TikTok) | Спільнота (дописи й люди — та сама повноекранна стрічка, чипи)
 // розділ Спільноти пам'ятаємо до кінця сесії: перезавантаження (нова версія, повернення з вікна паролів Android)
 // не має викидати з «Стрічки» з формою входу назад на «Рецепти»
-let commSeg = (() => { try { const v = sessionStorage.getItem('kachalka-comm-seg'); return ['recipes', 'feed', 'people'].includes(v) ? v : 'recipes'; } catch (e) { return 'recipes'; } })();
+let commSeg = (() => { try { const v = sessionStorage.getItem('kachalka-comm-seg'); return v === 'feed' || v === 'people' ? 'feed' : 'recipes'; } catch (e) { return 'recipes'; } })();
 function setCommSeg(v) {
   commSeg = v;
   try { sessionStorage.setItem('kachalka-comm-seg', v); } catch (e) { /* приватний режим — не страшно */ }
 }
-const CSEGS = [['recipes', 'Рецепти'], ['feed', 'Стрічка'], ['people', 'Люди']];
+const CSEGS = [['recipes', 'Рецепти'], ['feed', 'Спільнота']];
 function commSegHTML(cls) {
   return `<div class="${cls}">${CSEGS.map(([id, l]) =>
     `<button class="${commSeg === id ? 'on' : ''}" data-seg="${id}">${T(l)}</button>`).join('')}</div>`;
@@ -3895,220 +4100,699 @@ function openComments(post, meId, onCount) {
   load();
 }
 
+// ---- Спільнота v2: повноекранна стрічка (як рецепти) — дописи, «картки атлета», друзі, місце ----
+// місце людини: «🏋️ Зал «Сталь» · 📍 Київ, Оболонь» / «🏠 Тренується вдома · 📍 Київ». Сервер уже обрізав
+// те, що людина приховала (profile_cards). tr — переклад для вітрини (офіційні й приклади), справжнє не перекладаємо
+function placeLine(p, tr = (x) => x) {
+  if (!p) return '';
+  const where = [p.city, p.district].filter(Boolean).map((x) => esc(tr(x))).join(', ') || (p.region ? esc(tr(p.region)) : '');
+  const at = p.train_at === 'home' ? '🏠 ' + T('Тренується вдома')
+    : p.train_at === 'gym' && p.gym_name ? '🏋️ ' + esc(tr(p.gym_name)) : '';
+  return [at, where ? '📍 ' + where : ''].filter(Boolean).join(' · ');
+}
+
+// лічильники «картки атлета»: серія днів, тренувань за поточний місяць, усього
+function myStatsNow() {
+  const ym = S.todayISO().slice(0, 7);
+  const days = [...S.trainedDays()];
+  return { streak: S.streakStats().current, month: days.filter((d) => d.startsWith(ym)).length, total: days.length };
+}
+function statsHTML(st) {
+  st = st || {};
+  const n = (v) => Math.max(0, Math.min(99999, Math.round(Number(v) || 0)));
+  return `<div class="ath-stats">
+    <div><b>${n(st.streak)}</b><small>🔥 ${T('днів поспіль')}</small></div>
+    <div><b>${n(st.month)}</b><small>📅 ${T('за місяць')}</small></div>
+    <div><b>${n(st.total)}</b><small>💪 ${T('усього')}</small></div>
+  </div>`;
+}
+const hasStats = (p) => !!(p && !p.official && p.role !== 'kitchen' && p.stats && ['streak', 'month', 'total'].some((k) => Number(p.stats[k]) > 0));
+// свої лічильники на сервер — лише коли змінились
+async function syncMyStats(me) {
+  const st = myStatsNow();
+  const cur = me && me.stats ? { streak: me.stats.streak, month: me.stats.month, total: me.stats.total } : null;
+  if (cur && JSON.stringify(cur) === JSON.stringify(st)) return;
+  try { await BE.saveMyStats(st); if (me) me.stats = st; } catch { /* без patch-7 / офлайн — не критично */ }
+}
+
+// ---- допис «тренування дня»: дані картки (meta) і її вигляд ----
+function workoutMeta(iso) {
+  const ex = [], prs = [];
+  let sets = 0;
+  for (const id of [...new Set([...S.getDayStack(iso), ...S.dayEntryIds(iso)])]) {
+    const e = S.getEntry(iso, id);
+    const x = S.getExercise(id);
+    if (!e || !x || !Array.isArray(e.sets)) continue;
+    const bw = x.weightType === 'bodyweight';
+    const s = e.sets.filter((z) => Number(z.reps) > 0).slice(0, 12)
+      .map((z) => [Math.round(Number(z.reps)) || 0, bw ? 0 : Math.round((Number(z.weight) || 0) * 10) / 10]);
+    if (!s.length) continue;
+    sets += s.length;
+    ex.push({ n: x.name, w: x.weightType, s });
+    // рекорд цього дня (і не найперше тренування цієї вправи — тоді «рекордом» було б усе):
+    // з вагою — лише вага чи розрахунковий максимум; власна вага — повторення
+    const b = S.exerciseBests(id);
+    const keys = bw ? ['reps'] : ['weight', 'orm'];
+    if (b && b.dates && b.count > s.length && keys.some((k) => b.dates[k] === iso)) prs.push(x.name);
+  }
+  const v = S.dayVolume(iso);
+  return { date: iso, vol: Math.round(v.tonnage || 0), reps: v.reps || 0, sets, prs: prs.slice(0, 6), ex: ex.slice(0, 12) };
+}
+// «4×10 · 50 кг» або «10/8/8/6 · 50–60 кг»
+function setsSummary(e) {
+  const num = (v) => { const x = Number(v); return Number.isFinite(x) ? Math.min(99999, Math.max(0, x)) : 0; };
+  const s = (Array.isArray(e && e.s) ? e.s : []).slice(0, 12).map((z) => [num(z && z[0]), num(z && z[1])]);
+  if (!s.length) return '';
+  const reps = s.map((z) => z[0]);
+  const r = reps.every((x) => x === reps[0]) ? `${s.length}×${reps[0]}` : reps.join('/');
+  const ws = s.map((z) => z[1]).filter((w) => w > 0);
+  if (!ws.length) return r;
+  const lo = Math.min(...ws), hi = Math.max(...ws);
+  return `${r} · ${lo === hi ? lo : lo + '–' + hi} ${T('кг')}`;
+}
+// meta приходить і від інших людей — усе через esc і Number
+function workoutCardHTML(m, compact) {
+  m = m && typeof m === 'object' ? m : {};
+  const ex = (Array.isArray(m.ex) ? m.ex : []).slice(0, compact ? 3 : 12);
+  const prs = new Set((Array.isArray(m.prs) ? m.prs : []).slice(0, 6).map((x) => String(x).slice(0, 80)));
+  const n = (v) => { const x = Number(v); return Number.isFinite(x) ? Math.min(9999999, Math.max(0, Math.round(x))) : 0; };
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(m.date || '')) ? S.prettyDate(m.date) : '';
+  return `<div class="wkc${compact ? ' compact' : ''}">
+    <div class="wkc-head">🏋️ ${T('Тренування')}${date ? ` · ${esc(date)}` : ''}</div>
+    <div class="wkc-stats">
+      ${n(m.vol) ? `<span><b>${n(m.vol)}</b> ${T('кг')}</span>` : ''}
+      <span><b>${n(m.sets)}</b> ${T('підходів')}</span>
+      <span><b>${n(m.reps)}</b> ${T('повторень')}</span>
+    </div>
+    <div class="wkc-list">${ex.map((e) => `<div class="wkc-ex">
+      <span class="wkc-n">${prs.has(String(e && e.n)) ? '🏆 ' : ''}${esc(T(String((e && e.n) || '')))}</span>
+      <span class="wkc-s">${esc(setsSummary(e))}</span></div>`).join('')}</div>
+    ${prs.size && !compact ? `<div class="wkc-pr">🏆 ${T('Новий рекорд')}: ${[...prs].map((x) => esc(T(x))).join(', ')}</div>` : ''}
+  </div>`;
+}
+const isRecordPost = (p) => p.kind === 'record' || (p.kind === 'workout' && p.meta && Array.isArray(p.meta.prs) && p.meta.prs.length > 0);
+
+// ---- друзі: стан щодо кожної людини: friends / out (я надіслав) / in (мені надіслали) ----
+function friendMap(rows, me) {
+  const m = new Map();
+  for (const r of rows || []) {
+    const other = r.requester === me ? r.addressee : r.requester;
+    m.set(other, r.status === 'accepted' ? 'friends' : r.requester === me ? 'out' : 'in');
+  }
+  return m;
+}
+function friendBtnHTML(p, fr, meId) {
+  if (!fr || p.id === meId || p.role === 'kitchen' || p.official) return '';
+  if (!isServerId(p.id)) return `<button class="btn ghost" data-fdemo="1">＋ ${T('В друзі')}</button>`;
+  const st = fr.get(p.id) || '';
+  const lbl = { friends: '✓ ' + T('Друзі'), in: '🤝 ' + T('Прийняти в друзі'), out: '⏳ ' + T('Запит надіслано'), '': '＋ ' + T('В друзі') }[st];
+  return `<button class="btn ${st === 'in' ? 'primary' : 'ghost'}" data-friend="${esc(p.id)}" data-st="${st}">${lbl}</button>`;
+}
+async function friendAction(id, st, after) {
+  try {
+    if (st === 'in') { await BE.acceptFriend(id); toast('🤝 ' + T('Тепер ви друзі')); }
+    else if (st === 'friends') { if (!confirm(T('Прибрати з друзів?'))) return; await BE.removeFriend(id); toast(T('Прибрано з друзів')); }
+    else if (st === 'out') { if (!confirm(T('Скасувати запит у друзі?'))) return; await BE.removeFriend(id); toast(T('Запит скасовано')); }
+    else { await BE.requestFriend(id); toast('✅ ' + T('Запит у друзі надіслано')); }
+    if (after) after();
+  } catch (e) {
+    if (e && e.message === 'too-many') toast('⚠️ ' + T('Забагато запитів — спробуй завтра'));
+    else modErr(e);
+  }
+}
+
 function personRowHTML(p) {
+  const demo = !!(p.official || p.sample);
+  const place = placeLine(p, demo ? T : undefined);
   return `<button class="pick-row fc-row person-row" data-u="${esc(p.id)}">
     ${avatarHtml(p)}
-    <span class="pick-name">${esc(T(p.name || 'Без імені'))}${personBadge(p)}${p.city ? ` <span class="muted">· ${esc(T(p.city))}</span>` : ''}</span>
+    <span class="pick-name">${esc(demo ? T(p.name || 'Без імені') : p.name || T('Без імені'))}${personBadge(p)}
+      ${place ? `<span class="muted person-place">${place}</span>` : ''}</span>
     <span class="fc-pat">${roleLabel(p)}</span>
   </button>`;
 }
 
-async function renderCommunity() {
-  screenEl.innerHTML = `
-    <header class="appbar">
-      <div class="appbar-titles">
-        <div class="appbar-kicker">👥 ${T('Спільнота')}</div>
-        <div class="appbar-title">Gym Log</div>
+// ---- картки повноекранної стрічки ----
+function feedPostHTML(p, meId, liked) {
+  const a = p.author || {};
+  const demo = !!(a.official || a.sample);
+  const tr = demo ? T : (x) => x;
+  const mine = meId && p.author_id === meId;
+  const on = liked.has(p.id);
+  const kind = p.kind || 'photo';
+  const imgs = postImgs(p);
+  const photo = imgs.length ? esc(imgs[0]) : '';
+  const fb = p.fallback ? ` data-fb="${esc(p.fallback)}"` : '';
+  const media = imgs.length > 1
+    ? `<div class="cc-slides">${imgs.map((u) => `<img class="cc-sl" src="${esc(u)}" alt="" loading="lazy"${fb}/>`).join('')}</div>`
+    : photo ? `<img class="rc-photo" src="${photo}" alt="" loading="lazy"${fb}/>` : '';
+  const tag = isRecordPost(p) ? `<span>🏆 ${T('Рекорд')}</span>`
+    : kind === 'progress' ? `<span>↔️ ${T('До/після')}</span>` : kind === 'workout' ? `<span>🏋️ ${T('Тренування')}</span>` : '';
+  const place = placeLine(a, tr);
+  return `<article class="rcard ccard k-${esc(kind)}" data-id="${esc(p.id)}">
+    <div class="rc-bg${photo ? '' : ' cc-plain'}">
+      ${media}
+      ${kind === 'workout' && !photo ? workoutCardHTML(p.meta) : ''}
+    </div>
+    <div class="rc-shade"></div>
+    <div class="rc-info">
+      <button class="rc-author cc-author" data-u="${esc(p.author_id)}">${avatarHtml(a)}<span>${esc(a.name ? tr(a.name) : T('Без імені'))}</span>${personBadge(a)}</button>
+      ${place ? `<div class="cc-place">${place}</div>` : ''}
+      ${tag ? `<div class="rc-tags">${tag}</div>` : ''}
+      ${kind === 'workout' && photo ? workoutCardHTML(p.meta, true) : ''}
+      ${p.caption ? `<p class="cc-cap">${esc(tr(p.caption))}</p>` : ''}
+      <div class="cc-date">${postDate(p.created_at)}</div>
+    </div>
+    <div class="rc-rail">
+      <button class="rc-act ${on ? 'on' : ''}" data-like="${esc(p.id)}"><span>${on ? '♥' : '♡'}</span><small class="pa-n">${p.like_count > 0 ? p.like_count : ''}</small></button>
+      ${isServerId(p.id) ? `<button class="rc-act" data-cmt="${esc(p.id)}"><span>💬</span><small class="pa-n">${p.comment_count > 0 ? p.comment_count : ''}</small></button>` : ''}
+      <button class="rc-act" data-share="${esc(p.id)}"><span>↗</span><small>${T('Поділитися')}</small></button>
+      ${mine ? `<button class="rc-act" data-del="${esc(p.id)}"><span>✕</span><small>${T('Видалити')}</small></button>`
+        : meId && !demo ? `<button class="rc-act" data-more="${esc(p.id)}"><span>⋯</span><small>${T('Ще')}</small></button>` : ''}
+    </div>
+    ${imgs.length > 1 ? `<div class="cc-dots">${imgs.map((_, i) => `<button class="cc-dot${i ? '' : ' on'}" data-dot="${i}" aria-label="${i + 1}/${imgs.length}"></button>`).join('')}</div>` : ''}
+  </article>`;
+}
+function personCardHTML(p, fr, meId, note = '') {
+  const demo = !!(p.official || p.sample);
+  const tr = demo ? T : (x) => x;
+  const place = placeLine(p, tr);
+  return `<article class="rcard pcard" data-pid="${esc(p.id)}">
+    <div class="pc-in">
+      ${note ? `<div class="pc-note">${note}</div>` : ''}
+      <button class="pc-ava" data-u="${esc(p.id)}">${avatarHtml(p, true)}</button>
+      <div class="pc-name">${esc(p.name ? tr(p.name) : T('Без імені'))}${personBadge(p)}</div>
+      <div class="pc-role">${roleLabel(p)}</div>
+      ${place ? `<div class="pc-place">${place}</div>` : ''}
+      ${hasStats(p) ? statsHTML(p.stats) : ''}
+      ${p.bio ? `<p class="pc-bio">${esc(tr(p.bio))}</p>` : ''}
+      <div class="pc-btns">
+        <button class="btn primary" data-u="${esc(p.id)}">👤 ${T('Профіль')}</button>
+        ${friendBtnHTML(p, fr, meId)}
+        ${p.role === 'trainer' && !p.official ? `<button class="btn ghost" data-u="${esc(p.id)}">📅 ${T('Записатися')}</button>` : ''}
       </div>
-      <button class="icon-btn" id="myCab" title="${T('Мій кабінет')}">👤</button>
-      ${gearBtn()}
-    </header>
-    ${commSegHTML('cseg')}
-    <div id="commBody"><section class="card"><p class="muted">${T('Завантаження…')}</p></section></div>`;
-  screenEl.querySelector('#myCab').onclick = () => go('#/coach');
-  bindCommSeg(screenEl);
-  const seg = commSeg;
-  const alive = () => location.hash === '#/community' && commSeg === seg;
+    </div>
+  </article>`;
+}
+const infoCardHTML = (ico, text, btns = '') =>
+  `<article class="rcard icard"><div class="rf-empty"><div class="rf-empty-ico">${ico}</div><p>${text}</p>${btns}</div></article>`;
 
-  // сесія й вітрина вантажаться паралельно (supabase.mjs ~210 КБ)
+// чипи стрічки: дописи (Усі, Друзі, Рекорди, До/після) і люди (Тренери, Поруч, Мій зал)
+const CCHIPS = [['all', '', 'Усі'], ['friends', '🤝', 'Друзі'], ['trainers', '🧑‍🏫', 'Тренери'], ['near', '📍', 'Поруч'],
+  ['gym', '🏋️', 'Мій зал'], ['records', '🏆', 'Рекорди'], ['progress', '↔️', 'До/після']];
+let commChip = (() => { try { const v = sessionStorage.getItem('kachalka-comm-chip'); return CCHIPS.some(([id]) => id === v) ? v : 'all'; } catch { return 'all'; } })();
+let commAt = null; // на якій картці стояли — повертаємось туди після оновлення
+function setCommChip(v) {
+  commChip = v;
+  commAt = null;
+  try { sessionStorage.setItem('kachalka-comm-chip', v); } catch { /* приватний режим */ }
+}
+// ближче — вище: той самий район, потім місто, потім область
+function nearRank(me, p) {
+  if (!me) return 0;
+  const eq = (a, b) => a && b && String(a).toLowerCase() === String(b).toLowerCase();
+  return (eq(me.district, p.district) && eq(me.city, p.city) ? 4 : 0) + (eq(me.city, p.city) ? 2 : 0)
+    + (eq(me.region, p.region) ? 1 : 0) + (me.gym_id && me.gym_id === p.gym_id ? 3 : 0);
+}
+
+async function renderCommunity() {
+  const chip = commChip;
+  screenEl.innerHTML = `
+    <div class="rfeed-wrap">
+      <div class="rfeed" id="cfeed">${infoCardHTML('⏳', T('Завантаження…'))}</div>
+      <div class="rf-top">
+        <div class="rf-row">
+          <button class="rf-ico" data-act="settings" aria-label="${T('Налаштування')}">⚙️</button>
+          ${commSegHTML('rf-tabs')}
+          <button class="rf-ico" id="cMe" aria-label="${T('Мій профіль')}">👤</button>
+          <button class="rf-ico rf-add" id="cAdd" aria-label="${T('Новий допис')}">＋</button>
+        </div>
+        <div class="rf-chips">
+          <button id="cSearch" aria-label="${T('Пошук людей')}">🔍</button>
+          ${CCHIPS.map(([id, ic, l]) => `<button class="${chip === id ? 'on' : ''}" data-c="${id}">${ic ? ic + ' ' : ''}${T(l)}</button>`).join('')}
+        </div>
+      </div>
+    </div>`;
+  bindCommSeg(screenEl);
+  const feed = screenEl.querySelector('#cfeed');
+  screenEl.querySelector('#cMe').onclick = () => go('#/coach');
+  screenEl.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => { setCommChip(b.dataset.c); renderCommunity(); }));
+  const alive = () => location.hash === '#/community' && commSeg === 'feed' && commChip === chip;
+
+  // сесія й вітрина паралельно; мертвий сервер не тримає екран (тайм-аути)
   const sessP = BE.configured ? BE.getSession() : null;
   if (sessP) sessP.catch(() => {});
   const { demoData } = await import('./demo.js');
   const D = demoData();
-  let session = null, posts = [], people = [], shared = null, loadErr = null, serverLiked = new Set();
-  // сервер може не відповідати (старий Supabase видалено; збережена сесія безкінечно оновлює токен) —
-  // не тримати екран на «Завантаженні», а показати вітрину
+  D.people.forEach((p) => { if (D.bios[p.id]) p.bio = D.bios[p.id]; });
   const inTime = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('timeout')), ms))]);
+  let session = null, posts = [], loadErr = null, serverLiked = new Set(), me = null, fr = null, people = null, shared = null;
   if (BE.configured) {
     try { session = await inTime(sessP, 3000); } catch { /* нижче — запрошення увійти */ }
     if (session) {
+      const uid = session.user.id;
       try {
-        [posts, people, shared] = await inTime(Promise.all([
+        let rows;
+        [posts, me, rows, shared] = await inTime(Promise.all([
           BE.listPosts(),
-          BE.listPeople(),
+          BE.getCard(uid).catch(() => null),
+          BE.myFriendships().catch(() => []),
           BE.mySharedTraining().catch(() => null),
           refreshBlocks(),
         ]), 8000);
+        fr = friendMap(rows, uid);
         posts = posts.filter((p) => !blockedIds.has(p.author_id));
-        people = people.filter((p) => !blockedIds.has(p.id));
         if (posts.length) serverLiked = await inTime(BE.myLikes(posts.map((p) => p.id)), 4000).catch(() => new Set());
+        // люди для «людських» чипів
+        const q = chip === 'trainers' ? { role: 'trainer', listed: true }
+          : chip === 'near' && me && (me.city || me.region) ? (me.city ? { city: me.city, listed: true } : { region: me.region, listed: true })
+          : chip === 'gym' && me && me.gym_id ? { gymId: me.gym_id, listed: true }
+          : chip === 'friends' && fr.size ? { ids: [...fr.keys()] } : null;
+        if (q) people = (await inTime(BE.listCards(q), 6000)).filter((p) => p.id !== uid && !blockedIds.has(p.id));
       } catch (e) { if (e.message !== 'timeout') loadErr = e; }
+      if (me && (me.my_discoverable || me.role === 'trainer')) syncMyStats(me);
+      if (shared) BE.shareTraining(S.exportRecentLogs(14)).catch(() => {});
     }
   }
   if (!alive()) return;
   const meId = session ? session.user.id : null;
-  // якщо ділюся тренуваннями — тихо освіжити знімок останніх 14 днів
-  if (shared) BE.shareTraining(S.exportRecentLogs(14)).catch(() => {});
 
-  // верх: публікація (є вхід) / запрошення увійти / сервер ще не підключено
-  let top = '';
-  if (session) {
-    top = seg === 'feed' ? `
-      <section class="card">
-        <div class="wt-head">
-          <span class="card-label wt-label">📸 ${T('Фото з тренувань')}</span>
-          <button class="wt-current" id="addPost">＋ ${T('Додати фото')}</button>
-        </div>
-      </section>
-      <label class="card share-row">
-        <input type="checkbox" id="shareTr" ${shared ? 'checked' : ''}/>
-        <span>🏋️ ${T('Ділитися моїми тренуваннями')}</span>
-      </label>` : '';
-  } else if (BE.configured) {
-    top = `<section class="card">
-      <p class="muted">${T('Публікуй фото з тренувань, дивись, як тренуються інші, і записуйся на тренування до тренерів.')}</p>
-      <div class="auth-box">${authCardHTML()}</div>
-    </section>`;
-  } else {
-    top = `<section class="card comm-note"><p class="muted">${T('Публікувати свої фото можна буде після входу — сервер спільноти ще підключається. Поки тут дописи Gym Log і приклади профілів.')}</p></section>`;
-  }
-  if (loadErr) top += `<section class="card"><p class="muted">⚠️ ${esc(loadErr.message)}</p></section>`;
-
-  // локально пам'ятаємо лише лайки вітрини; лайки справжніх дописів — з сервера
+  // вітрина: офіційні дописи завжди, приклади профілів — поки справжніх авторів менше 5
+  const showSamples = new Set(posts.map((p) => p.author_id)).size < 5;
   const liked = new Set([...[...likedSet()].filter((id) => !isServerId(id)), ...serverLiked]);
-  const realPeople = people.filter((p) => p.id !== meId);
-  const official = D.people.filter((p) => p.official);
-  // приклади профілів — лише поки справжніх людей менше 5
-  const showSamples = realPeople.length < 5;
+  const allPosts = [...posts, ...D.posts.filter((p) => showSamples || !p.author.sample)]
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   const samples = showSamples ? D.people.filter((p) => p.sample) : [];
-  let content;
-  if (seg === 'feed') {
-    const demoPosts = D.posts.filter((p) => showSamples || !p.author.sample);
-    const all = [...posts, ...demoPosts].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-    content = `<div class="feed">${all.map((p) => postCardHTML(p, meId, liked)).join('')}</div>`;
-  } else {
-    content = `
-      <section class="card">
-        <div class="card-label">${T('Офіційні акаунти')}</div>
-        <div class="pick-list">${official.map(personRowHTML).join('')}</div>
-      </section>
-      ${realPeople.length ? `<section class="card">
-        <div class="card-label">${T('Люди')}</div>
-        <div class="pick-list">${realPeople.map(personRowHTML).join('')}</div>
-      </section>` : ''}
-      ${samples.length ? `<section class="card">
-        <div class="card-label">${T('Приклади профілів')}</div>
-        <p class="muted small">${T('Так виглядатимуть сторінки тренерів і атлетів. Приклади зникнуть, коли зареєструються справжні люди.')}</p>
-        <div class="pick-list">${samples.map(personRowHTML).join('')}</div>
-      </section>` : ''}`;
-  }
-  const body = screenEl.querySelector('#commBody');
-  body.innerHTML = top + content;
-  if (!session && BE.configured) bindAuthCard(body, () => renderCommunity());
+  const loginCard = BE.configured
+    ? `<article class="rcard icard"><div class="ic-in">
+        <div class="rf-empty-ico">👥</div>
+        <p>${T('Увійди, щоб публікувати тренування, знаходити друзів, людей зі свого залу й тренерів поруч.')}</p>
+        <div class="auth-box">${authCardHTML()}</div></div></article>`
+    : infoCardHTML('🛰', T('Сервер спільноти ще підключається. Поки тут дописи Gym Log і приклади профілів.'));
+  const editBtn = `<button class="btn primary" data-go="edit">📍 ${T('Вказати в профілі')}</button>`;
+  const post = (p) => feedPostHTML(p, meId, liked);
+  const person = (p, note) => personCardHTML(p, fr, meId, note);
+  const byNear = (list) => [...list].sort((a, b) => nearRank(me, b) - nearRank(me, a) || (a.role === 'trainer' ? -1 : 0) - (b.role === 'trainer' ? -1 : 0));
 
-  // переходи на сторінку людини (з допису або списку)
-  body.querySelectorAll('[data-u]').forEach((el) =>
-    el.addEventListener('click', () => go('#/user/' + el.dataset.u))
-  );
-  const byPost = (id) => posts.find((p) => p.id === id) || D.posts.find((p) => p.id === id);
-  body.querySelectorAll('[data-like]').forEach((b) => (b.onclick = async () => {
+  let cards = [];
+  if (chip === 'all') {
+    if (!session) cards.push(loginCard);
+    cards.push(...allPosts.map(post));
+  } else if (chip === 'records' || chip === 'progress') {
+    const list = allPosts.filter(chip === 'records' ? isRecordPost : (p) => p.kind === 'progress');
+    cards = list.map(post);
+    if (!list.length) cards.push(chip === 'records'
+      ? infoCardHTML('🏆', T('Тут будуть рекорди. Після тренування з новим рекордом натисни «Поділитися в Спільноті».'))
+      : infoCardHTML('↔️', T('Поділись своїм «до/після» — кнопка ＋ угорі.')));
+  } else if (!session) {
+    // люди — лише з акаунтом; приклади показують, як це виглядатиме
+    cards.push(loginCard);
+    if (chip === 'trainers') cards.push(...D.people.filter((p) => p.role === 'trainer' && p.sample).map((p) => person(p)));
+    else cards.push(...samples.map((p) => person(p)));
+  } else if (chip === 'friends') {
+    const inc = (people || []).filter((p) => fr.get(p.id) === 'in');
+    const friends = (people || []).filter((p) => fr.get(p.id) === 'friends');
+    const fPosts = allPosts.filter((p) => fr.get(p.author_id) === 'friends');
+    cards.push(...inc.map((p) => person(p, '🤝 ' + T('Хоче додати тебе в друзі'))));
+    cards.push(...(fPosts.length ? fPosts.map(post) : friends.map((p) => person(p))));
+    if (!inc.length && !friends.length) cards.push(infoCardHTML('🤝', T('Друзів поки немає. Знайди людей зі свого залу або поруч і натисни «В друзі».'),
+      `<button class="btn primary" data-go="gym">🏋️ ${T('Мій зал')}</button><button class="btn ghost" data-go="near">📍 ${T('Поруч')}</button>`));
+  } else if (chip === 'trainers') {
+    const list = byNear(people || []);
+    cards = list.map((p) => person(p));
+    if (list.length < 3 && showSamples) cards.push(...D.people.filter((p) => p.role === 'trainer' && p.sample).map((p) => person(p)));
+    if (!me || !(me.city || me.region)) cards.unshift(infoCardHTML('📍', T('Вкажи своє місто — тренери поруч будуть першими.'), editBtn));
+  } else if (chip === 'near') {
+    if (!me || !(me.city || me.region)) cards.push(infoCardHTML('📍', T('Вкажи місто чи район у профілі — тут зʼявляться люди й тренери поруч. Точну адресу вказувати не треба.'), editBtn));
+    else {
+      cards = byNear(people || []).map((p) => person(p));
+      if (!cards.length) cards.push(infoCardHTML('📍', T('Поруч поки нікого. Поділись застосунком з друзями 😉')));
+    }
+  } else if (chip === 'gym') {
+    if (!me || !me.gym_id) cards.push(infoCardHTML('🏋️', T('Обери свій зал у профілі — побачиш, хто там тренується, і тренерів залу. Тренуєшся вдома — так і вкажи.'), editBtn));
+    else {
+      const list = byNear(people || []);
+      cards = list.map((p) => person(p));
+      if (!list.length) cards.push(infoCardHTML('🏋️', `${esc(me.gym_name || '')}<br>${T('Ти тут перший! Коли інші оберуть цей зал, вони зʼявляться тут.')}`));
+    }
+  }
+  if (loadErr) cards.unshift(infoCardHTML('⚠️', esc(loadErr.message)));
+  if (!cards.length) cards.push(infoCardHTML('👥', T('Тут поки порожньо')));
+  feed.innerHTML = cards.join('');
+  if (!session && BE.configured && feed.querySelector('#googleBtn')) bindAuthCard(feed, () => renderCommunity());
+
+  // позиція: де стояли до оновлення
+  const io = new IntersectionObserver((ents) => ents.forEach((e) => {
+    if (e.isIntersecting) commAt = e.target.dataset.id || e.target.dataset.pid || null;
+  }), { root: feed, threshold: 0.6 });
+  feed.querySelectorAll('.rcard').forEach((c) => io.observe(c));
+  live.camera = { destroy: () => io.disconnect() };
+  if (commAt) {
+    const c = feed.querySelector(`[data-id="${CSS.escape(commAt)}"], [data-pid="${CSS.escape(commAt)}"]`);
+    if (c) feed.scrollTop = c.offsetTop;
+  }
+
+  const byPost = (id) => allPosts.find((p) => String(p.id) === id);
+  const like = async (b) => {
     const id = b.dataset.like;
-    const ic = b.querySelector('.pa-ic'), n = b.querySelector('.pa-n');
-    const paint = (on, cnt) => {
-      b.classList.toggle('on', on);
-      ic.textContent = on ? '♥' : '♡';
-      if (cnt != null) n.textContent = cnt > 0 ? cnt : '';
-    };
+    const ic = b.querySelector('span'), n = b.querySelector('.pa-n');
+    const paint = (on, cnt) => { b.classList.toggle('on', on); ic.textContent = on ? '♥' : '♡'; if (cnt != null) n.textContent = cnt > 0 ? cnt : ''; };
     if (!isServerId(id)) { paint(toggleLike(id)); return; }
     const p = posts.find((x) => x.id === id);
     if (!p || b.disabled) return;
-    const on = !liked.has(id);
-    const was = p.like_count || 0;
+    const on = !liked.has(id), was = p.like_count || 0;
     p.like_count = Math.max(0, was + (on ? 1 : -1));
     if (on) liked.add(id); else liked.delete(id);
     paint(on, p.like_count);
     b.disabled = true;
     try { await BE.setLike(id, on); }
-    catch (e) {
-      p.like_count = was;
-      if (on) liked.delete(id); else liked.add(id);
-      paint(!on, was);
-      modErr(e);
-    } finally { b.disabled = false; }
-  }));
-  body.querySelectorAll('[data-cmt]').forEach((b) => (b.onclick = () => {
-    const p = posts.find((x) => x.id === b.dataset.cmt);
-    if (p) openComments(p, meId, (cnt) => {
-      p.comment_count = cnt;
-      b.querySelector('.pa-n').textContent = cnt > 0 ? cnt : '';
-    });
-  }));
-  body.querySelectorAll('[data-share]').forEach((b) => (b.onclick = () => {
-    const p = byPost(b.dataset.share);
-    if (!p) return;
-    const a = p.author || {};
-    const text = `${T(a.name || '')}: ${a.official || a.sample ? T(p.caption || '') : p.caption || ''}\n\n— Gym Log`;
-    if (navigator.share) navigator.share({ text }).catch(() => {});
-    else navigator.clipboard.writeText(text).then(() => toast(T('Скопійовано')), () => {});
-  }));
-  // «⋯» на чужому дописі: скарга / заблокувати автора
-  body.querySelectorAll('[data-more]').forEach((b) => (b.onclick = (e) => {
-    e.stopPropagation();
-    const p = posts.find((x) => String(x.id) === b.dataset.more);
-    if (!p) return;
-    openPersonMenu({ type: 'post', targetId: p.id, userId: p.author_id, name: (p.author || {}).name, onDone: () => renderCommunity() });
-  }));
-  // видалити свій допис
-  body.querySelectorAll('.post-del').forEach((b) =>
-    b.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      if (!confirm(T('Видалити цей допис?'))) return;
-      try {
-        await BE.deletePost({ id: b.dataset.id, photo_path: b.dataset.path });
-        toast(T('Допис видалено'));
-        renderCommunity();
-      } catch (err) { toast('⚠️ ' + esc(err.message)); }
-    })
-  );
-  // перемикач «ділитися тренуваннями»
-  const shareTr = body.querySelector('#shareTr');
-  if (shareTr) shareTr.onchange = async (e) => {
-    try {
-      if (e.target.checked) {
-        await BE.shareTraining(S.exportRecentLogs(14));
-        toast('🏋️ ' + T('Тепер інші бачать твої тренування'));
-      } else {
-        await BE.unshareTraining();
-        toast(T('Тренування приховано'));
-      }
-    } catch (err) {
-      e.target.checked = !e.target.checked;
-      toast('⚠️ ' + esc(err.message));
+    catch (e) { p.like_count = was; if (on) liked.delete(id); else liked.add(id); paint(!on, was); modErr(e); }
+    finally { b.disabled = false; }
+  };
+  // кілька фото в дописі: горизонтальне гортання, крапки показують поточне (scroll не спливає — ловимо на capture)
+  feed.addEventListener('scroll', (e) => {
+    const sl = e.target;
+    if (!sl.classList || !sl.classList.contains('cc-slides')) return;
+    const i = Math.round(sl.scrollLeft / Math.max(1, sl.clientWidth));
+    const dots = sl.closest('.ccard').querySelectorAll('.cc-dot');
+    dots.forEach((d, k) => d.classList.toggle('on', k === i));
+  }, true);
+  feed.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b && feed.contains(b) && b.dataset.dot != null) {
+      const sl = b.closest('.ccard').querySelector('.cc-slides');
+      if (sl) sl.scrollTo({ left: sl.clientWidth * +b.dataset.dot, behavior: 'smooth' });
+      return;
     }
+    if (!b || !feed.contains(b)) {
+      // подвійний тап по фото — лайк, як у TikTok
+      const card = e.target.closest('.ccard');
+      if (!card) return;
+      const now = Date.now();
+      if (now - (card._tap || 0) < 320) {
+        const lb = card.querySelector('[data-like]');
+        if (lb && !lb.classList.contains('on')) like(lb);
+        card.classList.remove('rc-pop'); void card.offsetWidth; card.classList.add('rc-pop');
+      }
+      card._tap = now;
+      return;
+    }
+    const d = b.dataset;
+    if (d.u) return go('#/user/' + d.u);
+    if (d.like) return like(b);
+    if (d.cmt) {
+      const p = posts.find((x) => x.id === d.cmt);
+      if (p) openComments(p, meId, (cnt) => { p.comment_count = cnt; b.querySelector('.pa-n').textContent = cnt > 0 ? cnt : ''; });
+      return;
+    }
+    if (d.share) {
+      const p = byPost(d.share);
+      if (!p) return;
+      const a = p.author || {};
+      const demo = a.official || a.sample;
+      const text = `${demo ? T(a.name || '') : a.name || ''}: ${demo ? T(p.caption || '') : p.caption || ''}\n\n— Gym Log`;
+      if (navigator.share) navigator.share({ text }).catch(() => {});
+      else navigator.clipboard.writeText(text).then(() => toast(T('Скопійовано')), () => {});
+      return;
+    }
+    if (d.more) {
+      const p = posts.find((x) => String(x.id) === d.more);
+      if (p) openPersonMenu({ type: 'post', targetId: p.id, userId: p.author_id, name: (p.author || {}).name, onDone: () => renderCommunity() });
+      return;
+    }
+    if (d.del) {
+      const p = posts.find((x) => String(x.id) === d.del);
+      if (!p || !confirm(T('Видалити цей допис?'))) return;
+      BE.deletePost(p).then(() => { toast(T('Допис видалено')); commAt = null; renderCommunity(); }, (err) => toast('⚠️ ' + esc(err.message)));
+      return;
+    }
+    if (d.friend != null && d.friend !== '') return friendAction(d.friend, d.st, () => renderCommunity());
+    if (d.fdemo) return toast(T('Це приклад профілю — тут буде справжня дія'));
+    if (d.go === 'edit') { coachEdit = true; return go('#/coach'); }
+    if (d.go === 'gym' || d.go === 'near') { setCommChip(d.go); return renderCommunity(); }
+  });
+
+  screenEl.querySelector('#cSearch').onclick = () => (session ? openPeopleSearch() : toast(T('Увійди, щоб шукати людей')));
+  screenEl.querySelector('#cAdd').onclick = () => (session ? openNewPost() : toast(T('Увійди, щоб публікувати')));
+}
+
+// ---- пошук людей: імʼя, роль, місто, район ----
+function openPeopleSearch() {
+  openModal(T('Пошук людей'), `
+    <div class="field"><input type="search" id="psQ" placeholder="${T('Імʼя')}" maxlength="60"/></div>
+    <div class="type-chips" id="psRole">
+      <button class="tchip on" data-r="">${T('Усі')}</button>
+      <button class="tchip" data-r="trainer">🧑‍🏫 ${T('Тренери')}</button>
+      <button class="tchip" data-r="client">🏋️ ${T('Атлети')}</button>
+    </div>
+    <div class="ps-row">
+      <input type="text" id="psCity" placeholder="${T('Місто')}" maxlength="60"/>
+      <input type="text" id="psDist" placeholder="${T('Район')}" maxlength="60"/>
+    </div>
+    <div class="pick-list ps-list" id="psList"><p class="muted small">${T('Почни вводити — або обери роль чи місто')}</p></div>`);
+  const root = document.querySelector('.modal');
+  let role = '', timer = 0, seq = 0;
+  const run = async () => {
+    const my = ++seq;
+    const q = root.querySelector('#psQ').value.trim(), city = root.querySelector('#psCity').value.trim(), district = root.querySelector('#psDist').value.trim();
+    const list = root.querySelector('#psList');
+    if (!q && !city && !district && !role) { list.innerHTML = `<p class="muted small">${T('Почни вводити — або обери роль чи місто')}</p>`; return; }
+    try {
+      const me = await BE.myId().catch(() => null);
+      const rows = (await BE.listCards({ q, role, city, district, listed: true, limit: 50 })).filter((p) => p.id !== me && !blockedIds.has(p.id));
+      if (my !== seq || !root.isConnected) return;
+      list.innerHTML = rows.length ? rows.map(personRowHTML).join('') : `<p class="muted small">${T('Нікого не знайдено')}</p>`;
+      list.querySelectorAll('[data-u]').forEach((el) => (el.onclick = () => { closeModal(); go('#/user/' + el.dataset.u); }));
+    } catch (e) { if (my === seq) list.innerHTML = `<p class="muted small">⚠️ ${esc(e.message)}</p>`; }
   };
-  // новий допис: фото + підпис
-  const addPost = body.querySelector('#addPost');
-  if (addPost) addPost.onclick = () => {
-    openModal(T('Додати фото'), `
-      <div class="field"><label>${T('Фото')}</label>
-        <input type="file" id="postFile" accept="image/*"/></div>
-      <div class="field"><label>${T('Підпис (необовʼязково)')}</label>
-        <input type="text" id="postCap" maxlength="200" placeholder="${T('Як пройшло тренування?')}"/></div>
-    `, [
-      { label: T('Опублікувати'), class: 'primary', onClick: async (root) => {
-        const f = root.querySelector('#postFile').files[0];
-        if (!f) { toast(T('Спершу обери фото')); return; }
-        toast(T('Завантажую фото…'));
-        try {
-          const blob = await downscalePhoto(f);
-          await BE.addPost(blob, root.querySelector('#postCap').value.trim());
-          closeModal();
-          toast('📸 ' + T('Опубліковано!'));
-          renderCommunity();
-        } catch (err) { toast('⚠️ ' + esc(err.message)); }
-      } },
-    ]);
+  const later = () => { clearTimeout(timer); timer = setTimeout(run, 350); };
+  ['#psQ', '#psCity', '#psDist'].forEach((s) => root.querySelector(s).addEventListener('input', later));
+  root.querySelectorAll('[data-r]').forEach((b) => (b.onclick = () => {
+    role = b.dataset.r;
+    root.querySelectorAll('[data-r]').forEach((x) => x.classList.toggle('on', x === b));
+    run();
+  }));
+  root.querySelector('#psQ').focus();
+}
+
+// ---- новий допис: фото / до-після / тренування дня ----
+function lastTrainedDay() {
+  const today = S.todayISO();
+  return [...S.trainedDays()].filter((d) => d <= today).sort().pop() || null;
+}
+function openNewPost() {
+  const last = lastTrainedDay();
+  openModal(T('Новий допис'), `
+    <div class="np-kinds">
+      <button class="np-kind" data-k="photo"><span>📸</span>${T('Фото')}</button>
+      <button class="np-kind" data-k="progress"><span>↔️</span>${T('До/після')}</button>
+      <button class="np-kind" data-k="workout" ${last ? '' : 'disabled'}><span>🏋️</span>${T('Тренування')}${last ? `<small>${esc(S.prettyDate(last))}</small>` : `<small>${T('ще немає')}</small>`}</button>
+    </div>`);
+  document.querySelectorAll('.np-kind').forEach((b) => (b.onclick = () => {
+    const k = b.dataset.k;
+    closeModal();
+    if (k === 'workout') openShareWorkout(last);
+    else if (k === 'progress') openProgressPost();
+    else openPhotoPost();
+  }));
+}
+function openPhotoPost() {
+  const MAX = BE.MAX_POST_PHOTOS || 4;
+  let items = []; // [{ file, url }] — обрані фото в порядку показу, перше — головне
+  let busy = false;
+  openModal(T('Додати фото'), `
+    <div class="field"><label>${T('Фото (до 4)')}</label>
+      <div class="pp-grid" id="ppGrid"></div>
+      <input type="file" id="postFile" accept="image/*" multiple hidden/>
+      <p class="muted small pp-hint">${T('Перше фото — головне. Стрілками змінюй порядок.')}</p></div>
+    <div class="field"><label>${T('Підпис (необовʼязково)')}</label>
+      <input type="text" id="postCap" maxlength="200" placeholder="${T('Як пройшло тренування?')}"/></div>`, [
+    { label: T('Опублікувати'), class: 'primary', onClick: async (root) => {
+      if (busy) return;
+      if (!items.length) { toast(T('Спершу обери фото')); return; }
+      busy = true;
+      try {
+        const blobs = [];
+        for (let i = 0; i < items.length; i++) {
+          toast(T('Завантажую фото…') + (items.length > 1 ? ` ${i + 1}/${items.length}` : ''));
+          blobs.push(await downscalePhoto(items[i].file));
+        }
+        const r = await BE.addPost(blobs, root.querySelector('#postCap').value.trim());
+        items.forEach((it) => URL.revokeObjectURL(it.url));
+        closeModal();
+        toast(r && r.saved < blobs.length ? '⚠️ ' + T('Опубліковано лише перше фото — сервер ще оновлюється') : '📸 ' + T('Опубліковано!'));
+        setCommChip('all'); renderCommunityHub();
+      } catch (err) { toast('⚠️ ' + esc(err.message)); }
+      finally { busy = false; }
+    } },
+  ]);
+  const root = document.querySelector('.modal-overlay .modal');
+  const grid = root.querySelector('#ppGrid'), input = root.querySelector('#postFile');
+  const paint = () => {
+    grid.innerHTML = items.map((it, i) => `<div class="pp-th">
+        <img src="${esc(it.url)}" alt=""/>
+        <button class="pp-x" type="button" data-rm="${i}" aria-label="${T('Прибрати фото')}">✕</button>
+        ${i > 0 ? `<button class="pp-mv pp-l" type="button" data-mv="${i}" data-d="-1" aria-label="${T('Лівіше')}">‹</button>` : ''}
+        ${i < items.length - 1 ? `<button class="pp-mv pp-r" type="button" data-mv="${i}" data-d="1" aria-label="${T('Правіше')}">›</button>` : ''}
+      </div>`).join('') +
+      (items.length < MAX ? `<button class="pp-add" type="button" aria-label="${T('Додати ще фото')}">+</button>` : '');
   };
+  grid.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.classList.contains('pp-add')) { input.click(); return; }
+    const i = +(b.dataset.rm != null ? b.dataset.rm : b.dataset.mv);
+    if (b.dataset.rm != null) { URL.revokeObjectURL(items[i].url); items.splice(i, 1); }
+    else { const j = i + +b.dataset.d; [items[i], items[j]] = [items[j], items[i]]; }
+    paint();
+  });
+  input.addEventListener('change', () => {
+    for (const f of input.files) {
+      if (items.length >= MAX) { toast(T('Максимум 4 фото')); break; }
+      items.push({ file: f, url: URL.createObjectURL(f) });
+    }
+    input.value = '';
+    paint();
+  });
+  paint();
+}
+// два фото → одна картинка 1080×1350 (дві половини, підписи «До» / «Після»)
+function composeBeforeAfter(f1, f2) {
+  const load = (f) => new Promise((ok, no) => {
+    const u = URL.createObjectURL(f);
+    const i = new Image();
+    i.onload = () => { URL.revokeObjectURL(u); ok(i); };
+    i.onerror = () => { URL.revokeObjectURL(u); no(new Error(T('Не вдалося прочитати фото'))); };
+    i.src = u;
+  });
+  return Promise.all([load(f1), load(f2)]).then(([a, b]) => new Promise((ok, no) => {
+    const W = 540, H = 1350;
+    const cv = document.createElement('canvas');
+    cv.width = W * 2; cv.height = H;
+    const g = cv.getContext('2d');
+    const half = (img, x) => {
+      const k = Math.max(W / img.width, H / img.height);
+      const w = img.width * k, h = img.height * k;
+      g.save(); g.beginPath(); g.rect(x, 0, W, H); g.clip();
+      g.drawImage(img, x + (W - w) / 2, (H - h) / 2, w, h);
+      g.restore();
+    };
+    half(a, 0); half(b, W);
+    g.fillStyle = '#fff'; g.fillRect(W - 3, 0, 6, H);
+    g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, 0, W * 2, 90);
+    g.fillStyle = '#fff'; g.font = 'bold 44px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(T('До'), W / 2, 46); g.fillText(T('Після'), W * 1.5, 46);
+    // як і звичайні фото: якість 0.82, до 0.6, поки склейка більша за ~250 КБ
+    const enc = (q) => new Promise((y, n) => cv.toBlob((bl) => (bl ? y(bl) : n(new Error(T('Не вдалося обробити фото')))), 'image/jpeg', q));
+    (async () => {
+      let q = 0.82, bl = await enc(q);
+      while (bl.size > 250 * 1024 && q > 0.6) { q = Math.max(0.6, q - 0.07); bl = await enc(q); }
+      return bl;
+    })().then(ok, no);
+  }));
+}
+function openProgressPost() {
+  openModal(T('До/після'), `
+    <div class="field"><label>${T('Фото «до»')}</label><input type="file" id="baA" accept="image/*"/></div>
+    <div class="field"><label>${T('Фото «після»')}</label><input type="file" id="baB" accept="image/*"/></div>
+    <div class="field"><label>${T('Підпис (необовʼязково)')}</label>
+      <input type="text" id="baCap" maxlength="200" placeholder="${T('Наприклад: 3 місяці, −6 кг')}"/></div>`, [
+    { label: T('Опублікувати'), class: 'primary', onClick: async (root) => {
+      const a = root.querySelector('#baA').files[0], b = root.querySelector('#baB').files[0];
+      if (!a || !b) { toast(T('Обери обидва фото')); return; }
+      toast(T('Завантажую фото…'));
+      try {
+        await BE.addPost(await composeBeforeAfter(a, b), root.querySelector('#baCap').value.trim(), { kind: 'progress' });
+        closeModal(); toast('↔️ ' + T('Опубліковано!')); setCommChip('progress'); setCommSeg('feed'); go('#/community'); renderCommunityHub();
+      } catch (err) { toast('⚠️ ' + esc(err.message)); }
+    } },
+  ]);
+}
+// «Поділитися в Спільноті» — картка тренування дня (+ фото за бажанням)
+async function openShareWorkout(iso) {
+  if (!iso) return;
+  const session = BE.configured ? await BE.getSession().catch(() => null) : null;
+  if (!session) { toast(T('Увійди в акаунт (вкладка «Спільнота»), щоб користуватись цим')); return; }
+  const meta = workoutMeta(iso);
+  if (!meta.ex.length) { toast(T('Цього дня тренування не було')); return; }
+  openModal(T('Поділитися тренуванням'), `
+    <div class="np-prev">${workoutCardHTML(meta)}</div>
+    <div class="field"><label>${T('Фото (необовʼязково)')}</label><input type="file" id="swFile" accept="image/*"/></div>
+    <div class="field"><label>${T('Підпис (необовʼязково)')}</label>
+      <input type="text" id="swCap" maxlength="200" placeholder="${T('Як пройшло тренування?')}"/></div>`, [
+    { label: T('Опублікувати'), class: 'primary', onClick: async (root) => {
+      const f = root.querySelector('#swFile').files[0];
+      try {
+        if (f) toast(T('Завантажую фото…'));
+        await BE.addPost(f ? await downscalePhoto(f) : null, root.querySelector('#swCap').value.trim(), { kind: 'workout', meta });
+        closeModal();
+        toast('🏋️ ' + T('Опубліковано!'));
+        setCommSeg('feed'); setCommChip(meta.prs.length ? 'records' : 'all');
+        go('#/community');
+      } catch (err) { toast('⚠️ ' + esc(err.message)); }
+    } },
+  ]);
+}
+// кнопки «Поділитися в Спільноті» на підсумку дня й фіналі тренування
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('[data-share-day]');
+  if (b) openShareWorkout(b.dataset.shareDay);
+});
+
+// ---- профіль людини = «картка атлета» ----
+function athleteHeadHTML(p, { tr = (x) => x, btns = '' } = {}) {
+  const place = placeLine(p, tr);
+  return `<section class="card profile-card ath-card">
+    <div class="profile-head">
+      ${avatarHtml(p, true)}
+      <div class="profile-id">
+        <div class="profile-name">${esc(p.name ? tr(p.name) : T('Без імені'))}${personBadge(p)}</div>
+        <div class="profile-role">${roleLabel(p)}</div>
+        ${place ? `<div class="ath-place">${place}</div>` : ''}
+      </div>
+    </div>
+    ${hasStats(p) ? statsHTML(p.stats) : ''}
+    ${p.bio ? `<p class="profile-bio">${esc(tr(p.bio))}</p>` : ''}
+    ${p.role === 'trainer' && p.contact ? `<p class="profile-contact">📞 ${esc(p.contact)}</p>` : ''}
+    ${btns ? `<div class="ath-btns">${btns}</div>` : ''}
+  </section>`;
+}
+// плитки дописів у профілі: фото або міні-картка тренування; натискання — допис цілком
+function postsGridHTML(posts) {
+  if (!posts.length) return '';
+  return `<div class="card-label side-label">📸 ${T('Дописи')}</div>
+    <div class="pgrid">${posts.map((p, i) => postImgs(p).length
+      ? `<button class="pg-tile" data-pi="${i}"><img src="${esc(postImgs(p)[0])}" alt="" loading="lazy"${p.fallback ? ` data-fb="${esc(p.fallback)}"` : ''}/>${postImgs(p).length > 1 ? `<span class="pg-multi" aria-label="${T('Кілька фото')}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="8" y="3" width="13" height="13" rx="2.5"/><path d="M16 20H6.5A2.5 2.5 0 0 1 4 17.5V8"/></svg>${postImgs(p).length}</span>` : ''}</button>`
+      : p.kind === 'recipe' ? `<button class="pg-tile pg-w" data-pi="${i}"><span>🍽</span><small>${esc(String((p.meta && p.meta.title) || T('Рецепт')).slice(0, 40))}</small></button>`
+      :`<button class="pg-tile pg-w" data-pi="${i}"><span>🏋️</span><b>${Math.round(Number(p.meta && p.meta.vol) || 0) || ''}</b><small>${p.meta && p.meta.vol ? T('кг') : ''}</small></button>`).join('')}</div>`;
+}
+function bindPostsGrid(root, posts, tr) {
+  root.querySelectorAll('[data-pi]').forEach((b) => (b.onclick = () => {
+    const p = posts[+b.dataset.pi];
+    if (!p) return;
+    if (p.kind === 'recipe' && isServerId(p.id)) { openRecipeSheet(recipeFromPost(p)); return; } // рецепт — шторка з рецептом
+    openModal(postDate(p.created_at), `
+      ${postImgs(p).map((u) => `<img class="pv-img" src="${esc(u)}" alt=""${p.fallback ? ` data-fb="${esc(p.fallback)}"` : ''}/>`).join('')}
+      ${p.kind === 'workout' ? workoutCardHTML(p.meta) : ''}
+      ${p.caption ? `<p class="post-cap">${esc(tr(p.caption))}</p>` : ''}`);
+  }));
+}
+function trainHistHTML(sharedTr, tr) {
+  if (!sharedTr || !sharedTr.data || !Object.keys(sharedTr.data).length) return '';
+  const days = Object.keys(sharedTr.data).sort().reverse().slice(0, 7);
+  return `<section class="card">
+    <div class="card-label">🏋️ ${T('Останні тренування')}</div>
+    <div class="bhist">${days.map((iso) => {
+      const txt = (sharedTr.data[iso] || []).map((it) => `${esc(T(it.name))} ${(it.sets || []).length}×`).join(', ');
+      return `<div class="bhist-row"><span class="bhist-date">${S.prettyDate(iso)}</span><span class="bhist-vals">${txt}</span></div>`;
+    }).join('')}</div>
+  </section>`;
+}
+function slotRowHTML(s, cls) {
+  const d = new Date(s.starts_at);
+  const when = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `<div class="slot-row"><span>🕒 ${when} · ${Number(s.duration_min) || 60} ${T('хв')}</span>
+    <button class="mini ok ${cls}" data-id="${esc(s.id)}">${T('Записатися')}</button></div>`;
 }
 
 // сторінка офіційного акаунта / прикладу профілю (дані з demo.js, без сервера)
@@ -4118,65 +4802,33 @@ async function renderDemoUser(userId) {
   const D = demoData();
   const prof = D.byId[userId];
   if (!prof) return go('#/community');
+  prof.bio = D.bios[userId] || '';
   const titleEl = screenEl.querySelector('#uTitle');
   if (titleEl) titleEl.textContent = T(prof.name);
   const uBody = screenEl.querySelector('#uBody');
   const posts = D.posts.filter((p) => p.author_id === userId);
-  const sharedTr = D.shared[userId];
   const slots = D.slots[userId] || [];
-  const slotRow = (s) => {
-    const d = new Date(s.starts_at);
-    const when = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    return `<div class="slot-row"><span>🕒 ${when} · ${s.duration_min} ${T('хв')}</span>
-      <button class="mini ok demo-act">${T('Записатися')}</button></div>`;
-  };
-  let trainHtml = '';
-  if (sharedTr) {
-    const days = Object.keys(sharedTr.data).sort().reverse();
-    trainHtml = `<section class="card">
-      <div class="card-label">🏋️ ${T('Останні тренування')}</div>
-      <div class="bhist">
-        ${days.map((iso) => {
-          const txt = sharedTr.data[iso].map((it) => `${esc(T(it.name))} ${it.sets.length}×`).join(', ');
-          return `<div class="bhist-row"><span class="bhist-date">${S.prettyDate(iso)}</span>
-            <span class="bhist-vals">${txt}</span></div>`;
-        }).join('')}
-      </div>
-    </section>`;
-  }
   const kitchen = prof.role === 'kitchen';
+  const btns = kitchen ? `<button class="btn primary" id="toRecipes">📖 ${T('Відкрити рецепти')}</button>`
+    : `${prof.official ? '' : `<button class="btn ghost demo-act">＋ ${T('В друзі')}</button>`}<button class="btn ghost demo-act">💬 ${T('Написати')}</button>`;
   uBody.innerHTML = `
     ${prof.sample ? `<div class="demo-banner">👀 ${T('Приклад профілю — так виглядатиме сторінка справжньої людини')}</div>` : ''}
-    <section class="card profile-card">
-      <div class="profile-head">
-        ${avatarHtml(prof, true)}
-        <div>
-          <div class="profile-name">${esc(T(prof.name))}${personBadge(prof)}</div>
-          <div class="profile-role">${roleLabel(prof)}${prof.city ? ` · ${esc(T(prof.city))}` : ''}</div>
-        </div>
-      </div>
-      ${D.bios[userId] ? `<p class="profile-bio">${esc(T(D.bios[userId]))}</p>` : ''}
-      <div class="btn-row">
-        ${kitchen ? `<button class="btn primary" id="toRecipes">📖 ${T('Відкрити рецепти')}</button>`
-          : `<button class="btn ghost demo-act">＋ ${T('Стежити')}</button>`}
-      </div>
-    </section>
+    ${athleteHeadHTML(prof, { tr: T, btns })}
     ${slots.length ? `<section class="card">
       <div class="card-label">📅 ${T('Записатися на тренування')}</div>
-      <div class="slot-list">${slots.map(slotRow).join('')}</div>
+      <div class="slot-list">${slots.map((s) => slotRowHTML(s, 'demo-act')).join('')}</div>
     </section>` : ''}
-    ${trainHtml}
-    ${posts.length ? `<div class="pgrid">${posts.map((p) =>
-      `<img src="${esc(p.photo_url)}" alt="" loading="lazy"${p.fallback ? ` data-fb="${esc(p.fallback)}"` : ''}/>`).join('')}</div>` : ''}
-  `;
+    ${trainHistHTML(D.shared[userId], T)}
+    ${postsGridHTML(posts)}`;
+  bindPostsGrid(uBody, posts, T);
   const toR = uBody.querySelector('#toRecipes');
   if (toR) toR.onclick = () => { setCommSeg('recipes'); go('#/community'); };
   uBody.querySelectorAll('.demo-act').forEach((b) =>
-    b.addEventListener('click', () => toast(prof.sample ? T('Це приклад профілю — тут буде справжня дія') : T('Стрічка підписок з’явиться разом із сервером спільноти')))
+    b.addEventListener('click', () => toast(prof.sample ? T('Це приклад профілю — тут буде справжня дія') : T('Це офіційний акаунт Gym Log')))
   );
 }
 
-// ---- сторінка людини: профіль, запис до тренера, тренування, дописи ----
+// ---- сторінка людини: картка атлета, друзі, запис до тренера, тренування, дописи ----
 async function renderUserProfile(userId) {
   screenEl.innerHTML = `
     <header class="appbar">
@@ -4193,89 +4845,62 @@ async function renderUserProfile(userId) {
   const session = await BE.getSession().catch(() => null);
   if (!session) return go('#/community');
 
-  let prof = null, posts = [], sharedTr = null, slots = [];
+  const meId = session.user.id;
+  rsMeId = meId;
+  let prof = null, posts = [], sharedTr = null, slots = [], fr = new Map();
   await refreshBlocks();
-  const isMe = session.user.id === userId;
+  const isMe = meId === userId;
   const blocked = blockedIds.has(userId);
+  let cardErr = null;
   try {
-    prof = await BE.getProfile(userId);
-    [posts, sharedTr] = await Promise.all([
+    prof = await BE.getCard(userId).catch((e) => { cardErr = e; return null; });
+    if (!prof && cardErr) prof = await BE.getProfile(userId); // старий сервер без profile_cards
+    if (!prof) {
+      if (!location.hash.startsWith('#/user/')) return;
+      screenEl.querySelector('#uTitle').textContent = T('Профіль недоступний');
+      screenEl.querySelector('#uBody').innerHTML = `<section class="card"><p class="muted">${T('Ця людина приховала профіль або ви заблокували одне одного.')}</p></section>`;
+      return;
+    }
+    let rows;
+    [posts, sharedTr, rows] = await Promise.all([
       BE.listPosts(userId).catch(() => []),
       BE.sharedTrainingOf(userId).catch(() => null),
+      BE.myFriendships().catch(() => []),
     ]);
-    if (prof.role === 'trainer') {
-      slots = await BE.listSlots(userId, new Date().toISOString()).catch(() => []);
-    }
+    fr = friendMap(rows, meId);
+    if (prof.role === 'trainer') slots = await BE.listSlots(userId, new Date().toISOString()).catch(() => []);
   } catch (e) {
     prof = prof || { name: '' };
   }
   if (!location.hash.startsWith('#/user/')) return;
+  prof.id = prof.id || userId;
   const uBody = screenEl.querySelector('#uBody');
   const titleEl = screenEl.querySelector('#uTitle');
   if (titleEl) titleEl.textContent = prof.name || T('Без імені');
-
-  const freeSlots = (slots || []).filter((s) => s.status === 'free').slice(0, 8);
-  const slotRow = (s) => {
-    const d = new Date(s.starts_at);
-    const when = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    return `<div class="slot-row"><span>🕒 ${when} · ${s.duration_min} хв</span>
-      <button class="mini ok book-slot" data-id="${s.id}">${T('Записатися')}</button></div>`;
-  };
-
-  // «як людина тренується» — якщо відкрила доступ
-  let trainHtml = '';
   if (blocked) { sharedTr = null; posts = []; }
-  if (sharedTr && sharedTr.data && Object.keys(sharedTr.data).length) {
-    const days = Object.keys(sharedTr.data).sort().reverse().slice(0, 7);
-    trainHtml = `<section class="card">
-      <div class="card-label">🏋️ ${T('Останні тренування')}</div>
-      <div class="bhist">
-        ${days.map((iso) => {
-          const items = sharedTr.data[iso] || [];
-          const txt = items.map((it) => `${esc(T(it.name))} ${it.sets.length}×`).join(', ');
-          return `<div class="bhist-row"><span class="bhist-date">${S.prettyDate(iso)}</span>
-            <span class="bhist-vals">${txt}</span></div>`;
-        }).join('')}
-      </div>
-    </section>`;
-  }
+  const freeSlots = (slots || []).filter((s) => s.status === 'free').slice(0, 8);
+  const btns = isMe ? `<button class="btn primary" id="editMe">✏️ ${T('Редагувати профіль')}</button>`
+    : `${blocked ? '' : friendBtnHTML(prof, fr, meId)}
+       ${blocked ? '' : `<button class="btn ghost" id="chatBtn">💬 ${T('Написати')}</button>`}
+       <button class="btn ghost ath-more" id="moreUser" aria-label="${T('Ще')}">⋯</button>`;
 
   uBody.innerHTML = `
-    <section class="card profile-card">
-      <div class="profile-head">
-        ${avatarHtml(prof, true)}
-        <div>
-          <div class="profile-name">${esc(prof.name || T('Без імені'))}</div>
-          <div class="profile-role">${prof.role === 'trainer' ? '🧑‍🏫 ' + T('Тренер') : '🏋️ ' + T('Атлет')}${prof.city ? ' · ' + esc(prof.city) : ''}</div>
-        </div>
-      </div>
-      ${prof.bio ? `<p class="profile-bio">${esc(prof.bio)}</p>` : ''}
-      ${isMe ? '' : `<div class="btn-row">
-        ${blocked ? '' : `<button class="btn ghost" id="chatBtn">💬 ${T('Написати')}</button>`}
-        <button class="btn ghost" id="repUser">🚩 ${T('Поскаржитись')}</button>
-        <button class="btn ${blocked ? 'ghost' : 'danger'}" id="blkUser">${blocked ? T('Розблокувати') : '🚫 ' + T('Заблокувати')}</button>
-      </div>`}
-      ${blocked ? `<p class="muted small">🚫 ${T('Ти заблокував цю людину: її дописи й повідомлення приховано.')}</p>` : ''}
-    </section>
-    ${prof.role === 'trainer' ? `<section class="card">
+    ${athleteHeadHTML(prof, { btns })}
+    ${blocked ? `<p class="muted small">🚫 ${T('Ти заблокував цю людину: її дописи й повідомлення приховано.')}</p>` : ''}
+    ${prof.role === 'trainer' && !blocked ? `<section class="card">
       <div class="card-label">📅 ${T('Записатися на тренування')}</div>
-      ${freeSlots.length ? `<div class="slot-list">${freeSlots.map(slotRow).join('')}</div>`
+      ${freeSlots.length ? `<div class="slot-list">${freeSlots.map((s) => slotRowHTML(s, 'book-slot')).join('')}</div>`
         : `<p class="muted">${T('Немає вільних слотів — напиши тренеру в чат.')}</p>`}
     </section>` : ''}
-    ${trainHtml}
-    ${posts.length ? `<div class="card-label side-label">📸 ${T('Фото з тренувань')}</div>
-      <div class="feed">${posts.map((p) => `<section class="card post-card">
-        <div class="post-head"><span class="post-date muted">${postDate(p.created_at)}</span></div>
-        <img class="post-img" src="${esc(p.photo_url)}" alt="" loading="lazy"/>
-        ${p.caption ? `<p class="post-cap">${esc(p.caption)}</p>` : ''}
-      </section>`).join('')}</div>` : ''}
-  `;
-  const chatBtn = uBody.querySelector('#chatBtn');
-  if (chatBtn) chatBtn.onclick = () => go('#/chat/' + userId);
-  const repUser = uBody.querySelector('#repUser');
-  if (repUser) repUser.onclick = () => openReport({ type: 'user', targetId: userId, userId, name: prof.name, onDone: () => renderUserProfile(userId) });
-  const blkUser = uBody.querySelector('#blkUser');
-  if (blkUser) blkUser.onclick = () => toggleBlock(userId, () => renderUserProfile(userId));
+    ${trainHistHTML(sharedTr, (x) => x)}
+    ${postsGridHTML(posts)}`;
+  bindPostsGrid(uBody, posts, (x) => x);
+  uBody.querySelector('#editMe')?.addEventListener('click', () => { coachEdit = true; go('#/coach'); });
+  uBody.querySelector('#chatBtn')?.addEventListener('click', () => go('#/chat/' + userId));
+  uBody.querySelector('[data-friend]')?.addEventListener('click', (e) =>
+    friendAction(userId, e.currentTarget.dataset.st, () => renderUserProfile(userId)));
+  uBody.querySelector('#moreUser')?.addEventListener('click', () =>
+    openPersonMenu({ type: 'user', targetId: userId, userId, name: prof.name, onDone: () => renderUserProfile(userId) }));
   uBody.querySelectorAll('.book-slot').forEach((b) =>
     b.addEventListener('click', async () => {
       b.disabled = true;
@@ -4283,10 +4908,7 @@ async function renderUserProfile(userId) {
         await BE.bookSlot(b.dataset.id, '');
         toast('✅ ' + T('Заявку надіслано! Тренер підтвердить запис.'));
         renderUserProfile(userId);
-      } catch (err) {
-        b.disabled = false;
-        toast('⚠️ ' + esc(err.message));
-      }
+      } catch (err) { b.disabled = false; toast('⚠️ ' + esc(err.message)); }
     })
   );
 }
@@ -4433,17 +5055,20 @@ function renderProfileView(prof, session) {
         ${avatarHtml(prof, true)}
         <div class="profile-id">
           <div class="profile-name">${esc(prof.name || T('Без імені'))}</div>
-          <div class="profile-role">${roleLabel}${prof.city ? ' · 📍 ' + esc(prof.city) : ''}</div>
+          <div class="profile-role">${roleLabel}</div>
+          ${placeLine({ ...prof, gym_name: '' }) ? `<div class="ath-place">${placeLine({ ...prof, gym_name: '' })}</div>` : ''}
         </div>
       </div>
       ${prof.bio ? `<p class="profile-bio">${esc(prof.bio)}</p>` : ''}
       ${prof.contact ? `<p class="profile-contact">📞 ${esc(prof.contact)}</p>` : ''}
       <div class="profile-meta muted">${esc(session.user.email || '')}</div>
       <button class="btn primary" id="editProf">✏️ ${T('Редагувати профіль')}</button>
+      <button class="btn ghost" id="seeMe">👀 ${T('Як мене бачать інші')}</button>
       <button class="btn ghost" id="logoutBtn">${T('Вийти з акаунта')}</button>
     </section>
     <div id="roleArea"></div>`);
   screenEl.querySelector('#editProf').onclick = () => { coachEdit = true; renderCoach(); };
+  screenEl.querySelector('#seeMe').onclick = () => go('#/user/' + prof.id);
   screenEl.querySelector('#logoutBtn').onclick = async () => { await BE.signOut(); renderCoach(); };
   renderCoachRole(prof);
 }
@@ -4466,7 +5091,35 @@ function renderProfileEdit(prof, session) {
         </div>
       </div>
       <div class="field"><label>${T('Ім\'я')}</label><input type="text" id="pName" value="${esc(nameVal)}"/></div>
-      <div class="field"><label>${T('Місто')}</label><input type="text" id="pCity" value="${esc(prof.city || '')}"/></div>
+      <div class="field"><label>${T('Де тренуюсь')}</label>
+        <div class="type-chips" style="margin-top:6px">
+          <button class="tchip ${prof.train_at === 'gym' ? 'on' : ''}" data-at="gym">🏋️ ${T('У залі')}</button>
+          <button class="tchip ${prof.train_at === 'home' ? 'on' : ''}" data-at="home">🏠 ${T('Вдома')}</button>
+          <button class="tchip ${!prof.train_at ? 'on' : ''}" data-at="">${T('Не вказувати')}</button>
+        </div>
+      </div>
+      <div class="field" id="gymBox" ${prof.train_at === 'gym' ? '' : 'hidden'}><label>${T('Мій зал')}</label>
+        <div class="gym-cur" id="gymCur">${T('Не обрано')}</div>
+        <input type="search" id="gymQ" maxlength="80" placeholder="${T('Знайди або додай свій зал')}"/>
+        <div class="pick-list gym-list" id="gymList"></div>
+      </div>
+      <div class="place-grid">
+        <div class="field"><label>${T('Область')}</label><input type="text" id="pRegion" maxlength="60" value="${esc(prof.region || '')}"/></div>
+        <div class="field"><label>${T('Місто')}</label><input type="text" id="pCity" maxlength="60" value="${esc(prof.city || '')}"/></div>
+        <div class="field"><label>${T('Район')}</label><input type="text" id="pDistrict" maxlength="60" value="${esc(prof.district || '')}" placeholder="${T('необовʼязково')}"/></div>
+      </div>
+      <button class="btn ghost" id="gpsBtn">📍 ${T('Визначити за GPS')}</button>
+      <p class="muted small">${T('Точну адресу вказувати не треба. За GPS ми беремо лише область, місто й район — координати не зберігаються.')}</p>
+      <div class="field"><label>${T('Хто бачить, де я тренуюсь')}</label>
+        <select id="pVis">
+          ${[['none', 'Нікому — приховати'], ['region', 'Лише область'], ['city', 'Область і місто'], ['district', 'Місто й район']]
+            .map(([v, l]) => `<option value="${v}" ${(prof.place_vis || 'none') === v ? 'selected' : ''}>${T(l)}</option>`).join('')}
+        </select>
+        <p class="muted small">${T('Зал і місто бачать інші люди, лише якщо ти це дозволиш. Зал видно з вибором «Область і місто» або «Місто й район».')}</p>
+      </div>
+      <label class="rep-row"><input type="checkbox" id="pDisc" ${prof.discoverable || prof.role === 'trainer' ? 'checked' : ''}/>
+        <span>${T('Мене можна знайти в пошуку, «Поруч» і «Мій зал»')}</span></label>
+      <p class="muted small">${T('Тоді інші бачитимуть твоє імʼя, фото, лічильники тренувань і те місце, яке ти дозволив. Тренерів видно завжди.')}</p>
       <div class="field"><label>${T('Про себе')}</label><input type="text" id="pBio" value="${esc(prof.bio || '')}" placeholder="${T('Досвід, спеціалізація…')}"/></div>
       <div class="field"><label>${T('Контакт (телефон/Telegram)')}</label><input type="text" id="pContact" value="${esc(prof.contact || '')}"/></div>
       <button class="btn primary" id="saveProf">${T('Зберегти')}</button>
@@ -4479,6 +5132,66 @@ function renderProfileEdit(prof, session) {
       screenEl.querySelectorAll('.tchip[data-role]').forEach((c) => c.classList.toggle('on', c === b));
     })
   );
+  // де тренуюсь: зал / вдома / не вказувати; зал — пошук або новий
+  let trainAt = prof.train_at || '', gymId = prof.gym_id || null;
+  const gymBox = screenEl.querySelector('#gymBox'), gymCur = screenEl.querySelector('#gymCur'), gymList = screenEl.querySelector('#gymList');
+  const visSel = screenEl.querySelector('#pVis');
+  const showGym = (g) => { gymCur.innerHTML = g ? `🏋️ <b>${esc(g.name)}</b>${g.city ? ' · ' + esc(g.city) : ''}` : T('Не обрано'); };
+  if (gymId) BE.getGym(gymId).then(showGym, () => {});
+  screenEl.querySelectorAll('.tchip[data-at]').forEach((b) => b.addEventListener('click', () => {
+    trainAt = b.dataset.at;
+    screenEl.querySelectorAll('.tchip[data-at]').forEach((c) => c.classList.toggle('on', c === b));
+    gymBox.hidden = trainAt !== 'gym';
+  }));
+  const pickGym = (g) => {
+    gymId = g.id; showGym(g); gymList.innerHTML = ''; screenEl.querySelector('#gymQ').value = '';
+    // видимість не міняємо мовчки — лише підказуємо
+    if (visSel.value === 'none' || visSel.value === 'region') toast(T('Зал побачать інші, лише якщо нижче обереш «Область і місто» або «Місто й район»'));
+  };
+  let gymTimer = 0;
+  screenEl.querySelector('#gymQ').addEventListener('input', (e) => {
+    clearTimeout(gymTimer);
+    const q = e.target.value.trim();
+    gymTimer = setTimeout(async () => {
+      if (q.length < 2) { gymList.innerHTML = ''; return; }
+      const city = screenEl.querySelector('#pCity').value.trim();
+      let rows = [];
+      try { rows = await BE.searchGyms(q, city); } catch (err) { gymList.innerHTML = `<p class="muted small">⚠️ ${esc(err.message)}</p>`; return; }
+      gymList.innerHTML = rows.map((g, i) => `<button class="pick-row" data-gi="${i}">🏋️ <span class="pick-name">${esc(g.name)}${g.city ? ` <span class="muted">· ${esc(g.city)}${g.district ? ', ' + esc(g.district) : ''}</span>` : ''}</span></button>`).join('')
+        + (rows.some((g) => g.name.toLowerCase() === q.toLowerCase()) ? ''
+          : `<button class="pick-row" id="gymNew">＋ <span class="pick-name">${T('Додати зал')} «${esc(q)}»${city ? ` <span class="muted">· ${esc(city)}</span>` : ''}</span></button>`);
+      gymList.querySelectorAll('[data-gi]').forEach((b) => (b.onclick = () => pickGym(rows[+b.dataset.gi])));
+      const nb = gymList.querySelector('#gymNew');
+      if (nb) nb.onclick = async () => {
+        if (!city) { toast(T('Спершу впиши місто — так зал знайдуть інші')); screenEl.querySelector('#pCity').focus(); return; }
+        try {
+          pickGym(await BE.addGym({ name: q, city, region: screenEl.querySelector('#pRegion').value, district: screenEl.querySelector('#pDistrict').value }));
+        } catch (err) { toast('⚠️ ' + esc(err.message === 'too-many' ? T('Забагато нових залів за добу') : err.message)); }
+      };
+    }, 350);
+  });
+  // GPS → лише область / місто / район (координати округлені до ~1 км і ніде не зберігаються)
+  screenEl.querySelector('#gpsBtn').onclick = () => {
+    if (!navigator.geolocation) { toast(T('Не вдалося визначити — впиши вручну')); return; }
+    toast(T('Визначаю місце…'));
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      try {
+        const lat = pos.coords.latitude.toFixed(2), lon = pos.coords.longitude.toFixed(2);
+        const lang = S.getSettings().lang || 'uk';
+        const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=14&lat=${lat}&lon=${lon}&accept-language=${encodeURIComponent(lang)}`);
+        const a = ((await r.json()) || {}).address || {};
+        const clean = (v) => String(v || '').replace(/[<>"]/g, '').slice(0, 60);
+        const city = clean(a.city || a.town || a.village || a.municipality);
+        const district = clean(a.city_district || a.borough || a.suburb || a.district);
+        const region = clean(a.state || a.region || a.county);
+        if (!city && !region) throw new Error('empty');
+        if (region) screenEl.querySelector('#pRegion').value = region;
+        if (city) screenEl.querySelector('#pCity').value = city;
+        if (district && district !== city) screenEl.querySelector('#pDistrict').value = district;
+        toast('📍 ' + T('Готово — перевір і збережи'));
+      } catch { toast(T('Не вдалося визначити — впиши вручну')); }
+    }, () => toast(T('Не вдалося визначити — впиши вручну')), { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 });
+  };
   const fileInput = screenEl.querySelector('#avatarFile');
   screenEl.querySelector('#pickAvatar').onclick = () => fileInput.click();
   fileInput.onchange = async () => {
@@ -4499,6 +5212,12 @@ function renderProfileEdit(prof, session) {
         role,
         name: screenEl.querySelector('#pName').value.trim(),
         city: screenEl.querySelector('#pCity').value.trim(),
+        region: screenEl.querySelector('#pRegion').value.trim(),
+        district: screenEl.querySelector('#pDistrict').value.trim(),
+        train_at: trainAt,
+        gym_id: trainAt === 'gym' ? gymId : null,
+        place_vis: visSel.value,
+        discoverable: role === 'trainer' || screenEl.querySelector('#pDisc').checked,
         bio: screenEl.querySelector('#pBio').value.trim(),
         contact: screenEl.querySelector('#pContact').value.trim(),
       };
@@ -5085,7 +5804,52 @@ function guideMediaHTML(id, cls = '') {
   }
   const src = `img/exercises/${id}_anim.webp?v=${EX_IMG_V}`;
   return `<div class="guide-media"><div class="gm-anim" style="background-image:url('${src}')"></div>
-    <img src="${src}" alt="" hidden data-err="rmp"/></div>`;
+    <img src="${src}" alt="" hidden data-err="rmp"/>
+    ${hasWebGL() ? `<button class="gm-3d" id="gm3d">🔄 3D</button><div class="gm-hint" hidden>${T('Крути пальцем · тап — пауза')}</div>` : ''}</div>`;
+}
+// 3D-перегляд вправи (js/ex3d.js): кнопка в кутку картинки; вибір запам'ятовується (kachalka-ex3d)
+const EX3D_KEY = 'kachalka-ex3d';
+function bindGuide3D(id) {
+  const btn = screenEl.querySelector('#gm3d');
+  if (!btn) return;
+  const box = btn.closest('.guide-media');
+  const hint = box.querySelector('.gm-hint');
+  const pref = (on) => { try { localStorage.setItem(EX3D_KEY, on ? '1' : '0'); } catch (e) { /* без сховища — не памʼятаємо */ } };
+  const off = () => {
+    if (live.ex3d) { live.ex3d.destroy(); live.ex3d = null; }
+    box.classList.remove('is3d', 'loading');
+    btn.textContent = '🔄 3D';
+    hint.hidden = true;
+  };
+  const on = async () => {
+    box.classList.add('loading');
+    btn.disabled = true;
+    try {
+      const v = await mountEx3D(box, id);
+      if (location.hash !== '#/guide/' + id || !box.isConnected) { v.destroy(); return; }
+      live.ex3d = v;
+      box.classList.add('is3d');
+      btn.textContent = `🖼 ${T('Картинка')}`;
+      hint.hidden = false;
+      setTimeout(() => { hint.hidden = true; }, 3500);
+    } catch (e) {
+      console.warn('ex3d', e);
+      toast(`⚠️ ${T('Не вдалося відкрити 3D')}`);
+      pref(false);
+      off();
+    } finally {
+      box.classList.remove('loading');
+      btn.disabled = false;
+    }
+  };
+  btn.onclick = () => {
+    const to3d = !box.classList.contains('is3d');
+    pref(to3d);
+    if (to3d) on(); else off();
+  };
+  let saved = null;
+  try { saved = localStorage.getItem(EX3D_KEY); } catch (e) { /* немає сховища */ }
+  if (saved === '1') on();
 }
 
 async function renderGuides() {
@@ -5135,6 +5899,7 @@ async function renderGuide(id) {
     </section>
     ${g.tip ? `<section class="card guide-tip"><b>💡</b> ${esc(g.tip)}</section>` : ''}`;
   screenEl.querySelector('#backG').onclick = () => history.back();
+  bindGuide3D(id);
 }
 
 // =====================================================================
@@ -5168,7 +5933,7 @@ function renderAI(toForm) {
       ${item('aiKcal', '🍎', T('Калорії'), T('Фото страви або штрихкод — калорії й БЖВ'), `${kcalToday} ${T('ккал')} ›`)}
       ${item('aiSmart', '🧠', T('Розумний тренер'), T('Які мʼязи вже відновились і скільки відпочивати'))}
       ${item('aiGuides', '📘', T('Техніка вправ'), T('Як виконувати: кроки, помилки й 3D-ілюстрації'))}
-      ${item('aiSupps', '💊', T('Вітаміни й добавки'), T('Графік прийому, уколи й курси — відмічай, що вже прийняв'), suppsToday())}
+      ${item('aiSupps', '💊', T('Вітаміни й БАДи'), T('Графік прийому, уколи й курси — відмічай, що вже прийняв'), suppsToday())}
       ${item('aiImport', '📥', T('Рецепт з посилання або фото'), T('TikTok, YouTube, сайт чи сторінка з книги — запишеться сам'))}
     </div>
 
@@ -5189,7 +5954,8 @@ function renderAI(toForm) {
 // =====================================================================
 //  ЕКРАН: РЕЦЕПТИ — стрічка як у TikTok (Спільнота → Рецепти)
 // =====================================================================
-let recipeTab = 'feed'; // feed | fav | mine
+let recipeTab = 'feed'; // feed | fav | mine | people (рецепти людей зі Спільноти) | coaches (лише від тренерів)
+const RTABS = ['fav', 'mine', 'people', 'coaches']; // чипи-добірки (решта чипів — фільтри стрічки «Для тебе»)
 let recipeFilter = 'all'; // all | breakfast | main | snack | shake | mass | cut
 let recipeAt = null; // id картки, на якій зупинились (повернення з форми/шторки)
 const RCAT = { breakfast: 'Сніданки', main: 'Основні страви', snack: 'Перекуси', shake: 'Шейки й десерти' };
@@ -5246,12 +6012,16 @@ function recipeCardHTML(r) {
 async function renderRecipes() {
   await RC.loadTexts(S.getSettings().lang || 'uk');
   if (location.hash !== '#/recipes' && !(location.hash === '#/community' && commSeg === 'recipes')) return;
-  const list = recipeList();
-  // fav / mine — окремі добірки, решта — фільтри стрічки «Для тебе»
-  const chips = [['all', 'Усі'], ['fav', '♡ Обране'], ['mine', '👤 Мої'], ...Object.entries(RCAT), ...Object.entries(RGOAL)];
-  const chipOn = (id) => (id === 'fav' || id === 'mine' ? recipeTab === id : recipeTab === 'feed' && recipeFilter === id);
+  const peopleTab = recipeTab === 'people' || recipeTab === 'coaches';
+  const list = peopleTab ? [] : recipeList();
+  // fav / mine / people / coaches — окремі добірки, решта — фільтри стрічки «Для тебе»
+  const chips = [['all', 'Усі'], ['fav', '♡ Обране'], ['mine', '👤 Мої'], ['people', '👥 Від людей'], ['coaches', '🧑‍🏫 Від тренерів'],
+    ...Object.entries(RCAT), ...Object.entries(RGOAL)];
+  const chipOn = (id) => (RTABS.includes(id) ? recipeTab === id : recipeTab === 'feed' && recipeFilter === id);
   let empty = '';
-  if (!list.length) {
+  if (peopleTab) {
+    empty = `<div class="rf-empty"><div class="rf-empty-ico">⏳</div><p>${T('Завантаження…')}</p></div>`;
+  } else if (!list.length) {
     empty = recipeTab === 'fav'
       ? `<div class="rf-empty"><div class="rf-empty-ico">♡</div><p>${T('Тисни ♡ на рецепті — він з’явиться тут')}</p></div>`
       : recipeTab === 'mine'
@@ -5266,6 +6036,7 @@ async function renderRecipes() {
         <div class="rf-row">
           <button class="rf-ico" data-act="settings" aria-label="${T('Налаштування')}">⚙️</button>
           ${commSegHTML('rf-tabs')}
+          <button class="rf-ico" id="rfFind" aria-label="${T('Пошук рецептів')}">🔍</button>
           <button class="rf-ico rf-add" id="rfAdd" aria-label="${T('Додати свій рецепт')}">＋</button>
         </div>
         <div class="rf-chips">${chips.map(([id, l]) => `<button class="${chipOn(id) ? 'on' : ''}" data-f="${id}">${T(l)}</button>`).join('')}</div>
@@ -5275,14 +6046,16 @@ async function renderRecipes() {
   const feed = screenEl.querySelector('#rfeed');
   bindCommSeg(screenEl);
   screenEl.querySelector('#rfAdd').onclick = () => go('#/recipe-new');
+  screenEl.querySelector('#rfFind').onclick = openRecipeSearch;
   const addEmpty = screenEl.querySelector('#rfAddEmpty');
   if (addEmpty) addEmpty.onclick = () => go('#/recipe-new');
   screenEl.querySelectorAll('.rf-chips button').forEach((b) => (b.onclick = () => {
     const f = b.dataset.f;
-    if (f === 'fav' || f === 'mine') { recipeTab = f; recipeFilter = 'all'; } else { recipeTab = 'feed'; recipeFilter = f; }
+    if (RTABS.includes(f)) { recipeTab = f; recipeFilter = 'all'; } else { recipeTab = 'feed'; recipeFilter = f; }
     recipeAt = null;
     renderRecipes();
   }));
+  if (peopleTab) { loadPeopleRecipes(feed); return; } // «Від людей» / «Від тренерів» — дописи зі Спільноти (сервер)
 
   // фото власних рецептів — з IndexedDB
   screenEl.querySelectorAll('img[data-photo]').forEach(async (img) => {
@@ -5349,6 +6122,269 @@ function recipeAction(act, r, btn) {
   }
 }
 
+// ---- рецепти людей (29.10): допис Спільноти kind = 'recipe'; дані — у posts.meta, фото — як у звичайному дописі ----
+// сервер: backend/patch-10-recipe-posts.sql. Усе, що в meta, — чуже: на вході чистимо типи й довжини, у розмітці — esc()
+const RECIPE_CATS = ['breakfast', 'main', 'snack', 'shake'];
+const RECIPE_EMOJI = { breakfast: '🍳', main: '🍲', snack: '🥜', shake: '🥤' };
+let rsMeId = null; // мій id, коли він відомий (шторка: показати «Видалити» під власним рецептом-дописом)
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('timeout')), ms))]);
+// допис → «рецепт» у вигляді, який розуміють картка й шторка (r.post — сам допис)
+function recipeFromPost(p) {
+  const m = p.meta && typeof p.meta === 'object' ? p.meta : {};
+  const num = (v) => { const x = Number(v); return Number.isFinite(x) ? Math.min(99999, Math.max(0, Math.round(x))) : 0; };
+  const lines = (a, n) => (Array.isArray(a) ? a : []).slice(0, 40).map((x) => String(x == null ? '' : x).trim().slice(0, n)).filter(Boolean);
+  const cat = RECIPE_CATS.includes(m.cat) ? m.cat : 'main';
+  return {
+    id: String(p.id), post: p, own: false,
+    name: String(m.title || '').trim().slice(0, 80) || T('Рецепт'),
+    cat, goal: ['mass', 'cut'].includes(m.goal) ? m.goal : 'any',
+    time: num(m.time), kcal: num(m.kcal), p: num(m.p), f: num(m.f), c: num(m.c),
+    ing: lines(m.ing, 200), steps: lines(m.steps, 500),
+    emoji: RECIPE_EMOJI[cat], photo: postImgs(p)[0] || '', video: '',
+  };
+}
+// свій рецепт → meta допису: обрізаємо довжини, щоб уміститись у ліміт сервера (pg_column_size(meta) ≤ 8000 байт)
+function recipeMeta(r) {
+  const meta = { title: String(r.name || '').trim().slice(0, 80), cat: r.cat, goal: r.goal, time: r.time || 0, kcal: r.kcal || 0, p: r.p || 0, f: r.f || 0, c: r.c || 0, ing: [], steps: [] };
+  const size = () => new TextEncoder().encode(JSON.stringify(meta)).length;
+  for (const [ingN, stepN] of [[160, 400], [120, 250], [80, 160]]) {
+    meta.ing = (r.ing || []).slice(0, 40).map((x) => String(x).trim().slice(0, ingN)).filter(Boolean);
+    meta.steps = (r.steps || []).slice(0, 40).map((x) => String(x).trim().slice(0, stepN)).filter(Boolean);
+    if (size() <= 7000) break;
+  }
+  while (size() > 7000 && meta.steps.length > 1) meta.steps.pop();
+  while (size() > 7000 && meta.ing.length > 1) meta.ing.pop();
+  return meta;
+}
+// «Поділитися в Спільноті» зі шторки власного рецепта: підпис + фото з IndexedDB (стиснення як у дописах)
+async function shareRecipeToCommunity(r) {
+  const session = BE.configured ? await BE.getSession().catch(() => null) : null;
+  if (!session) { toast(T('Увійди в акаунт (вкладка «Спільнота»), щоб користуватись цим')); return; }
+  if (!(r.ing && r.ing.length) && !(r.steps && r.steps.length)) { toast(T('Спершу додай інгредієнти або кроки приготування')); return; }
+  openModal(T('Поділитися рецептом'), `
+    <p><b>${esc(r.name)}</b></p>
+    ${r.kcal ? `<p class="muted small">${r.kcal} ${T('ккал')} · ${T('Б')} ${r.p} · ${T('Ж')} ${r.f} · ${T('В')} ${r.c}</p>` : ''}
+    <p class="muted small">${T('Рецепт (і фото страви, якщо воно є) побачать усі користувачі Gym Log у розділі «Від людей».')}</p>
+    <div class="field"><label>${T('Короткий опис (необовʼязково)')}</label>
+      <input type="text" id="rpCap" maxlength="200" placeholder="${T('Чому цей рецепт варто спробувати?')}"/></div>`, [
+    { label: T('Опублікувати'), class: 'primary', onClick: async (root) => {
+      const btn = root.querySelector('.modal-foot .btn');
+      if (btn) btn.disabled = true;
+      try {
+        const blob = r.photo ? await RC.getPhotoBlob(r.id) : null;
+        if (blob) toast(T('Завантажую фото…'));
+        const photo = blob ? await downscalePhoto(blob).catch(() => null) : null;
+        await BE.addPost(photo, root.querySelector('#rpCap').value.trim(), { kind: 'recipe', meta: recipeMeta(r) });
+        closeModal();
+        toast('📣 ' + T('Рецепт опубліковано'));
+        recipeTab = 'people'; recipeFilter = 'all'; recipeAt = null; setCommSeg('recipes');
+        if (location.hash === '#/community' || location.hash === '#/recipes') renderRecipes(); else go('#/community');
+      } catch (err) {
+        if (btn) btn.disabled = false;
+        const msg = String((err && err.message) || '');
+        // сервер без patch-10 (kind = 'recipe' не дозволено) — не помилка для людини, а «ще не готово»
+        if (err && (err.code === '23514' || err.code === 'PGRST204' || err.code === '42703' || /posts_(kind|sane|recipe_meta)/.test(msg))) toast(T('Поділитися рецептом можна буде згодом'));
+        else if (/too many recipes/.test(msg)) toast('⚠️ ' + T('Забагато рецептів за добу — спробуй завтра'));
+        else toast('⚠️ ' + esc(msg));
+      }
+    } },
+  ]);
+}
+// «Зберегти собі»: копія в «Мої» (з фото, якщо воно завантажується)
+const savedFromPost = new Set();
+async function saveRecipeFromPost(r) {
+  if (savedFromPost.has(r.id)) { toast('📥 ' + T('Рецепт збережено в «Мої»')); return; }
+  savedFromPost.add(r.id);
+  const saved = S.saveOwnRecipe({ id: null, name: r.name, cat: r.cat, goal: r.goal, kcal: r.kcal, p: r.p, f: r.f, c: r.c, time: r.time,
+    ing: r.ing, steps: r.steps, video: '', photo: false });
+  toast('📥 ' + T('Рецепт збережено в «Мої»'));
+  if (!r.photo) return;
+  try {
+    const resp = await fetch(r.photo);
+    const blob = resp.ok ? await resp.blob() : null;
+    if (blob && /^image\//.test(blob.type) && blob.size < 3e6) {
+      await RC.putPhoto(saved.id, blob);
+      S.saveOwnRecipe({ ...saved, photo: true });
+      RC.forgetPhoto(saved.id);
+    }
+  } catch { /* без фото — теж рецепт */ }
+}
+// допис-рецепт змінився (видалено / скарга) — перемалювати той екран, де ми
+function recipePostChanged() {
+  recipeAt = null;
+  if (location.hash.startsWith('#/user/')) renderUserProfile(location.hash.slice(7)); else renderRecipes();
+}
+function recipePostCardHTML(p, meId, liked) {
+  const r = recipeFromPost(p);
+  const a = p.author || {};
+  const mine = meId && p.author_id === meId;
+  const on = liked.has(p.id);
+  const coach = a.role === 'trainer';
+  const tags = [r.time ? `⏱ ${r.time} ${T('хв')}` : '', T(RCAT1[r.cat] || ''), r.goal !== 'any' ? T(RGOAL[r.goal]) : '']
+    .filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join('');
+  return `<article class="rcard rpost" data-id="${esc(p.id)}">
+    <div class="rc-bg" style="background:linear-gradient(160deg, #2b2b3d, #15151e)">
+      <span class="rc-emoji">${r.emoji}</span><span class="rc-pattern">${r.emoji.repeat(18)}</span>
+      ${r.photo ? `<img class="rc-photo" src="${esc(r.photo)}" alt="" loading="lazy" data-err="rm"/>` : ''}
+    </div>
+    <div class="rc-shade"></div>
+    <div class="rc-info">
+      <button class="rc-author cc-author" data-u="${esc(p.author_id)}">${avatarHtml(a)}<span>${esc(a.name || T('Без імені'))}</span>${personBadge(a)}${coach ? `<span class="rp-coach">🧑‍🏫 ${T('Тренер')}</span>` : ''}</button>
+      <div class="rc-tags">${tags}</div>
+      <h2 class="rc-name">${esc(r.name)}</h2>
+      ${r.kcal ? `<div class="rc-macros"><b>${r.kcal}</b> ${T('ккал')} · ${T('Б')} ${r.p} · ${T('Ж')} ${r.f} · ${T('В')} ${r.c}</div>` : ''}
+      ${p.caption ? `<p class="cc-cap">${esc(p.caption)}</p>` : ''}
+      ${r.ing.length ? `<p class="rc-ing">${esc(r.ing.map((x) => x.split(' — ')[0]).join(', '))}</p>` : ''}
+      <button class="rc-more" data-act="open">${T('Рецепт')} ›</button>
+    </div>
+    <div class="rc-rail">
+      <button class="rc-act ${on ? 'on' : ''}" data-like="${esc(p.id)}"><span>${on ? '♥' : '♡'}</span><small class="pa-n">${p.like_count > 0 ? p.like_count : ''}</small></button>
+      <button class="rc-act" data-cmt="${esc(p.id)}"><span>💬</span><small class="pa-n">${p.comment_count > 0 ? p.comment_count : ''}</small></button>
+      <button class="rc-act" data-act="open"><span>📖</span><small>${T('Рецепт')}</small></button>
+      <button class="rc-act" data-act="save"><span>📥</span><small>${T('У мої')}</small></button>
+      ${mine ? `<button class="rc-act" data-del="${esc(p.id)}"><span>✕</span><small>${T('Видалити')}</small></button>`
+        : meId ? `<button class="rc-act" data-more="${esc(p.id)}"><span>⋯</span><small>${T('Ще')}</small></button>` : ''}
+    </div>
+  </article>`;
+}
+// вкладки «Від людей» / «Від тренерів»: без сервера, без входу чи з помилкою — порожній стан із поясненням (стрічка вбудованих не страждає)
+async function loadPeopleRecipes(feed) {
+  const tab = recipeTab;
+  const alive = () => feed.isConnected && recipeTab === tab;
+  const info = (ico, txt, btn = '') => { if (alive()) feed.innerHTML = `<div class="rf-empty"><div class="rf-empty-ico">${ico}</div><p>${txt}</p>${btn}</div>`; };
+  if (!BE.configured) return info('🛰', T('Рецепти від людей зʼявляться, коли підключиться сервер спільноти.'));
+  let session = null;
+  try { session = await withTimeout(BE.getSession(), 3000); } catch { /* без входу — нижче */ }
+  if (!alive()) return;
+  if (!session) {
+    info('🔑', T('Увійди в акаунт, щоб бачити рецепти інших людей і ділитися своїми.'), `<button class="btn primary" id="rpLogin">${T('Увійти')}</button>`);
+    const lb = feed.querySelector('#rpLogin');
+    if (lb) lb.onclick = () => go('#/coach');
+    return;
+  }
+  let posts;
+  try {
+    await refreshBlocks();
+    posts = await withTimeout(BE.listRecipePosts(), 8000);
+  } catch { return info('⚠️', T('Не вдалося завантажити рецепти — спробуй пізніше.')); }
+  if (!alive()) return;
+  posts = posts.filter((p) => !blockedIds.has(p.author_id) && (tab !== 'coaches' || (p.author || {}).role === 'trainer'));
+  if (!posts.length) {
+    return tab === 'coaches' ? info('🧑‍🏫', T('Тренери ще не поділилися рецептами.'))
+      : info('👥', T('Поки ніхто не поділився рецептом. Відкрий свій рецепт у «Мої» і натисни «Поділитися в Спільноті».'));
+  }
+  let liked = new Set();
+  try { liked = await withTimeout(BE.myLikes(posts.map((p) => p.id)), 4000); } catch { /* без лайків — теж стрічка */ }
+  if (!alive()) return;
+  const meId = session.user.id;
+  rsMeId = meId;
+  feed.innerHTML = posts.map((p) => recipePostCardHTML(p, meId, liked)).join('');
+
+  const byId = (id) => posts.find((p) => String(p.id) === id);
+  const like = async (b) => {
+    const p = byId(b.dataset.like);
+    if (!p || b.disabled) return;
+    const ic = b.querySelector('span'), n = b.querySelector('.pa-n');
+    const paint = (on, cnt) => { b.classList.toggle('on', on); ic.textContent = on ? '♥' : '♡'; n.textContent = cnt > 0 ? cnt : ''; };
+    const on = !liked.has(p.id), was = p.like_count || 0;
+    p.like_count = Math.max(0, was + (on ? 1 : -1));
+    if (on) liked.add(p.id); else liked.delete(p.id);
+    paint(on, p.like_count);
+    b.disabled = true;
+    try { await BE.setLike(p.id, on); }
+    catch (e) { p.like_count = was; if (on) liked.delete(p.id); else liked.add(p.id); paint(!on, was); modErr(e); }
+    finally { b.disabled = false; }
+  };
+  feed.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    const card = e.target.closest('.rpost');
+    if (!card) return;
+    if (!b || !feed.contains(b)) {
+      // подвійний тап по картці — лайк, як у TikTok
+      const now = Date.now();
+      if (now - (card._tap || 0) < 320) {
+        const lb = card.querySelector('[data-like]');
+        if (lb && !lb.classList.contains('on')) like(lb);
+        card.classList.remove('rc-pop'); void card.offsetWidth; card.classList.add('rc-pop');
+      }
+      card._tap = now;
+      return;
+    }
+    const p = byId(card.dataset.id);
+    if (!p) return;
+    const d = b.dataset;
+    if (d.u) return go('#/user/' + d.u);
+    if (d.like) return like(b);
+    if (d.cmt) return openComments(p, meId, (cnt) => { p.comment_count = cnt; b.querySelector('.pa-n').textContent = cnt > 0 ? cnt : ''; });
+    if (d.act === 'open') return openRecipeSheet(recipeFromPost(p));
+    if (d.act === 'save') return saveRecipeFromPost(recipeFromPost(p));
+    if (d.more) return openPersonMenu({ type: 'post', targetId: p.id, userId: p.author_id, name: (p.author || {}).name, onDone: recipePostChanged });
+    if (d.del) return deleteRecipePost(p);
+  });
+}
+function deleteRecipePost(p) {
+  if (!confirm(T('Видалити цей допис?'))) return;
+  BE.deletePost(p).then(() => { toast(T('Допис видалено')); recipePostChanged(); }, (err) => toast('⚠️ ' + esc(err.message)));
+}
+
+// ---- пошук рецептів (28.10): спершу за назвою, далі за інгредієнтами ----
+// регістр, апостроф і наголоси не важать; кілька слів — кожне має знайтися в назві або інгредієнтах
+const normQ = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/[ʼ’'`]/g, '').replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+function searchRecipes(q) {
+  const words = normQ(q).split(' ').filter(Boolean);
+  if (!words.length) return { byName: [], byIng: [] };
+  const byName = [], byIng = [];
+  for (const r of RC.allRecipes(S.getSettings().lang || 'uk')) {
+    const name = normQ(r.name);
+    const ings = (r.ing || []).map((x) => [x, normQ(x)]);
+    const inName = (w) => (' ' + name).includes(' ' + w) || name.includes(w);
+    if (words.every(inName)) {
+      const full = words.join(' ');
+      const score = name.startsWith(full) ? 0 : (' ' + name).includes(' ' + full) ? 1 : name.includes(full) ? 2 : 3;
+      byName.push({ r, score });
+      continue;
+    }
+    const hits = [];
+    const ok = words.every((w) => {
+      if (inName(w)) return true;
+      const h = ings.find(([, n]) => n.includes(w));
+      if (h && !hits.includes(h[0])) hits.push(h[0]);
+      return !!h;
+    });
+    if (ok) byIng.push({ r, hits });
+  }
+  byName.sort((a, b) => a.score - b.score || a.r.name.localeCompare(b.r.name));
+  byIng.sort((a, b) => b.hits.length - a.hits.length || a.r.name.localeCompare(b.r.name));
+  return { byName, byIng };
+}
+function openRecipeSearch() {
+  openModal(`🔍 ${T('Пошук рецептів')}`, `
+    <div class="field"><input type="search" id="rsQ" maxlength="60" placeholder="${T('Назва або інгредієнт, напр. курка')}" autocomplete="off"/></div>
+    <div class="pick-list rsr-list" id="rsList"><p class="muted small">${T('Почни вводити — спершу покажемо збіги в назві, потім в інгредієнтах')}</p></div>`);
+  const root = document.querySelector('.modal');
+  const list = root.querySelector('#rsList');
+  let found = [];
+  const row = (r, i, hits) => `<button class="pick-row rsr-row" data-i="${i}">
+      <span class="rsr-pic">${r.emoji || '🍽'}${r.own ? '' : `<img src="img/recipes/${esc(r.id)}.webp" alt="" loading="lazy" data-err="rm"/>`}</span>
+      <span class="aih-txt"><b>${esc(r.name)}</b><span class="muted">${r.kcal ? `${r.kcal} ${T('ккал')} · ${T('Б')} ${r.p}` : ''}${hits && hits.length ? `${r.kcal ? ' · ' : ''}${esc(hits.slice(0, 2).join(', '))}` : ''}</span></span>
+      <span class="fc-pat">›</span></button>`;
+  const run = () => {
+    const q = root.querySelector('#rsQ').value;
+    if (!normQ(q)) { list.innerHTML = `<p class="muted small">${T('Почни вводити — спершу покажемо збіги в назві, потім в інгредієнтах')}</p>`; return; }
+    const { byName, byIng } = searchRecipes(q);
+    found = [...byName.map((x) => x.r), ...byIng.map((x) => x.r)].slice(0, 60);
+    const nN = Math.min(byName.length, 60);
+    list.innerHTML = found.length
+      ? (nN ? `<div class="card-label">${T('За назвою')} · ${byName.length}</div>${byName.slice(0, nN).map((x, i) => row(x.r, i)).join('')}` : '')
+        + (byIng.length && nN < 60 ? `<div class="card-label">${T('За інгредієнтами')} · ${byIng.length}</div>${byIng.slice(0, 60 - nN).map((x, i) => row(x.r, nN + i, x.hits)).join('')}` : '')
+      : `<p class="muted small">${T('Нічого не знайдено')}</p>`;
+    list.querySelectorAll('[data-i]').forEach((b) => (b.onclick = () => { const r = found[Number(b.dataset.i)]; closeModal(); openRecipeSheet(r); }));
+  };
+  root.querySelector('#rsQ').addEventListener('input', run);
+  root.querySelector('#rsQ').focus();
+}
+
 // шторка знизу з повним рецептом
 function openRecipeSheet(r) {
   document.querySelector('.rsheet-ov')?.remove();
@@ -5358,6 +6394,9 @@ function openRecipeSheet(r) {
     <div class="rsheet">
       <div class="rsheet-grip"></div>
       <h3>${esc(r.name)}</h3>
+      ${r.post ? `<p class="muted rs-by">${T('Автор')}: <b>${esc((r.post.author || {}).name || T('Без імені'))}</b>${(r.post.author || {}).role === 'trainer' ? ` · <span class="rp-coach">🧑‍🏫 ${T('Тренер')}</span>` : ''}</p>
+        ${r.post.caption ? `<p class="rs-cap">${esc(r.post.caption)}</p>` : ''}` : ''}
+      ${r.photo && r.post ? `<img class="rs-pic" src="${esc(r.photo)}" alt="" loading="lazy" data-err="rm"/>` : ''}
       ${r.kcal ? `<div class="rs-macros">
         <div><b>${r.kcal}</b><small>${T('ккал')}</small></div><div><b>${r.p}</b><small>${T('білки')}</small></div>
         <div><b>${r.f}</b><small>${T('жири')}</small></div><div><b>${r.c}</b><small>${T('вуглеводи')}</small></div></div>` : ''}
@@ -5369,8 +6408,12 @@ function openRecipeSheet(r) {
       <div class="btn-col">
         ${r.video ? `<button class="btn primary" data-act="video">▶ ${T('Дивитися відео')}</button>` : ''}
         <button class="btn ${r.video ? 'ghost' : 'primary'}" data-act="kcal">＋ ${T('Додати в калорії дня')}</button>
+        ${r.own && BE.configured ? `<button class="btn ghost" id="rsPub">📣 ${T('Поділитися в Спільноті')}</button>` : ''}
         ${r.own ? `<div class="btn-row"><button class="btn ghost" id="rsEdit">✏️ ${T('Редагувати')}</button>
           <button class="btn ghost" id="rsDel">🗑 ${T('Видалити')}</button></div>` : ''}
+        ${r.post ? `<button class="btn ghost" id="rsSave">📥 ${T('Зберегти собі')}</button>
+          <div class="btn-row"><button class="btn ghost" id="rsProf">👤 ${T('Профіль автора')}</button>
+          ${r.post.author_id === rsMeId ? `<button class="btn ghost" id="rsPDel">🗑 ${T('Видалити')}</button>` : ''}</div>` : ''}
       </div>
     </div>`;
   document.body.appendChild(ov);
@@ -5380,6 +6423,14 @@ function openRecipeSheet(r) {
   ov.querySelectorAll('[data-act]').forEach((b) => (b.onclick = () => recipeAction(b.dataset.act, r, null)));
   const ed = ov.querySelector('#rsEdit');
   if (ed) ed.onclick = () => { ov.remove(); go('#/recipe-edit/' + encodeURIComponent(r.id)); };
+  const pub = ov.querySelector('#rsPub');
+  if (pub) pub.onclick = () => { ov.remove(); shareRecipeToCommunity(r); };
+  const sv = ov.querySelector('#rsSave');
+  if (sv) sv.onclick = () => saveRecipeFromPost(r);
+  const pf = ov.querySelector('#rsProf');
+  if (pf) pf.onclick = () => { ov.remove(); go('#/user/' + r.post.author_id); };
+  const pd = ov.querySelector('#rsPDel');
+  if (pd) pd.onclick = () => { ov.remove(); deleteRecipePost(r.post); };
   const del = ov.querySelector('#rsDel');
   if (del) del.onclick = async () => {
     if (!confirm(T('Видалити цей рецепт?'))) return;
@@ -5621,6 +6672,7 @@ async function renderCalories() {
     <section class="card">
           <div class="card-label">📷 ${T('Нова страва')}</div>
           <p class="muted hint">${T('Сфотографуй страву — ШІ оцінить калорійність і БЖВ')}</p>
+          <input id="kcalHint" class="kp-hint" maxlength="200" autocomplete="off" placeholder="${T('Що на фото? Необовʼязково, але точніше: «гречка з куркою, ложка олії»')}"/>
           <div class="btn-row">
             <button class="btn ghost" id="snapBtn">📷 ${T('Сфотографувати страву')}</button>
             <button class="btn ghost" id="galBtn">🖼 ${T('З галереї')}</button>
@@ -5679,7 +6731,8 @@ async function renderCalories() {
     const url = URL.createObjectURL(file);
     box().innerHTML = `<img class="food-prev" src="${url}" alt=""/><p class="muted center">🔎 ${T('Аналізую…')}</p>`;
     try {
-      const r = await CAL.analyzeFoodPhoto(file, key, S.getSettings().lang);
+      const hintEl = screenEl.querySelector('#kcalHint');
+      const r = await CAL.analyzeFoodPhoto(file, key, S.getSettings().lang, hintEl ? hintEl.value : '');
       if (!ownKey) BILL.usePhoto(); // запит пішов через наш сервер — рахуємо
       if (!box()) return; // користувач уже пішов з екрана
       if (!r.isFood) {
@@ -5687,18 +6740,17 @@ async function renderCalories() {
           <p class="muted center">${T('Не схоже на їжу — спробуй інше фото')}</p>`;
         return;
       }
-      // ШІ оцінює порцію в грамах — від неї рахуємо «на 100 г», щоб вагу можна було виправити
-      const portion = Math.round(Number(r.portion) || 0);
-      const per100 = portion
-        ? { kcal: r.kcal * 100 / portion, prot: r.prot * 100 / portion, fat: r.fat * 100 / portion, carb: r.carb * 100 / portion }
-        : null;
-      box().innerHTML = `
-        <img class="food-prev" src="${url}" alt=""/>
-        ${kcalResultHTML(r.name, r, portion)}`;
-      bindKcalResult(box(), per100, (v, g) => {
-        S.addCalorieEntry(iso, { ...r, ...v, g });
+      // складники з грамами — людина виправляє вагу порції або окремий складник (29.10)
+      box().innerHTML = `<img class="food-prev" src="${url}" alt=""/><div class="kp-res"></div>`;
+      bindPhotoResult(box().querySelector('.kp-res'), r, (v) => {
+        S.addCalorieEntry(iso, v);
         toast(T('Збережено'));
         renderCalories();
+      }, () => {
+        const b = screenEl.querySelector('[data-kp="bc"]');
+        if (b) b.click();
+        const pane = screenEl.querySelector('#paneBc');
+        if (pane) pane.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
     } catch (e) {
       if (box()) box().innerHTML = `<p class="muted center">⚠️ ${esc(T(CAL.errorMessage(e)))}</p>`;
@@ -6038,20 +7090,195 @@ function renderMeal(di, mi) {
 //  ВІТАМІНИ Й ДОБАВКИ — особистий нагадувач (що, скільки, коли; курси на місяці вперед; етапи; уколи)
 //  Застосунок нічого не радить: дозування й курс — від лікаря, людина лише записує. Гормонів/стероїдів у підказках немає.
 // =====================================================================
-const SUPP_FORMS = { tab: ['💊', 'Таблетка'], cap: ['🟡', 'Капсула'], drop: ['💧', 'Краплі'], powder: ['🥄', 'Порошок'], inj: ['💉', 'Укол'], other: ['🧴', 'Інше'] };
+const SUPP_FORMS = { tab: ['⚪', 'Таблетка'], cap: ['💊', 'Капсула'], drop: ['💧', 'Краплі'], powder: ['🥄', 'Порошок'], inj: ['💉', 'Укол'], other: ['🧴', 'Інше'] };
 const SUPP_UNITS = ['мг', 'мкг', 'МО', 'г', 'мл', 'шт', 'крап.', 'од.'];
 const SUPP_FOOD = { '': 'Будь-коли', before: 'До їжі', with: 'Під час їжі', after: 'Після їжі' };
 const SUPP_ROUTE = { im: 'У мʼяз', sc: 'Під шкіру' };
+// =====================================================================
+//  КОРОТКА ІНСТРУКЦІЯ (28.10): один раз при першому запуску, повтор — Налаштування → «Як користуватися»
+// =====================================================================
+const TOUR = [
+  ['💪', 'Вітаю в Gym Log!', 'Щоденник тренувань у телефоні. Усе зберігається на цьому пристрої — акаунт не потрібен. Ось коротко, що де лежить.'],
+  ['🏋️', 'Сьогодні', 'Тренування дня. Натисни вправу, вибери повтори й вагу і тисни «✓ Виконав підхід» — таймер відпочинку запуститься сам.'],
+  ['🗓', 'Календар', 'Зал, вітаміни й інші види тренувань (велосипед, біг…) — разом або окремо. Тут же твої тренування й тижневий план.'],
+  ['📋', 'Тренування', 'Готові програми для залу й дому, свої шаблони і «Як виконувати» — техніка вправ з ілюстраціями.'],
+  ['🤖', 'ШІ', 'Калорії за фото страви чи штрихкодом, розумний тренер, меню з чека, вітаміни й БАДи. Це не медична порада.'],
+  ['📈', 'Прогрес', 'Рекорди й графіки, вага тіла, заміри з 3D-фігурою і фото «було / стало».'],
+  ['👥', 'Спільнота', 'Рецепти, дописи, тренери й друзі поруч. Для стрічки й людей потрібен вхід.'],
+];
+const TOUR_KEY = 'kachalka-tour';
+function openTour() {
+  document.querySelectorAll('.tour').forEach((x) => x.remove());
+  let i = 0;
+  const ov = document.createElement('div');
+  ov.className = 'tour';
+  const key = (e) => { if (e.key === 'Escape') done(); };
+  const done = () => {
+    try { localStorage.setItem(TOUR_KEY, '1'); } catch (e) { /* приватний режим — покажеться ще раз */ }
+    ov.remove();
+    document.removeEventListener('keydown', key);
+  };
+  const step = (d) => { const n = i + d; if (n < 0) return; if (n >= TOUR.length) { done(); return; } i = n; draw(); };
+  const draw = () => {
+    const [ic, title, text] = TOUR[i];
+    const last = i === TOUR.length - 1;
+    ov.innerHTML = `<div class="tour-card" role="dialog" aria-modal="true">
+      <button class="tour-skip">${T('Пропустити')}</button>
+      <div class="tour-ico">${ic}</div>
+      <h2>${T(title)}</h2>
+      <p>${T(text)}</p>
+      <div class="tour-dots">${TOUR.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div>
+      <div class="tour-btns">
+        ${i ? `<button class="btn ghost" data-t="-1">‹ ${T('Назад')}</button>` : ''}
+        <button class="btn primary" data-t="1">${last ? T('Почати') : `${T('Далі')} ›`}</button>
+      </div>
+    </div>`;
+    ov.querySelector('.tour-skip').onclick = done;
+    ov.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => step(Number(b.dataset.t))));
+  };
+  // гортання пальцем
+  let x0 = null;
+  ov.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+  ov.addEventListener('touchend', (e) => {
+    if (x0 == null) return;
+    const dx = e.changedTouches[0].clientX - x0;
+    x0 = null;
+    if (Math.abs(dx) > 50) step(dx < 0 ? 1 : -1);
+  });
+  document.addEventListener('keydown', key);
+  draw();
+  document.body.appendChild(ov);
+}
+function maybeTour() {
+  let seen = '1';
+  try { seen = localStorage.getItem(TOUR_KEY); } catch (e) { /* немає сховища — не набридати */ }
+  if (!seen) openTour();
+}
+
+// =====================================================================
+//  СВОЇ ВИДИ ТРЕНУВАНЬ (28.10): велосипед, біг… — свій календар і відмітка дня
+// =====================================================================
+const ACT_PRESETS = [['Велосипед', '🚴'], ['Біг', '🏃'], ['Плавання', '🏊'], ['Ходьба', '🚶'], ['Йога', '🧘'], ['Бокс', '🥊'],
+  ['Скелелазіння', '🧗'], ['Походи', '⛰'], ['Футбол', '⚽'], ['Гімнастика', '🤸']];
+const ACT_ICONS = ['🚴', '🏃', '🏊', '🚶', '🧘', '🥊', '🧗', '⛰', '⚽', '🤸', '🏋️', '💪', '♡', '🎯'];
+const actSub = (e) => [e.min ? `${e.min} ${T('хв')}` : '', e.km ? `${e.km} ${T('км')}` : ''].filter(Boolean).join(' · ');
+
+// картка на «Сьогодні»: лише якщо людина додала свої види
+function actsCard(iso) {
+  const types = S.actTypes();
+  if (!types.length) return '';
+  const day = S.actsOn(iso);
+  return `<section class="card act-card">
+    <div class="sp-card-head"><div class="card-label">🚴 ${T('Інші тренування')}</div>
+      <a class="sp-all" href="#/acts">${T('Усі')} ›</a></div>
+    <div class="act-chips">${types.map((t) => {
+      const e = day[t.id];
+      return `<button class="act-chip ${e ? 'on' : ''}" data-aid="${t.id}">${t.icon} <span>${esc(t.name)}</span>${e ? `<b>✓ ${actSub(e)}</b>` : ''}</button>`;
+    }).join('')}</div>
+  </section>`;
+}
+
+function openActDay(iso, id, after) {
+  const t = S.actType(id);
+  if (!t) return;
+  const e = S.actsOn(iso)[id];
+  openModal(`${t.name} · ${S.prettyDate(iso)}`, `
+    <div class="act-form">
+      <div class="ps-row">
+        <label>${T('Хвилин')}<input type="number" id="acMin" inputmode="numeric" min="0" max="1440" value="${e && e.min ? e.min : ''}"/></label>
+        <label>${T('Кілометрів')}<input type="number" id="acKm" inputmode="decimal" min="0" step="0.1" value="${e && e.km ? e.km : ''}"/></label>
+      </div>
+      <div class="field"><label>${T('Нотатка')}</label><input type="text" id="acNote" maxlength="200" value="${esc(e ? e.note : '')}"/></div>
+      <p class="muted small">${T('Можна нічого не писати — день просто позначиться як зроблений.')}</p>
+    </div>`, [
+    ...(e ? [{ label: T('Прибрати'), class: 'ghost', onClick: () => { S.setActDay(iso, id, null); closeModal(); after(); } }] : []),
+    { label: '✓ ' + T('Зробив'), class: 'primary', onClick: (root) => {
+      S.setActDay(iso, id, { min: root.querySelector('#acMin').value, km: root.querySelector('#acKm').value, note: root.querySelector('#acNote').value });
+      closeModal();
+      if (navigator.vibrate) navigator.vibrate(15);
+      after();
+    } },
+  ]);
+}
+
+function openActType(t) {
+  let icon = t ? t.icon : ACT_ICONS[0];
+  openModal(t ? T('Змінити вид') : T('Новий вид тренування'), `
+    <div class="field"><label>${T('Назва')}</label><input type="text" id="atName" maxlength="40" value="${esc(t ? t.name : '')}" placeholder="${T('Наприклад, велосипед')}"/></div>
+    <div class="field"><label>${T('Значок')}</label>
+      <div class="act-icos">${ACT_ICONS.map((ic) => `<button class="act-ico ${ic === icon ? 'on' : ''}" data-ic="${ic}">${ic}</button>`).join('')}</div></div>`, [
+    { label: T('Зберегти'), class: 'primary', onClick: (root) => {
+      const name = root.querySelector('#atName').value.trim();
+      if (!name) { toast(T('Напиши назву')); return; }
+      if (!S.saveActType({ id: t && t.id, name, icon })) { toast(T('Не більше 12 видів')); return; }
+      closeModal();
+      renderActs();
+    } },
+  ]);
+  document.querySelectorAll('.modal .act-ico').forEach((b) => (b.onclick = () => {
+    icon = b.dataset.ic;
+    document.querySelectorAll('.modal .act-ico').forEach((x) => x.classList.toggle('on', x === b));
+  }));
+}
+
+function renderActs() {
+  if (location.hash !== '#/acts') return;
+  const types = S.actTypes();
+  const log = S.getState().acts.log;
+  const count = (id) => Object.values(log).filter((d) => d[id]).length;
+  const have = new Set(types.map((t) => t.name.toLowerCase()));
+  const presets = ACT_PRESETS.filter(([n]) => !have.has(T(n).toLowerCase()));
+  screenEl.innerHTML = `
+    <header class="appbar">
+      <button class="icon-btn" id="backAc">‹</button>
+      <div class="appbar-titles"><div class="appbar-kicker">🗓 ${T('Календар')}</div>
+        <div class="appbar-title">${T('Інші види тренувань')}</div></div>
+    </header>
+    <section class="card">
+      <p class="muted">${T('Додай те, що робиш окрім залу. У кожного виду буде свій календар, а відмітити день можна на «Сьогодні» або в календарі.')}</p>
+      ${types.map((t) => `<div class="pick-row aih-row act-row">
+          <span class="pick-ico">${t.icon}</span>
+          <span class="aih-txt"><b>${esc(t.name)}</b><span class="muted">${count(t.id)} ${plural(count(t.id), 'день', 'дні', 'днів')}</span></span>
+          <button class="icon-btn" data-edit="${t.id}">✏️</button>
+          <button class="icon-btn" data-del="${t.id}">🗑️</button>
+        </div>`).join('')}
+      ${types.length < 12 ? `<button class="btn primary" id="acAdd">＋ ${T('Додати вид')}</button>` : ''}
+    </section>
+    ${presets.length && types.length < 12 ? `<section class="card">
+      <div class="card-label">${T('Швидко додати')}</div>
+      <div class="act-chips">${presets.map(([n, ic]) => `<button class="act-chip" data-pre="${esc(n)}" data-ic="${ic}">${ic} <span>${T(n)}</span></button>`).join('')}</div>
+    </section>` : ''}
+  `;
+  screenEl.querySelector('#backAc').onclick = () => (history.length > 1 ? history.back() : go('#/calendar'));
+  const add = screenEl.querySelector('#acAdd');
+  if (add) add.onclick = () => openActType(null);
+  screenEl.querySelectorAll('[data-pre]').forEach((b) => (b.onclick = () => {
+    S.saveActType({ name: T(b.dataset.pre), icon: b.dataset.ic });
+    toast(`＋ ${esc(T(b.dataset.pre))}`);
+    renderActs();
+  }));
+  screenEl.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => openActType(S.actType(b.dataset.edit))));
+  screenEl.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => {
+    const t = S.actType(b.dataset.del);
+    if (!t) return;
+    openModal(T('Видалити вид?'), `<p>${T('«{n}» і всі його відмітки зникнуть.', { n: esc(t.name) })}</p>`, [
+      { label: T('Скасувати'), class: 'ghost', onClick: closeModal },
+      { label: T('Видалити'), class: 'danger', onClick: () => { S.deleteActType(t.id); closeModal(); renderActs(); } },
+    ]);
+  }));
+}
+
 const COURSE_STATUS = { planned: '🗓 Заплановано', active: '▶ Триває', done: '✓ Завершено' };
 // лише назви для швидкого вводу — без доз (дозу людина пише сама зі слів лікаря)
 const SUPP_NAMES = ['Вітамін D3', 'Вітамін C', 'Вітамін B12', 'Вітаміни групи B', 'Вітамін E', 'Фолієва кислота', 'Омега-3', 'Магній', 'Цинк',
   'Залізо', 'Кальцій', 'Калій', 'Йод', 'Мультивітаміни', 'Креатин', 'Колаген', 'Пробіотик'];
 let suppDay = null; // вибраний день (null = сьогодні)
-let suppView = 'day'; // day | month
-let suppMonth = null; // 'YYYY-MM' на календарі (null = місяць вибраного дня)
 
 const suppsToday = () => { const d = S.suppDosesOn(S.todayISO()); return d.length ? `${d.filter((x) => x.taken).length}/${d.length} ›` : '›'; };
 const suppIcon = (it) => (SUPP_FORMS[it.form] || SUPP_FORMS.other)[0];
+// колір пункту (28.10, UI_IDEAS 9): 0 — колір теми, 1..8 — готові; той самий у рядку, списку й календарі
+const spc = (it) => (it.color ? ` spk spk${it.color}` : '');
+const suppMark = (it) => (it.color ? `<span class="spk spk${it.color}">${suppIcon(it)}</span>` : suppIcon(it));
 const suppDose = (it, dose = it.dose) => (dose ? `${esc(dose)} ${T(it.unit)}` : '');
 const shortDate = (iso) => { const d = S.isoToDate(iso); return `${d.getDate()} ${dateNames().monthsShort[d.getMonth()]}`; };
 const stageText = (s) => (s.type === 'off' ? T('перерва') : s.type === 'every' ? (s.n === 2 ? T('через день') : T('кожні {n} дн.', { n: s.n })) : T('щодня'));
@@ -6073,16 +7300,32 @@ function suppCourseText(it, iso) {
   return iso < sp.start ? T('курс з {d}', { d: shortDate(sp.start) }) : T('курс завершено');
 }
 
-// рядок прийому з галочкою (екран вітамінів і картка «Сьогодні»)
+// групи дня (28.10): ранок до 12:00, день до 17:00, вечір
+const SUPP_PARTS = [['🌅', 'Ранок'], ['☀️', 'День'], ['🌙', 'Вечір']];
+const suppPart = (tm) => (tm >= '17:00' ? 2 : tm >= '12:00' ? 1 : 0);
+const SUPP_QUICK_TIMES = [['🌅', 'Ранок', '08:00'], ['☀️', 'День', '13:00'], ['🌙', 'Вечір', '20:00']];
+
+// рядок прийому: значок, назва з дозою, велике коло праворуч (екран вітамінів і картка «Сьогодні»)
 function suppDoseRow(iso, x) {
-  const extra = [suppDose(x.it, x.dose), x.stage ? `${T('етап')} ${x.stage}` : '', x.it.form === 'inj' && x.it.route ? T(SUPP_ROUTE[x.it.route]) : '',
+  const extra = [x.time, suppDose(x.it, x.dose), x.stage ? `${T('етап')} ${x.stage}` : '', x.it.form === 'inj' && x.it.route ? T(SUPP_ROUTE[x.it.route]) : '',
     x.it.food ? T(SUPP_FOOD[x.it.food]) : ''].filter(Boolean).join(' · ');
   return `<button class="sp-dose ${x.taken ? 'on' : ''}" data-id="${x.it.id}" data-i="${x.i}" data-iso="${iso}">
-      <span class="sp-time">${x.time}</span>
-      <span class="sp-ico">${suppIcon(x.it)}</span>
-      <span class="sp-txt"><b>${esc(x.it.name)}</b>${extra ? `<span class="muted">${extra}</span>` : ''}</span>
+      <span class="sp-ico${spc(x.it)}">${suppIcon(x.it)}</span>
+      <span class="sp-txt"><b>${esc(x.it.name)}</b><span class="muted">${extra}</span></span>
       <span class="sp-check">${x.taken ? '✓' : ''}</span>
     </button>`;
+}
+// прийоми дня групами Ранок · День · Вечір; у групі — «✓ Усе» одним дотиком
+function suppDayHTML(iso, doses) {
+  return SUPP_PARTS.map(([ic, name], p) => {
+    const xs = doses.filter((x) => suppPart(x.time) === p);
+    if (!xs.length) return '';
+    return `<div class="sp-part">
+        <div class="sp-part-h"><b>${ic} ${T(name)}</b>${xs.some((x) => !x.taken)
+          ? `<button class="sp-allbtn" data-part="${p}" data-iso="${iso}">✓ ${T('Усе')}</button>` : `<span class="sp-done">✓ ${T('Готово')}</span>`}</div>
+        ${xs.map((x) => suppDoseRow(iso, x)).join('')}
+      </div>`;
+  }).join('');
 }
 function bindSuppDoses(root, after) {
   root.querySelectorAll('.sp-dose').forEach((b) => (b.onclick = () => {
@@ -6090,15 +7333,42 @@ function bindSuppDoses(root, after) {
     if (on && navigator.vibrate) navigator.vibrate(15);
     after();
   }));
+  root.querySelectorAll('.sp-allbtn').forEach((b) => (b.onclick = () => {
+    const p = Number(b.dataset.part);
+    for (const x of S.suppDosesOn(b.dataset.iso)) if (!x.taken && suppPart(x.time) === p) S.toggleSuppDose(b.dataset.iso, x.it.id, x.i);
+    if (navigator.vibrate) navigator.vibrate(15);
+    after();
+  }));
+}
+// 7 кружечків — як приймав останній тиждень (блідий — того дня прийому не було в розкладі)
+function suppDots(it, today) {
+  let out = '';
+  for (let k = 6; k >= 0; k--) {
+    const d = S.isoToDate(today);
+    d.setDate(d.getDate() - k);
+    const st = S.suppDayState(it, S.dateToISO(d));
+    out += `<i class="${!st ? 'no' : st.taken >= st.due ? 'ok' : st.taken ? 'part' : k ? 'miss' : 'plan'}"></i>`;
+  }
+  return `<span class="sp-dots" aria-hidden="true">${out}</span>`;
 }
 function suppItemRow(it, today) {
   const c = suppCourseText(it, today);
   return `<button class="pick-row aih-row sp-item" data-id="${it.id}">
-      <span class="pick-ico">${suppIcon(it)}</span>
+      <span class="pick-ico${spc(it)}">${suppIcon(it)}</span>
       <span class="aih-txt"><b>${esc(it.name)}${it.dose && !it.stages.length ? ` · ${suppDose(it)}` : ''}</b>
-        <span class="muted">${esc(suppSchedText(it))}${c ? ` · ${c}` : ''}</span></span>
+        <span class="muted">${esc(suppSchedText(it))}${c ? ` · ${c}` : ''}</span>${suppDots(it, today)}</span>
       <span class="fc-pat">›</span>
     </button>`;
+}
+// підсумок пункту в його вікні: серія днів, % прийомів за 30 днів, 7 кружечків
+function suppStatHTML(it) {
+  const st = S.suppStats(it);
+  if (!st.streak && st.pct == null) return '';
+  return `<div class="card sp-stat">
+      <span>🔥 <b>${st.streak}</b> ${PL(st.streak, 'день', 'дні', 'днів')} ${T('поспіль')}</span>
+      ${st.pct == null ? '' : `<span><b>${st.pct}%</b> ${T('прийомів за 30 днів')}</span>`}
+      ${suppDots(it, S.todayISO())}
+    </div>`;
 }
 function courseDates(c, info) {
   return `${shortDate(c.start)} – ${info.end ? shortDate(info.end) : T('без кінця')}`;
@@ -6110,9 +7380,9 @@ function suppsCard(iso) {
   if (!doses.length) return '';
   const done = doses.filter((x) => x.taken).length;
   return `<section class="card sp-card" id="suppCard">
-    <div class="sp-card-head"><div class="card-label">💊 ${T('Вітаміни й добавки')} <span class="muted">${done}/${doses.length}</span></div>
+    <div class="sp-card-head"><div class="card-label">💊 ${T('Вітаміни й БАДи')} <span class="muted">${done}/${doses.length}</span></div>
       <a class="sp-all" href="#/supps">${T('Усі')} ›</a></div>
-    ${doses.map((x) => suppDoseRow(iso, x)).join('')}
+    ${suppDayHTML(iso, doses)}
   </section>`;
 }
 function bindSuppsCard(iso) {
@@ -6126,152 +7396,140 @@ function bindSuppsCard(iso) {
   });
 }
 
-// календар місяця: на кожному дні — скільки прийомів і чи все прийнято
-function suppMonthHTML(sel, today) {
-  const [y, m] = (suppMonth || sel.slice(0, 7)).split('-').map(Number);
-  const first = new Date(y, m - 1, 1);
-  const lead = (first.getDay() + 6) % 7; // понеділок першим
-  const days = new Date(y, m, 0).getDate();
-  const cells = [];
-  for (let i = 0; i < lead; i++) cells.push('<span></span>');
-  for (let d = 1; d <= days; d++) {
-    const iso = S.dateToISO(new Date(y, m - 1, d));
+// тиждень угорі: кільце — усе прийнято, крапка — частково / пропущено / заплановано
+function suppWeekHTML(sel, today) {
+  const mon = S.isoToDate(sel);
+  mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7)); // понеділок першим
+  const dows = dateNames().dowsMon;
+  let cells = '';
+  for (let k = 0; k < 7; k++) {
+    const d = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + k);
+    const iso = S.dateToISO(d);
     const ds = S.suppDosesOn(iso);
     const done = ds.filter((x) => x.taken).length;
-    const st = !ds.length ? '' : done === ds.length ? 'ok' : iso < today ? (done ? 'part' : 'miss') : 'plan';
-    cells.push(`<button class="spc-d ${st} ${iso === today ? 'today' : ''} ${iso === sel ? 'sel' : ''}" data-iso="${iso}">
-      <b>${d}</b>${ds.length ? `<i>${iso <= today ? `${done}/${ds.length}` : ds.length}</i>` : ''}</button>`);
+    const st = !ds.length ? '' : done === ds.length ? 'ok' : done ? 'part' : iso < today ? 'miss' : 'plan';
+    cells += `<button class="spw-d ${st} ${iso === today ? 'today' : ''} ${iso === sel ? 'sel' : ''}" data-iso="${iso}">
+      <span>${dows[k]}</span><b>${d.getDate()}</b><i></i></button>`;
   }
-  const dows = dateNames().dowsMon;
-  return `<div class="day-nav sp-nav">
-      <button class="chip" id="spmPrev">‹</button>
-      <div class="sp-day"><b>${dateNames().monthsFull[m - 1]} ${y}</b></div>
-      <button class="chip" id="spmNext">›</button>
-    </div>
-    <div class="spc-grid spc-head">${dows.map((x) => `<span>${x}</span>`).join('')}</div>
-    <div class="spc-grid">${cells.join('')}</div>`;
+  return `<div class="spw"><button class="spw-arr" id="spPrev" aria-label="${T('Назад')}">‹</button>
+    <div class="spw-days">${cells}</div><button class="spw-arr" id="spNext" aria-label="${T('Далі')}">›</button></div>`;
 }
 
+// головний екран (28.10, простіше): тиждень → прийоми дня за часом → один список «Мої вітаміни й БАДи» → «＋ Додати»
 function renderSupps() {
   const today = S.todayISO();
   const iso = suppDay || today;
   const doses = S.suppDosesOn(iso);
+  const all = S.getSupps();
   const loose = S.getSupps('');
   const courses = S.getCourses().map((c) => ({ c, info: S.courseInfo(c.id) }));
   const order = { active: 0, planned: 1, done: 2 };
   courses.sort((a, b) => order[a.info.status] - order[b.info.status] || a.c.start.localeCompare(b.c.start));
-  const any = loose.length || courses.some((x) => x.info.items);
-  const done = doses.filter((x) => x.taken).length;
-  const courseCard = ({ c, info }) => `<button class="pick-row aih-row sp-course ${info.status}" data-cid="${c.id}">
-      <span class="pick-ico">🗂</span>
-      <span class="aih-txt"><b>${esc(c.name)}</b>
-        <span class="muted">${T(COURSE_STATUS[info.status])} · ${courseDates(c, info)}${info.day && info.total ? ` · ${T('день {d} з {n}', { d: info.day, n: info.total })}` : ''}
-          · ${info.items} ${PL(info.items, 'пункт', 'пункти', 'пунктів')}</span></span>
-      <span class="fc-pat">›</span>
-    </button>`;
   const live = courses.filter((x) => x.info.status !== 'done');
   const old = courses.filter((x) => x.info.status === 'done');
+  const done = doses.filter((x) => x.taken).length;
+  // курс — група в тому самому списку: заголовок (дати, стан) і його пункти під ним
+  const group = ({ c, info }) => {
+    const its = S.getSupps(c.id);
+    return `<div class="sp-group ${info.status}">
+      <button class="pick-row aih-row sp-group-h" data-cid="${c.id}"><span class="pick-ico">🗂</span>
+        <span class="aih-txt"><b>${esc(c.name)}</b><span class="muted">${T(COURSE_STATUS[info.status])} · ${courseDates(c, info)}${info.day && info.total ? ` · ${T('день {d} з {n}', { d: info.day, n: info.total })}` : ''}</span></span>
+        <span class="fc-pat">›</span></button>
+      ${its.length ? `<div class="pick-list">${its.map((it) => suppItemRow(it, today)).join('')}</div>`
+        : `<p class="muted small sp-empty-c">${T('Порожній курс — відкрий і додай, що в нього входить.')}</p>`}
+    </div>`;
+  };
+  const mine = loose.length || live.length;
   screenEl.innerHTML = `
     <header class="appbar">
       <button class="icon-btn" id="backSp">‹</button>
       <div class="appbar-titles"><div class="appbar-kicker">💊 ${T('Здоровʼя')}</div>
-        <div class="appbar-title">${T('Вітаміни й добавки')}</div></div>
+        <div class="appbar-title">${T('Вітаміни й БАДи')}</div></div>
     </header>
-    <section class="card sp-warn">
-      <b>⚠️ ${T('Не медична порада')}</b>
-      <p>${T('Gym Log не лікар і не підказує, що, скільки й як приймати. Це лише твій нагадувач: дозування, курс і уколи — тільки за призначенням лікаря.')}</p>
-    </section>
-    ${any ? `<div class="cseg sp-seg">
-        <button class="${suppView === 'day' ? 'on' : ''}" data-sv="day">📋 ${T('День')}</button>
-        <button class="${suppView === 'month' ? 'on' : ''}" data-sv="month">🗓 ${T('Місяць')}</button>
-      </div>
-      <section class="card">
-      ${suppView === 'month' ? suppMonthHTML(iso, today) : `<div class="day-nav sp-nav">
-        <button class="chip" id="spPrev">‹</button>
-        <div class="sp-day"><b>${iso === today ? T('Сьогодні') : S.prettyDate(iso)}</b>
-          <span class="muted">${doses.length ? `${T('прийнято')} ${done}/${doses.length}` : T('прийомів немає')}</span></div>
-        <button class="chip" id="spNext">›</button>
-      </div>`}
-      ${suppView === 'month' ? `<div class="sp-sel">${iso === today ? T('Сьогодні') : S.prettyDate(iso)} · ${doses.length ? `${T('прийнято')} ${done}/${doses.length}` : T('прийомів немає')}</div>` : ''}
+    <button class="sp-warn1" id="spWarn">⚠️ <span>${T('Не медична порада: записуй лише те, що призначив лікар.')}</span><b>›</b></button>
+    ${all.length ? `<section class="card sp-today">
+      ${suppWeekHTML(iso, today)}
+      <div class="sp-sum"><b>${iso === today ? T('Сьогодні') : S.prettyDate(iso)}</b>
+        <span class="muted">${doses.length ? `${T('прийнято')} ${done}/${doses.length}` : T('прийомів немає')}</span></div>
       ${doses.length ? `<div class="sp-bar"><i style="width:${Math.round((done / doses.length) * 100)}%"></i></div>` : ''}
-      <div id="spDoses">${doses.map((x) => suppDoseRow(iso, x)).join('')}</div>
-    </section>` : ''}
-    <div class="card-label side-label">🗂 ${T('Курси')}</div>
-    <div class="pick-list">
-      ${live.map(courseCard).join('') || `<p class="muted side small">${T('Курс — набір вітамінів чи уколів з датами на місяць або кілька. Його можна зберегти й потім повторити.')}</p>`}
-    </div>
-    ${old.length ? `<details class="sp-old"><summary class="muted">${T('Завершені курси')} (${old.length})</summary>
-      <div class="pick-list">${old.map(courseCard).join('')}</div></details>` : ''}
-    <div class="card-label side-label">💊 ${T('Окремо, без курсу')}</div>
-    <div class="pick-list">
-      ${loose.map((it) => suppItemRow(it, today)).join('') || `<p class="muted side small">${T('Тут — те, що приймаєш постійно, поза курсами.')}</p>`}
-    </div>
-    <button class="pick-row aih-row sp-tpl-row" id="spTpl"><span class="pick-ico">📚</span>
-      <span class="aih-txt"><b>${T('Приклади й заготовки')}</b><span class="muted">${T('Поширені схеми вітамінів і заготовки розкладу: гірка, через день, прийом і перерва')}</span></span>
-      <span class="fc-pat">›</span></button>
-    ${S.getSupps().length ? `<button class="btn ghost" id="spRemind" style="margin-top:10px">🔔 ${T('Нагадування в календар')}</button>` : ''}
-    <div class="btn-row">
-      <button class="btn ghost" id="spAddCourse">🗂 ${T('Новий курс')}</button>
-      <button class="btn primary" id="spAdd">＋ ${T('Вітамін')}</button>
+      <div id="spDoses">${suppDayHTML(iso, doses)}</div>
+      <button class="sp-cal" id="spCal">🗓 ${T('Увесь місяць — у Календарі')} ›</button>
+    </section>` : `<section class="card sp-intro">
+      <div class="sp-intro-ico">💊</div>
+      <p>${T('Записуй вітаміни й БАДи, які приймаєш, і відмічай прийоми одним дотиком. Почни з «＋ Додати».')}</p>
+    </section>`}
+    ${mine ? `<div class="card-label side-label">💊 ${T('Мої вітаміни й БАДи')}</div>
+    ${loose.length ? `<div class="pick-list">${loose.map((it) => suppItemRow(it, today)).join('')}</div>` : ''}
+    ${live.map(group).join('')}` : ''}
+    ${old.length ? `<details class="sp-old"><summary class="muted">${T('Завершені курси')} (${old.length})</summary>${old.map(group).join('')}</details>` : ''}
+    <div class="btn-col sp-actions">
+      <button class="btn primary" id="spAdd">＋ ${T('Додати')}</button>
+      ${all.length ? `<button class="btn ghost" id="spRemind">⏰ ${T('Нагадування в календар')}</button>` : ''}
     </div>`;
-  screenEl.querySelector('#backSp').onclick = () => history.back();
-  screenEl.querySelector('#spAdd').onclick = () => go('#/supp/new');
-  screenEl.querySelector('#spAddCourse').onclick = () => go('#/course/new');
-  screenEl.querySelector('#spTpl').onclick = () => go('#/supptpl');
-  screenEl.querySelector('#spRemind')?.addEventListener('click', openSuppReminders);
+  const $ = (s) => screenEl.querySelector(s);
+  $('#backSp').onclick = () => history.back();
+  $('#spWarn').onclick = () => openModal(`⚠️ ${T('Не медична порада')}`,
+    `<p>${T('Gym Log не лікар і не підказує, що, скільки й як приймати. Це лише твій нагадувач: дозування, курс і уколи — тільки за призначенням лікаря.')}</p>`,
+    [{ label: T('Зрозуміло'), class: 'primary', onClick: closeModal }]);
+  $('#spAdd').onclick = openSuppAdd;
+  $('#spRemind')?.addEventListener('click', openSuppReminders);
+  $('#spCal')?.addEventListener('click', () => { setCalView('supp'); go('#/calendar'); });
   screenEl.querySelectorAll('.sp-item').forEach((b) => (b.onclick = () => go('#/supp/' + b.dataset.id)));
-  screenEl.querySelectorAll('.sp-course').forEach((b) => (b.onclick = () => go('#/course/' + b.dataset.cid)));
-  screenEl.querySelectorAll('[data-sv]').forEach((b) => (b.onclick = () => { suppView = b.dataset.sv; suppMonth = null; renderSupps(); }));
+  screenEl.querySelectorAll('.sp-group-h').forEach((b) => (b.onclick = () => go('#/course/' + b.dataset.cid)));
   const shift = (k) => {
     const d = S.isoToDate(iso);
     d.setDate(d.getDate() + k);
     suppDay = S.dateToISO(d);
     renderSupps();
   };
-  const p = screenEl.querySelector('#spPrev');
+  const p = $('#spPrev');
   if (p) {
-    p.onclick = () => shift(-1);
-    screenEl.querySelector('#spNext').onclick = () => shift(1);
+    p.onclick = () => shift(-7);
+    $('#spNext').onclick = () => shift(7);
   }
-  const mp = screenEl.querySelector('#spmPrev');
-  if (mp) {
-    const mshift = (k) => {
-      const [y, m] = (suppMonth || iso.slice(0, 7)).split('-').map(Number);
-      const d = new Date(y, m - 1 + k, 1);
-      suppMonth = S.dateToISO(d).slice(0, 7);
-      renderSupps();
-    };
-    mp.onclick = () => mshift(-1);
-    screenEl.querySelector('#spmNext').onclick = () => mshift(1);
-    screenEl.querySelectorAll('.spc-d').forEach((b) => (b.onclick = () => { suppDay = b.dataset.iso; renderSupps(); }));
-  }
-  const dl = screenEl.querySelector('#spDoses');
+  screenEl.querySelectorAll('.spw-d').forEach((b) => (b.onclick = () => { suppDay = b.dataset.iso; renderSupps(); }));
+  const dl = $('#spDoses');
   if (dl) bindSuppDoses(dl, renderSupps);
+}
+
+// «＋ Додати»: одна позиція, курс або готовий приклад
+function openSuppAdd() {
+  const row = (to, ic, t, d) => `<button class="pick-row aih-row" data-add="${to}"><span class="pick-ico">${ic}</span>
+    <span class="aih-txt"><b>${T(t)}</b><span class="muted">${T(d)}</span></span><span class="fc-pat">›</span></button>`;
+  openModal(T('Що додати?'), `<div class="pick-list">
+    ${row('#/supp/new', '💊', 'Вітамін чи БАД', 'Одна позиція: що, коли й скільки')}
+    ${row('#/course/new', '🗂', 'Курс', 'Кілька позицій зі спільними датами — можна повторити')}
+    ${row('#/supptpl', '📚', 'З прикладу', 'Поширені схеми й заготовки розкладу')}
+  </div>`);
+  document.querySelectorAll('.modal [data-add]').forEach((b) => (b.onclick = () => { closeModal(); go(b.dataset.add); }));
 }
 
 // нагадування про прийом: усі чинні пункти з тим самим часом → одна щоденна подія в календарі телефону
 // (що саме приймати сьогодні — видно в застосунку: розклади «через день», етапи й перерви календар не повторить)
 function openSuppReminders() {
   const today = S.todayISO();
-  const groups = {}; // 'HH:MM' → { names:Set, start, end ('' = без кінця) }
+  // групами Ранок · День · Вечір (UI_IDEAS 5): один сигнал «Ранок: D3, магній» о найранішому часі групи
+  const groups = {}; // 'частина|кінець' → { p, tm, names:Set, start, end ('' = без кінця) }
   for (const it of S.getSupps()) {
     const end = S.suppEnd(it);
     if (end && end < today) continue; // курс уже скінчився
     const sp = S.suppSpan(it);
     const start = sp.start > today ? sp.start : today;
     for (const tm of it.times) {
-      const key = tm + '|' + (end || '∞'); // різний кінець курсу — окрема подія, щоб нагадування не йшло після кінця
-      const g = (groups[key] = groups[key] || { tm, names: new Set(), start, end });
+      const p = suppPart(tm);
+      const key = p + '|' + (end || '∞'); // різний кінець курсу — окрема подія, щоб нагадування не йшло після кінця
+      const g = (groups[key] = groups[key] || { p, tm, names: new Set(), start, end });
       g.names.add(it.name);
+      if (tm < g.tm) g.tm = tm;
       if (start < g.start) g.start = start;
     }
   }
   const keys = Object.keys(groups).sort();
   const rows = keys.map((k, n) => `<div class="rem-row">
-      <span class="rem-txt"><b>${groups[k].tm}</b> · ${esc([...groups[k].names].join(', '))}${groups[k].end ? ` <span class="muted">· ${T('до')} ${S.prettyDate(groups[k].end)}</span>` : ''}</span>
+      <span class="rem-txt"><b>${SUPP_PARTS[groups[k].p][0]} ${T(SUPP_PARTS[groups[k].p][1])} · ${groups[k].tm}</b> · ${esc([...groups[k].names].join(', '))}${groups[k].end ? ` <span class="muted">· ${T('до')} ${S.prettyDate(groups[k].end)}</span>` : ''}</span>
       <button class="btn primary sm" data-rem="${n}">📅 ${T('Додати')}</button>
     </div>`).join('');
-  openModal(`🔔 ${T('Нагадування про прийом')}`, `
+  openModal(`⏰ ${T('Нагадування про прийом')}`, `
     ${rows || `<p>${T('Немає чинних прийомів.')}</p>`}
     ${rows ? remindSelectHTML() + remindNoteHTML() : ''}
     <p class="muted small">${T('Не медична порада')}</p>`);
@@ -6282,7 +7540,7 @@ function openSuppReminders() {
       const g = groups[keys[Number(b.dataset.rem)]];
       const tm = g.tm;
       RM.addToCalendar({
-        title: `💊 ${T('Прийом')} — Gym Log`,
+        title: `💊 ${T(SUPP_PARTS[g.p][1])}: ${g.names.size} ${PL(g.names.size, 'позиція', 'позиції', 'позицій')} — Gym Log`,
         desc: `${[...g.names].join(', ')}
 ${T('Що саме сьогодні — у Gym Log → Вітаміни.')}`,
         date: g.start,
@@ -6290,9 +7548,50 @@ ${T('Що саме сьогодні — у Gym Log → Вітаміни.')}`,
         minutes: 15,
         rrule: 'FREQ=DAILY' + RM.untilPart(g.end),
         alarm: S.getSettings().remindMin,
-      }, 'gymlog-supps-' + tm.replace(':', ''));
+      }, 'gymlog-supps-p' + g.p + (g.end ? '-' + g.end : ''));
     })
   );
+}
+
+// після нового запису: запропонувати нагадування календарем телефону (свого пуша поки немає — рішення 17.10)
+function offerSuppReminder(it) {
+  const today = S.todayISO();
+  const end = S.suppEnd(it);
+  if (end && end < today) return;
+  // перший день з прийомом від сьогодні: з нього календар і рахує «через день» / дні тижня
+  let first = S.suppSpan(it).start > today ? S.suppSpan(it).start : today;
+  for (let k = 0; k < 62 && !S.suppDueOn(it, first); k++) {
+    const d = S.isoToDate(first);
+    d.setDate(d.getDate() + 1);
+    first = S.dateToISO(d);
+  }
+  if (!S.suppDueOn(it, first)) return;
+  const sc = it.sched;
+  // з етапами календар точно не повторить — щодня, а що саме сьогодні, видно в застосунку
+  const rule = it.stages.length || sc.type === 'daily' ? 'FREQ=DAILY'
+    : sc.type === 'every' ? `FREQ=DAILY;INTERVAL=${sc.n}` : RM.weeklyRule(sc.days);
+  openModal(`⏰ ${T('Нагадувати про прийом?')}`, `
+    <p>${T('Gym Log додасть подію в календар телефону — нагадування прийде від календаря.')}</p>
+    ${it.times.map((tm) => `<div class="rem-row"><span class="rem-txt"><b>${tm}</b> · ${esc(it.name)}</span>
+      <button class="btn primary sm" data-rt="${tm}">📅 ${T('Додати')}</button></div>`).join('')}
+    ${remindSelectHTML()}${remindNoteHTML()}
+    <p class="muted small">${T('Сповіщення від самого Gym Log додамо згодом.')} ${T('Не медична порада')}</p>`,
+  [{ label: T('Не треба'), class: 'ghost', onClick: closeModal }]);
+  const root = document.querySelector('.modal');
+  bindRemindSelect(root);
+  root.querySelectorAll('[data-rt]').forEach((b) => b.addEventListener('click', () => {
+    const tm = b.dataset.rt;
+    RM.addToCalendar({
+      title: `💊 ${it.name} — Gym Log`,
+      desc: `${[suppDose(it), suppSchedText(it)].filter(Boolean).join(' · ')}
+${T('Що саме сьогодні — у Gym Log → Вітаміни.')}`,
+      date: first,
+      time: tm,
+      minutes: 15,
+      rrule: rule + RM.untilPart(end),
+      alarm: S.getSettings().remindMin,
+    }, 'gymlog-supp-' + tm.replace(':', ''));
+  }));
 }
 
 // ↗ / ↘ біля етапу, якщо доза більша / менша, ніж у попередньому етапі з прийомом (видно «гірку»)
@@ -6316,7 +7615,7 @@ function renderSuppTpl() {
   screenEl.innerHTML = `
     <header class="appbar">
       <button class="icon-btn" id="backTp">‹</button>
-      <div class="appbar-titles"><div class="appbar-kicker">💊 ${T('Вітаміни й добавки')}</div>
+      <div class="appbar-titles"><div class="appbar-kicker">💊 ${T('Вітаміни й БАДи')}</div>
         <div class="appbar-title">${T('Приклади й заготовки')}</div></div>
     </header>
     <section class="card sp-warn">
@@ -6420,10 +7719,12 @@ function renderCourse(id) {
   };
 }
 
+// запис: новий — трьома кроками (Що → Коли → Скільки й як довго), курс, етапи й нотатка — у «Більше налаштувань»;
+// старий відкривається одразу весь
 function renderSuppEdit(id, courseId, presetId) {
   const old = id === 'new' ? null : S.getSupp(id);
   if (id !== 'new' && !old) { go('#/supps'); return; }
-  const it = old ? JSON.parse(JSON.stringify(old)) : { course: S.getCourse(courseId) ? courseId : '', name: '', form: 'tab', dose: '', unit: 'мг', times: ['09:00'], food: '', sched: { type: 'daily', n: 2, days: [1, 3, 5] }, start: S.todayISO(), len: 0, stages: [], route: '', note: '' };
+  const it = old ? JSON.parse(JSON.stringify(old)) : { course: S.getCourse(courseId) ? courseId : '', name: '', form: 'tab', dose: '', unit: 'мг', times: ['08:00'], food: '', sched: { type: 'daily', n: 2, days: [1, 3, 5] }, start: S.todayISO(), len: 0, stages: [], route: '', note: '' };
   // заготовка розкладу (гірка, зниження…) — лише етапи, без назви й доз
   let hint = '';
   const usePreset = (pr) => {
@@ -6436,62 +7737,89 @@ function renderSuppEdit(id, courseId, presetId) {
   if (!it.sched.days.length) it.sched.days = [1, 3, 5];
   const dn = dateNames().dows;
   const courses = S.getCourses().filter((c) => c.id === it.course || S.courseInfo(c.id).status !== 'done');
+  if (!old) { const used = new Set(S.getSupps().map((x) => x.color)); it.color = [1, 2, 3, 4, 5, 6, 7, 8].find((n) => !used.has(n)) || 1; }
+  let step = old ? 3 : 1;
+  let more = !!(it.stages.length || it.course || it.note || it.route);
   const draw = () => {
     const tchips = (attr, map, cur) => Object.entries(map).map(([k, v]) => `<button class="tchip ${cur === k ? 'on' : ''}" data-${attr}="${k}">${Array.isArray(v) ? `${v[0]} ${T(v[1])}` : T(v)}</button>`).join('');
     const staged = it.stages.length > 0;
     const total = it.stages.reduce((a, s) => a + (Number(s.days) || 0), 0);
+    const hide = (n) => (step < n ? ' hide' : '');
+    const qt = SUPP_QUICK_TIMES.map(([ic, name, tm]) => `<button class="tchip ${it.times.includes(tm) ? 'on' : ''}" data-qt="${tm}">${ic} ${T(name)} <small>${tm}</small></button>`).join('');
+    const lens = [7, 14, 30, 60, 90, 0].map((n) => `<button class="tchip ${(it.len || 0) === n ? 'on' : ''}" data-len="${n}">${n ? `${n} ${T('дн.')}` : T('без кінця')}</button>`).join('');
     screenEl.innerHTML = `
       <header class="appbar">
         <button class="icon-btn" id="backSe">‹</button>
-        <div class="appbar-titles"><div class="appbar-kicker">💊 ${T('Вітаміни й добавки')}</div>
+        <div class="appbar-titles"><div class="appbar-kicker">💊 ${T('Вітаміни й БАДи')}</div>
           <div class="appbar-title">${old ? T('Редагувати') : T('Новий запис')}</div></div>
       </header>
+      ${old ? '' : `<div class="sp-steps">${[1, 2, 3].map((n) => `<i class="${n <= step ? 'on' : ''}"></i>`).join('')}</div>`}
+      ${old ? suppStatHTML(old) : ''}
       <section class="card sp-form">
-        <div class="field"><label>${T('Що це')}</label><div class="type-chips">${tchips('form', SUPP_FORMS, it.form)}</div></div>
-        <div class="field"><label>${T('Назва')}</label>
-          <input id="seName" maxlength="80" list="seNames" value="${esc(it.name)}" placeholder="${T('напр. Вітамін D3')}"/>
-          <datalist id="seNames">${SUPP_NAMES.map((n) => `<option value="${esc(T(n))}"></option>`).join('')}</datalist></div>
-        <div class="field"><label>${T('Курс')}</label><select id="seCourse">
-          <option value="">${T('Без курсу')}</option>
-          ${courses.map((c) => `<option value="${c.id}" ${it.course === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
-        <div class="field-row">
-          ${staged ? '' : `<div class="field"><label>${T('Доза за раз')}</label><input id="seDose" inputmode="decimal" maxlength="12" value="${esc(it.dose)}" placeholder="${T('як призначив лікар')}"/></div>`}
-          <div class="field sp-unit"><label>${T('Одиниці')}</label><select id="seUnit">${SUPP_UNITS.map((u) => `<option value="${u}" ${it.unit === u ? 'selected' : ''}>${T(u)}</option>`).join('')}</select></div>
+        <div class="sp-step">
+          <div class="sp-step-h"><i>1</i>${T('Що приймаєш')}</div>
+          <div class="field"><label>${T('Що це')}</label><div class="type-chips">${tchips('form', SUPP_FORMS, it.form)}</div></div>
+          <div class="field"><label>${T('Назва')}</label>
+            <input id="seName" maxlength="80" list="seNames" value="${esc(it.name)}" placeholder="${T('напр. Вітамін D3')}"/>
+            <datalist id="seNames">${SUPP_NAMES.map((n) => `<option value="${esc(T(n))}"></option>`).join('')}</datalist></div>
+          <div class="field"><label>${T('Колір')}</label><div class="sp-colors">${[0, 1, 2, 3, 4, 5, 6, 7, 8].map((n) =>
+            `<button class="sp-col${n ? ` spk spk${n}` : ''}${(it.color || 0) === n ? ' on' : ''}" data-col="${n}" aria-label="${T('Колір')} ${n}">${n ? suppIcon(it) : ''}</button>`).join('')}</div></div>
+          ${it.form === 'inj' ? `<div class="field"><label>${T('Як колоти')}</label><div class="type-chips">${tchips('route', { '': 'Не вказано', ...SUPP_ROUTE }, it.route)}</div></div>` : ''}
         </div>
-        ${it.form === 'inj' ? `<div class="field"><label>${T('Як колоти')}</label><div class="type-chips">${tchips('route', { '': 'Не вказано', ...SUPP_ROUTE }, it.route)}</div></div>` : ''}
-        <div class="field"><label>${T('Коли за день')}</label>
-          <div class="sp-times">${it.times.map((t, i) => `<span class="sp-tm"><input type="time" data-ti="${i}" value="${t}"/>${it.times.length > 1 ? `<button class="rc-del" data-tdel="${i}">✕</button>` : ''}</span>`).join('')}
-            ${it.times.length < 6 ? `<button class="tchip" id="seTimeAdd">＋ ${T('ще прийом')}</button>` : ''}</div></div>
-        <div class="field"><label>${T('Їжа')}</label><div class="type-chips">${tchips('food', SUPP_FOOD, it.food)}</div></div>
-        <label class="share-row"><input type="checkbox" id="seStaged" ${staged ? 'checked' : ''}/>
-          <span>📆 ${T('Розписати етапами')}<small class="muted">${T('напр. 10 днів щодня → 20 днів через день → 14 днів перерва')}</small></span></label>
-        ${staged ? `<div class="sp-stages">
-          <div class="type-chips sp-presets">${SUPP_PRESETS.filter((x) => !x.form).map((x) => `<button class="tchip" data-preset="${x.id}">${x.icon} ${T(x.title)}</button>`).join('')}</div>
-          ${hint ? `<p class="muted small">${esc(hint)} ${T('Впиши дозу для кожного етапу.')}</p>` : ''}
-          ${it.stages.map((s, k) => `<div class="sp-stage" data-k="${k}">
-            <div class="sp-stage-h"><b>${T('Етап')} ${k + 1}</b>${stageTrend(it.stages, k)}${it.stages.length > 1 ? `<button class="rc-del" data-sdel="${k}">✕</button>` : ''}</div>
-            <div class="sp-inline">
-              <input class="st-days" type="number" inputmode="numeric" min="1" max="365" value="${s.days}"/> ${T('дн.')}
-              <select class="st-type">${[['daily', 'щодня'], ['every', 'раз на кілька днів'], ['off', 'перерва']].map(([v, l]) => `<option value="${v}" ${s.type === v ? 'selected' : ''}>${T(l)}</option>`).join('')}</select>
-            </div>
-            ${s.type === 'every' ? `<div class="sp-inline">${T('кожні')} <input class="st-n" type="number" inputmode="numeric" min="2" max="60" value="${s.n}"/> ${T('дн.')}</div>` : ''}
-            ${s.type === 'off' ? '' : `<div class="sp-inline">${T('доза')} <input class="st-dose" inputmode="decimal" maxlength="12" value="${esc(s.dose)}" placeholder="${T('як призначив лікар')}"/> ${T(it.unit)}</div>`}
-          </div>`).join('')}
-          ${it.stages.length < 12 ? `<button class="tchip" id="seStageAdd">＋ ${T('етап')}</button>` : ''}
-          <p class="muted small">${T('Разом')}: ${total} ${PL(total, 'день', 'дні', 'днів')}</p>
-        </div>` : `<div class="field"><label>${T('Як часто')}</label><div class="type-chips">${tchips('sched', { daily: 'Щодня', every: 'Раз на кілька днів', week: 'Дні тижня' }, it.sched.type)}</div>
-          ${it.sched.type === 'every' ? `<div class="sp-inline">${T('кожні')} <input id="seN" type="number" inputmode="numeric" min="2" max="60" value="${it.sched.n}"/> ${T('дн.')}</div>` : ''}
-          ${it.sched.type === 'week' ? `<div class="type-chips">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<button class="tchip ${it.sched.days.includes(d) ? 'on' : ''}" data-wd="${d}">${dn[d]}</button>`).join('')}</div>` : ''}</div>`}
-        <div class="field-row">
+        <div class="sp-step${hide(2)}">
+          <div class="sp-step-h"><i>2</i>${T('Коли')}</div>
+          <div class="field"><label>${T('Коли за день')}</label>
+            <div class="type-chips">${qt}</div>
+            <div class="sp-times">${it.times.map((t, i) => `<span class="sp-tm"><input type="time" data-ti="${i}" value="${t}"/>${it.times.length > 1 ? `<button class="rc-del" data-tdel="${i}">✕</button>` : ''}</span>`).join('')}
+              ${it.times.length < 6 ? `<button class="tchip" id="seTimeAdd">＋ ${T('ще прийом')}</button>` : ''}</div></div>
+          ${staged ? `<p class="muted small">📆 ${T('Розклад — етапами в «Більше налаштувань»')}</p>` : `<div class="field"><label>${T('Як часто')}</label><div class="type-chips">${tchips('sched', { daily: 'Щодня', every: 'Раз на кілька днів', week: 'Дні тижня' }, it.sched.type)}</div>
+            ${it.sched.type === 'every' ? `<div class="sp-inline">${T('кожні')} <input id="seN" type="number" inputmode="numeric" min="2" max="60" value="${it.sched.n}"/> ${T('дн.')}</div>` : ''}
+            ${it.sched.type === 'week' ? `<div class="type-chips">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<button class="tchip ${it.sched.days.includes(d) ? 'on' : ''}" data-wd="${d}">${dn[d]}</button>`).join('')}</div>` : ''}</div>`}
+          <div class="field"><label>${T('Їжа')}</label><div class="type-chips">${tchips('food', SUPP_FOOD, it.food)}</div></div>
+        </div>
+        <div class="sp-step${hide(3)}">
+          <div class="sp-step-h"><i>3</i>${T('Скільки й як довго')}</div>
+          <div class="field-row">
+            ${staged ? '' : `<div class="field"><label>${T('Доза за раз')}</label><input id="seDose" inputmode="decimal" maxlength="12" value="${esc(it.dose)}" placeholder="${T('як призначив лікар')}"/></div>`}
+            <div class="field sp-unit"><label>${T('Одиниці')}</label><select id="seUnit">${SUPP_UNITS.map((u) => `<option value="${u}" ${it.unit === u ? 'selected' : ''}>${T(u)}</option>`).join('')}</select></div>
+          </div>
+          ${staged ? `<p class="muted small">📆 ${T('Дози — в етапах у «Більше налаштувань»')}</p>` : ''}
           ${it.course ? '' : `<div class="field"><label>${T('Початок курсу')}</label><input id="seStart" type="date" value="${it.start}"/></div>`}
-          ${staged ? '' : `<div class="field"><label>${T('Тривалість, днів')}</label><input id="seLen" type="number" inputmode="numeric" min="0" max="3650" value="${it.len || ''}" placeholder="${it.course ? T('до кінця курсу') : T('без кінця')}"/></div>`}
+          ${staged ? '' : `<div class="field"><label>${T('Тривалість, днів')}</label>${it.course ? '' : `<div class="type-chips">${lens}</div>`}
+            <input id="seLen" type="number" inputmode="numeric" min="0" max="3650" value="${it.len || ''}" placeholder="${it.course ? T('до кінця курсу') : T('без кінця')}"/></div>`}
+          ${it.course ? `<p class="muted small">${T('Починається з початком курсу')}</p>` : ''}
         </div>
-        ${it.course ? `<p class="muted small">${T('Починається з початком курсу')}</p>` : ''}
-        <div class="field"><label>${T('Нотатка')}</label><textarea id="seNote" maxlength="300" rows="2" placeholder="${T('напр. хто призначив і що сказав лікар')}">${esc(it.note)}</textarea></div>
+        <details class="sp-more${hide(3)}" ${more ? 'open' : ''}>
+          <summary>⚙️ ${T('Більше налаштувань')} <span class="muted">${T('курс, етапи, нотатка')}</span></summary>
+          <div class="sp-more-in">
+            <div class="field"><label>${T('Курс')}</label><select id="seCourse">
+              <option value="">${T('Без курсу')}</option>
+              ${courses.map((c) => `<option value="${c.id}" ${it.course === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+            <label class="share-row"><input type="checkbox" id="seStaged" ${staged ? 'checked' : ''}/>
+              <span>📆 ${T('Розписати етапами')}<small class="muted">${T('напр. 10 днів щодня → 20 днів через день → 14 днів перерва')}</small></span></label>
+            ${staged ? `<div class="sp-stages">
+              <div class="type-chips sp-presets">${SUPP_PRESETS.filter((x) => !x.form).map((x) => `<button class="tchip" data-preset="${x.id}">${x.icon} ${T(x.title)}</button>`).join('')}</div>
+              ${hint ? `<p class="muted small">${esc(hint)} ${T('Впиши дозу для кожного етапу.')}</p>` : ''}
+              ${it.stages.map((s, k) => `<div class="sp-stage" data-k="${k}">
+                <div class="sp-stage-h"><b>${T('Етап')} ${k + 1}</b>${stageTrend(it.stages, k)}${it.stages.length > 1 ? `<button class="rc-del" data-sdel="${k}">✕</button>` : ''}</div>
+                <div class="sp-inline">
+                  <input class="st-days" type="number" inputmode="numeric" min="1" max="365" value="${s.days}"/> ${T('дн.')}
+                  <select class="st-type">${[['daily', 'щодня'], ['every', 'раз на кілька днів'], ['off', 'перерва']].map(([v, l]) => `<option value="${v}" ${s.type === v ? 'selected' : ''}>${T(l)}</option>`).join('')}</select>
+                </div>
+                ${s.type === 'every' ? `<div class="sp-inline">${T('кожні')} <input class="st-n" type="number" inputmode="numeric" min="2" max="60" value="${s.n}"/> ${T('дн.')}</div>` : ''}
+                ${s.type === 'off' ? '' : `<div class="sp-inline">${T('доза')} <input class="st-dose" inputmode="decimal" maxlength="12" value="${esc(s.dose)}" placeholder="${T('як призначив лікар')}"/> ${T(it.unit)}</div>`}
+              </div>`).join('')}
+              ${it.stages.length < 12 ? `<button class="tchip" id="seStageAdd">＋ ${T('етап')}</button>` : ''}
+              <p class="muted small">${T('Разом')}: ${total} ${PL(total, 'день', 'дні', 'днів')}</p>
+            </div>` : ''}
+            <div class="field"><label>${T('Нотатка')}</label><textarea id="seNote" maxlength="300" rows="2" placeholder="${T('напр. хто призначив і що сказав лікар')}">${esc(it.note)}</textarea></div>
+          </div>
+        </details>
       </section>
       <p class="muted side small">⚠️ ${T('Записуй лише те, що призначив лікар. Gym Log не перевіряє дози й сумісність препаратів.')}</p>
       <div class="btn-col">
-        <button class="btn primary" id="seSave">💾 ${T('Зберегти')}</button>
+        ${step < 3 ? `<button class="btn primary" id="seNext">${T('Далі')} ›</button>${step > 1 ? `<button class="btn ghost" id="seBack">‹ ${T('Назад')}</button>` : ''}`
+          : `<button class="btn primary" id="seSave">💾 ${T('Зберегти')}</button>`}
         ${old ? `<button class="btn ghost" id="seDel">🗑 ${T('Видалити')}</button>` : ''}
       </div>`;
     const $ = (s) => screenEl.querySelector(s);
@@ -6501,7 +7829,7 @@ function renderSuppEdit(id, courseId, presetId) {
       it.course = $('#seCourse').value;
       if ($('#seDose')) it.dose = $('#seDose').value.trim();
       it.unit = $('#seUnit').value;
-      it.times = [...screenEl.querySelectorAll('[data-ti]')].map((x) => x.value || '09:00');
+      it.times = [...screenEl.querySelectorAll('[data-ti]')].map((x) => x.value || '08:00');
       if ($('#seStart')) it.start = $('#seStart').value || S.todayISO();
       if ($('#seLen')) it.len = Number($('#seLen').value) || 0;
       it.note = $('#seNote').value.trim();
@@ -6517,10 +7845,17 @@ function renderSuppEdit(id, courseId, presetId) {
     // спершу забрати введене, потім змінити й перемалювати
     const on = (sel, fn) => screenEl.querySelectorAll(sel).forEach((b) => (b.onclick = () => { pull(); fn(b.dataset); draw(); }));
     $('#backSe').onclick = () => history.back();
+    $('.sp-more').ontoggle = (e) => { more = e.target.open; };
     on('[data-form]', (d) => { if (d.form === 'inj' && it.form !== 'inj' && it.unit === 'мг') it.unit = 'мл'; it.form = d.form; });
     on('[data-route]', (d) => { it.route = d.route; });
+    on('[data-col]', (d) => { it.color = Number(d.col); });
     on('[data-food]', (d) => { it.food = d.food; });
     on('[data-sched]', (d) => { it.sched.type = d.sched; });
+    on('[data-len]', (d) => { it.len = Number(d.len); });
+    on('[data-qt]', (d) => {
+      const k = it.times.indexOf(d.qt);
+      if (k >= 0) { if (it.times.length > 1) it.times.splice(k, 1); } else if (it.times.length < 6) { it.times.push(d.qt); it.times.sort(); }
+    });
     on('[data-wd]', (d) => {
       const w = Number(d.wd);
       const a = it.sched.days;
@@ -6548,18 +7883,30 @@ function renderSuppEdit(id, courseId, presetId) {
     const add = $('#seTimeAdd');
     if (add) add.onclick = () => {
       pull();
-      const last = it.times[it.times.length - 1] || '09:00';
+      const last = it.times[it.times.length - 1] || '08:00';
       const h = Math.min(23, Number(last.slice(0, 2)) + 4);
       it.times.push(`${String(h).padStart(2, '0')}:${last.slice(3)}`);
       draw();
     };
-    $('#seSave').onclick = () => {
+    const next = $('#seNext');
+    if (next) next.onclick = () => {
+      pull();
+      if (step === 1 && !it.name) { toast(T('Впиши назву')); $('#seName').focus(); return; }
+      step++;
+      draw();
+      screenEl.querySelectorAll('.sp-step')[step - 1].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    const back = $('#seBack');
+    if (back) back.onclick = () => { pull(); step--; draw(); };
+    const save = $('#seSave');
+    if (save) save.onclick = () => {
       pull();
       if (!it.name) { toast(T('Впиши назву')); $('#seName').focus(); return; }
       if (it.stages.length && it.stages.every((s) => s.type === 'off')) { toast(T('Потрібен хоча б один етап з прийомом')); return; }
-      S.saveSupp(it);
+      const saved = S.saveSupp(it);
       toast(`✅ ${T('Збережено')}`);
       history.back();
+      if (!old && saved) setTimeout(() => offerSuppReminder(saved), 400);
     };
     const del = $('#seDel');
     if (del) del.onclick = () => {
@@ -6584,6 +7931,110 @@ function kcalResultHTML(name, v, g) {
       <button class="btn primary kr-add">➕ ${T('Додати в день')}</button>
     </div>`;
 }
+// --- результат фото страви (29.10): складники з грамами, вага порції — головне поле, пам'ять виправлень ---
+// пам'ять: назва страви → грами, які людина поставила минулого разу (localStorage, до 200 страв)
+const KCAL_MEMO = 'kachalka-kcal-memo';
+const kcalMemoKey = (name) => String(name || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 60);
+const kcalMemoAll = () => { try { const m = JSON.parse(localStorage.getItem(KCAL_MEMO) || '{}'); return m && typeof m === 'object' ? m : {}; } catch (e) { return {}; } };
+function setKcalMemo(name, g) {
+  const k = kcalMemoKey(name);
+  if (!k) return;
+  const m = kcalMemoAll();
+  delete m[k];
+  if (g) m[k] = g;
+  const keys = Object.keys(m);
+  while (keys.length > 200) delete m[keys.shift()];
+  try { localStorage.setItem(KCAL_MEMO, JSON.stringify(m)); } catch (e) { /* приватний режим — без пам'яті */ }
+}
+// r — з CAL.analyzeFoodPhoto: { name, packaged, items: [{ name, grams, kcal100, p100, f100, c100, hidden }] }
+function bindPhotoResult(root, r, onAdd, onBarcode) {
+  const ai = r.items.map((x) => ({ ...x }));
+  const aiG = ai.reduce((a, x) => a + x.grams, 0);
+  let items = ai.map((x) => ({ ...x }));
+  const scaleTo = (g) => {
+    const cur = items.reduce((a, x) => a + x.grams, 0);
+    if (!cur || !(g > 0)) return;
+    const k = g / cur;
+    items.forEach((x) => { x.grams = Math.max(1, Math.round(x.grams * k)); });
+  };
+  // минулого разу людина поставила іншу вагу цієї страви — одразу її (кнопкою можна повернути оцінку ШІ)
+  const memo = Number(kcalMemoAll()[kcalMemoKey(r.name)]) || 0;
+  let memoUsed = false;
+  if (memo > 0 && aiG && Math.abs(memo - aiG) / aiG > 0.1) { scaleTo(memo); memoUsed = true; }
+  const ik = (x) => Math.round((x.kcal100 * x.grams) / 100);
+  // оновити цифри без перемальовування (щоб поле, в якому друкують, не втрачало фокус)
+  const refresh = (skip) => {
+    const t = CAL.itemsTotal(items);
+    root.querySelector('.kr-kcal').textContent = t.kcal;
+    root.querySelector('.kr-p').textContent = t.prot;
+    root.querySelector('.kr-f').textContent = t.fat;
+    root.querySelector('.kr-c').textContent = t.carb;
+    const w = root.querySelector('.kp-g');
+    if (w !== skip) w.value = t.g;
+    root.querySelectorAll('.kp-it').forEach((el) => {
+      const x = items[Number(el.dataset.k)];
+      const inp = el.querySelector('.kp-ig');
+      if (inp !== skip) inp.value = x.grams;
+      el.querySelector('.kp-ik').textContent = `${ik(x)} ${T('ккал')}`;
+    });
+  };
+  const draw = () => {
+    const t = CAL.itemsTotal(items);
+    root.innerHTML = `
+      <div class="kcal-res">
+        <div class="kcal-name">${esc(r.name)}</div>
+        <div class="kcal-big"><span class="kr-kcal">${t.kcal}</span> ${T('ккал')}</div>
+        <div class="muted">${T('Б')} <span class="kr-p">${t.prot}</span> ${T('г')} · ${T('Ж')} <span class="kr-f">${t.fat}</span> ${T('г')} · ${T('В')} <span class="kr-c">${t.carb}</span> ${T('г')}</div>
+      </div>
+      <div class="kp-w">
+        <div class="kp-w-h"><b>⚖️ ${T('Вага порції')}</b><span class="muted small">${T('зваж — буде точно')}</span></div>
+        <div class="kp-w-row">
+          <button class="tchip" data-dg="-50">−50</button>
+          <input class="kp-g" type="number" inputmode="numeric" min="1" max="5000" value="${t.g}"/><span class="muted">${T('г')}</span>
+          <button class="tchip" data-dg="50">+50</button>
+        </div>
+        ${memoUsed ? `<p class="muted small kp-memo">↺ ${T('Вага як ти виправив минулого разу')} · <button class="link-btn" id="kpAi">${T('як оцінив ШІ')}: ${aiG} ${T('г')}</button></p>` : ''}
+      </div>
+      <div class="kp-items">
+        <div class="kp-items-h">${T('Складники')} <span class="muted">· ${T('грами можна виправити')}</span></div>
+        ${items.map((x, k) => `<div class="kp-it${x.hidden ? ' hid' : ''}" data-k="${k}">
+            <span class="kp-nm">${esc(x.name)}${x.hidden ? `<small>${T('не видно на фото — олія, соус')}</small>` : ''}</span>
+            <input class="kp-ig" type="number" inputmode="numeric" min="0" max="3000" value="${x.grams}"/><span class="muted">${T('г')}</span>
+            <b class="kp-ik">${ik(x)} ${T('ккал')}</b>
+            ${items.length > 1 ? `<button class="rc-del" data-kdel="${k}">✕</button>` : '<span></span>'}
+          </div>`).join('')}
+      </div>
+      ${r.packaged ? `<div class="hint-box kp-pack"><span>🏷 ${T('Схоже на упаковку — штрихкод дасть точні цифри')}</span><button class="btn ghost sm" id="kpBc">${T('Штрихкод')}</button></div>` : ''}
+      <div class="btn-col" style="margin-top:10px">
+        <button class="btn primary kr-add">➕ ${T('Додати в день')}</button>
+      </div>`;
+    const w = root.querySelector('.kp-g');
+    w.oninput = () => { scaleTo(Math.min(5000, Number(w.value) || 0)); refresh(w); };
+    root.querySelectorAll('[data-dg]').forEach((b) => (b.onclick = () => {
+      const cur = items.reduce((a, x) => a + x.grams, 0);
+      scaleTo(Math.max(10, cur + Number(b.dataset.dg)));
+      refresh();
+    }));
+    root.querySelectorAll('.kp-it').forEach((el) => {
+      const inp = el.querySelector('.kp-ig');
+      inp.oninput = () => { items[Number(el.dataset.k)].grams = Math.max(0, Math.min(3000, Math.round(Number(inp.value) || 0))); refresh(inp); };
+    });
+    root.querySelectorAll('[data-kdel]').forEach((b) => (b.onclick = () => { items.splice(Number(b.dataset.kdel), 1); draw(); }));
+    const back = root.querySelector('#kpAi');
+    if (back) back.onclick = () => { items = ai.map((x) => ({ ...x })); memoUsed = false; draw(); };
+    const bc = root.querySelector('#kpBc');
+    if (bc) bc.onclick = onBarcode;
+    root.querySelector('.kr-add').onclick = () => {
+      const t = CAL.itemsTotal(items.filter((x) => x.grams > 0));
+      if (!t.g) { toast(T('Вкажи вагу в грамах')); return; }
+      // запам'ятати виправлену вагу; погодився з ШІ — пам'ять цієї страви стерти
+      setKcalMemo(r.name, aiG && Math.abs(t.g - aiG) / aiG > 0.1 ? t.g : 0);
+      onAdd({ name: r.name, kcal: t.kcal, prot: t.prot, fat: t.fat, carb: t.carb, g: t.g });
+    };
+  };
+  draw();
+}
+
 // per100 = null → вагу не змінити (ШІ не оцінив порцію), додаємо як є
 function bindKcalResult(root, per100, onAdd) {
   const gIn = root.querySelector('.kr-g');
@@ -6811,6 +8262,7 @@ let pendingShare = '';
 }
 startIcons(); // емодзі в розмітці → власні іконки (js/icons.js)
 router();
+setTimeout(maybeTour, 500); // коротка інструкція — лише першого разу
 if (supQueue().length) setTimeout(() => flushSupport().catch(() => {}), 5000); // звернення, що чекали на звʼязок
 
 // повернення після входу через Google: в URL є ?code=... — обміняти на сесію

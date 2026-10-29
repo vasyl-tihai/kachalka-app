@@ -95,6 +95,15 @@ export async function photoUrl(id) {
     return null;
   }
 }
+// саме фото (Blob) — для публікації рецепта в Спільноті; null, якщо нема
+export async function getPhotoBlob(id) {
+  try {
+    const rec = await req2p((await tx('readonly')).get(id));
+    return rec && rec.blob ? rec.blob : null;
+  } catch {
+    return null;
+  }
+}
 export function forgetPhoto(id) {
   const u = urlCache.get(id);
   if (u) URL.revokeObjectURL(u);
