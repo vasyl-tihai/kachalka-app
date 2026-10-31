@@ -3237,10 +3237,10 @@ function renderBody() {
         <button data-sex="f" class="${sex === 'f' ? 'on' : ''}">${T('Жінка')}</button>
       </div>
       <div class="b3d-stage" id="b3dStage"></div>
-      <div class="b3d-hint" id="b3dHint">${T('Тягни, щоб повернути · тапни на частину тіла')}</div>
+      <div class="b3d-hint" id="b3dHint">${T('Тягни, щоб повернути · тапни на частину тіла й впиши замір')}</div>
       <div class="b3d-cmp-note" id="cmpNote"></div>
       <div class="b3d-extra" id="b3dExtra">${extra
-        .map((m) => `<button class="b3d-chip" data-m="${m.id}"><span>${esc(metricName(m))}</span><b></b></button>`)
+        .map((m) => `<div class="b3d-chip" role="button" tabindex="0" data-m="${m.id}"><span>${esc(metricName(m))}</span><b></b></div>`)
         .join('')}</div>
     </section>
     <div id="weightCard"></div>
@@ -3269,6 +3269,7 @@ function renderBody() {
   };
   const paintExtra = (v) => {
     screenEl.querySelectorAll('.b3d-chip').forEach((b) => {
+      if (b.querySelector('input')) return; // у чипі зараз вписують замір
       const m = S.BODY_METRICS.find((x) => x.id === b.dataset.m);
       const lt = S.latestMeasurement(m.id);
       const d = lt && lt.count > 1 && lt.delta ? ` ${lt.delta > 0 ? '▲' : '▼'}${Math.abs(lt.delta)}` : '';
@@ -3283,7 +3284,63 @@ function renderBody() {
     paintExtra(latestVals());
     paintBodyDetails();
   };
-  screenEl.querySelectorAll('.b3d-chip').forEach((b) => b.addEventListener('click', () => selectMetric(b.dataset.m)));
+  // після збереження: мітки, фігура, «було/стало», вага, редактор унизу
+  function refreshBody() {
+    const v = latestVals();
+    if (live.body3d) { live.body3d.setLabels(labelsFor(v)); live.body3d.update(v); if (bodyCompare) live.body3d.setGhost(firstVals()); }
+    paintExtra(v);
+    paintWeight();
+    paintBodyDetails();
+  }
+  // тап по мітці на фігурі (або по частині тіла / чипу під фігурою) → вписати замір прямо там (відгук тестувальника 31.10)
+  const editInline = (id) => {
+    const metric = S.BODY_METRICS.find((m) => m.id === id);
+    const holder = BODY_PARTS.includes(id) && live.body3d
+      ? live.body3d.valueEl(id)
+      : screenEl.querySelector(`.b3d-chip[data-m="${id}"] b`);
+    if (!metric || !holder || holder.querySelector('input')) return;
+    const iso = bodyDate || S.todayISO();
+    const onDate = S.getMeasurement(iso)[id];
+    const lt = S.latestMeasurement(id);
+    const cur = onDate != null ? onDate : lt ? lt.value : '';
+    holder.innerHTML = `<input class="b3d-inp" type="number" inputmode="decimal" step="0.1" min="0" value="${cur}" placeholder="—"/><small>${T(metric.unit)}</small>`;
+    const inp = holder.querySelector('input');
+    if (live.body3d) live.body3d.relayout();
+    inp.focus();
+    inp.select();
+    let done = false;
+    const finish = (save) => {
+      if (done) return;
+      done = true;
+      const n = Math.round(Number(String(inp.value).replace(',', '.')) * 10) / 10;
+      if (save && n > 0 && n !== onDate) {
+        S.setMeasurement(iso, { [id]: n });
+        toast(T('Заміри збережено'));
+      }
+      // мітки не перебудовуємо: blur спрацьовує від тапу по сусідній мітці, і та має лишитися на місці, щоб отримати клік
+      const v = latestVals();
+      holder.textContent = v[id] != null ? `${v[id]} ${T(metric.unit)}` : '—';
+      if (live.body3d) { live.body3d.update(v); live.body3d.relayout(); if (bodyCompare) live.body3d.setGhost(firstVals()); }
+      paintExtra(v);
+      paintWeight();
+      paintBodyDetails();
+    };
+    inp.onclick = (e) => e.stopPropagation();
+    inp.oninput = () => {
+      const n = Number(String(inp.value).replace(',', '.'));
+      if (live.body3d && n > 0 && BODY_PARTS.includes(id)) live.body3d.update({ [id]: n });
+    };
+    inp.onkeydown = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+      else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    };
+    inp.onblur = () => finish(true);
+  };
+  const pickMetric = (id) => { selectMetric(id); editInline(id); };
+  screenEl.querySelectorAll('.b3d-chip').forEach((b) => b.addEventListener('click', (e) => {
+    if (e.target.closest('input')) return;
+    pickMetric(b.dataset.m);
+  }));
 
   screenEl.querySelectorAll('#sexSeg button').forEach((b) =>
     b.addEventListener('click', () => {
@@ -3363,13 +3420,7 @@ function renderBody() {
     valInp.oninput = preview;
     const dateInp = box.querySelector('#bDate');
     dateInp.onchange = () => { bodyDate = dateInp.value || S.todayISO(); paintBodyDetails(); };
-    const refresh = () => {
-      const v = latestVals();
-      if (live.body3d) { live.body3d.setLabels(labelsFor(v)); live.body3d.update(v); if (bodyCompare) live.body3d.setGhost(firstVals()); }
-      paintExtra(v);
-      paintWeight();
-      paintBodyDetails();
-    };
+    const refresh = refreshBody;
     box.querySelector('#saveBody').onclick = () => {
       S.setMeasurement(dateInp.value || dateISO, { [metric.id]: valInp.value });
       toast(T('Заміри збережено'));
@@ -3472,7 +3523,7 @@ function renderBody() {
     selected: BODY_PARTS.includes(bodyMetric) ? bodyMetric : null,
     labels: labelsFor(vals),
     angle: bodyAngle,
-    onPick: selectMetric,
+    onPick: pickMetric,
   })
     .then((b3d) => {
       // користувач міг піти з екрана, поки вантажився Three.js
@@ -3488,9 +3539,9 @@ function renderBody() {
       const ex = screenEl.querySelector('#b3dExtra');
       ex.insertAdjacentHTML('afterbegin', BODY_PARTS.map((id) => {
         const m = S.BODY_METRICS.find((x) => x.id === id);
-        return `<button class="b3d-chip" data-m="${id}"><span>${esc(metricName(m, true))}</span><b></b></button>`;
+        return `<div class="b3d-chip" role="button" tabindex="0" data-m="${id}"><span>${esc(metricName(m, true))}</span><b></b></div>`;
       }).join(''));
-      ex.querySelectorAll('.b3d-chip').forEach((b) => { b.onclick = () => selectMetric(b.dataset.m); });
+      ex.querySelectorAll('.b3d-chip').forEach((b) => { b.onclick = (e) => { if (!e.target.closest('input')) pickMetric(b.dataset.m); }; });
       paintExtra(latestVals());
     });
 }

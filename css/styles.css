@@ -1114,6 +1114,9 @@ a.btn { display: block; text-align: center; text-decoration: none; box-sizing: b
 .b3d-ld { font-size: .66rem; font-weight: 800; margin-left: 4px; }
 .b3d-ld.up { color: var(--gold); }
 .b3d-ld.down { color: var(--green); }
+/* замір прямо у віконці на фігурі / в чипі під нею (відгук тестувальника 31.10) */
+.b3d-inp { width: 4.4em; font: inherit; font-size: .9rem; font-weight: 800; font-variant-numeric: tabular-nums; text-align: center; padding: 2px 4px; margin: 1px 0; border: 1px solid var(--blue); border-radius: 7px; background: var(--bg); color: var(--txt); }
+.b3d-lv small, .b3d-chip b small { font-size: .66rem; font-weight: 700; color: var(--muted); margin-left: 3px; }
 .b3d-cmp { position: absolute; top: 10px; left: 10px; z-index: 3; border: 1px solid var(--line); background: var(--bg-card2); color: var(--muted); font: inherit; font-size: .78rem; font-weight: 700; padding: 8px 11px; border-radius: 12px; cursor: pointer; }
 .b3d-cmp.on { border-color: var(--blue); color: var(--blue-soft); box-shadow: 0 0 0 1px var(--blue); }
 .b3d-cmp-note { text-align: center; color: var(--blue-soft); font-size: .75rem; margin: -6px 0 8px; min-height: 0; }

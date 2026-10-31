@@ -481,8 +481,10 @@ export async function mountBody3D(container, opts) {
     lines.innerHTML = '';
     for (const id of BODY_PARTS) {
       const info = l[id] || { title: id, value: '—' };
-      const el = document.createElement('button');
-      el.type = 'button';
+      // div, а не button: у мітку вписують замір (input усередині button не фокусується в усіх браузерах)
+      const el = document.createElement('div');
+      el.setAttribute('role', 'button');
+      el.tabIndex = 0;
       el.className = 'b3d-label ' + (LEFT.includes(id) ? 'left' : 'right') + (id === selected ? ' on' : '');
       el.innerHTML = '<span class="b3d-lt"></span><span class="b3d-lv"></span>';
       el.querySelector('.b3d-lt').textContent = info.title;
@@ -493,7 +495,11 @@ export async function mountBody3D(container, opts) {
         d.textContent = (info.delta > 0 ? '▲' : '▼') + Math.abs(info.delta);
         el.querySelector('.b3d-lv').appendChild(d);
       }
-      el.addEventListener('click', (e) => { e.stopPropagation(); opts.onPick && opts.onPick(id); });
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (e.target.closest('input')) return; // клік у поле вводу — не вибір
+        opts.onPick && opts.onPick(id);
+      });
       overlay.appendChild(el);
       const ln = document.createElementNS(svgNS, 'path');
       ln.setAttribute('class', 'b3d-ln' + (id === selected ? ' on' : ''));
@@ -678,6 +684,8 @@ export async function mountBody3D(container, opts) {
     },
     select,
     setLabels(l) { makeLabels(l); select(selected); },
+    valueEl: (id) => (labelEls[id] ? labelEls[id].el.querySelector('.b3d-lv') : null),
+    relayout: render,
     setGhost(v) { ghostVals = v ? { ...v } : null; buildGhost(); render(); },
     angle: () => angle,
     destroy() {
