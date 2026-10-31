@@ -3,7 +3,7 @@
 //   • код застосунку (навігація, *.js, *.css) — network-first: свіжа версія підтягується
 //     при кожному онлайн-запуску, а офлайн працює з кешу;
 //   • іконки/шрифти/маніфест — cache-first (рідко змінюються), із докешуванням у рантаймі.
-const CACHE = 'kachalka-v105';
+const CACHE = 'kachalka-v106';
 // фото рецептів: окремий кеш, який не стирається при кожному оновленні версії
 const IMG_CACHE = 'kachalka-recipe-img-v1';
 const ASSETS = [
@@ -13,6 +13,7 @@ const ASSETS = [
   './js/app.js',
   './js/version.js',
   './js/calories.js',
+  './js/kcal-jobs.js',
   './models/pose_landmarker_lite.task',
   './js/store.js',
   './js/timer.js',
@@ -120,6 +121,23 @@ async function cacheFirst(req, name = CACHE) {
     return hit || Response.error();
   }
 }
+
+// тап по сповіщенню «Калорії готові» (js/kcal-jobs.js): сфокусувати відкрите вікно застосунку й повести на data.hash,
+// а якщо застосунок закрито — відкрити його одразу на цьому екрані
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const hash = (e.notification.data && e.notification.data.hash) || '#/calories';
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      const c = list.find((w) => 'focus' in w);
+      if (c) {
+        c.postMessage({ type: 'goto', hash });
+        return c.focus();
+      }
+      return self.clients.openWindow(new URL('./' + hash, self.registration.scope).href);
+    })
+  );
+});
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;

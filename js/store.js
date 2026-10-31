@@ -380,6 +380,7 @@ function normalizeState(raw) {
         fat: Number(e.fat) || 0,
         carb: Number(e.carb) || 0,
         ...(Number(e.g) > 0 ? { g: Math.round(Number(e.g)) } : {}),
+        ...calExtra(e),
       }));
     if (clean.length) cal[iso] = clean;
   }
@@ -868,18 +869,63 @@ export function setActDay(iso, id, e) {
   saveNow();
 }
 
+// Додаткові поля запису калорій (31.10): t — час «HH:MM», photo — є мініатюра в IndexedDB (js/kcal-jobs.js),
+// items — складники з грамами (щоб потім виправити вагу). function-оголошення: normalizeState викликається
+// під час імпорту модуля, const нижче по файлу тут був би в TDZ; усе в try/catch — зіпсований запис не валить load().
+function calItems(arr) {
+  const num = (v, hi) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(0, n)) : 0; };
+  return (Array.isArray(arr) ? arr : []).slice(0, 12).map((x) => ({
+    name: String((x && x.name) || '').slice(0, 60),
+    grams: Math.round(num(x && x.grams, 3000)),
+    kcal100: num(x && x.kcal100, 900),
+    p100: num(x && x.p100, 100),
+    f100: num(x && x.f100, 100),
+    c100: num(x && x.c100, 100),
+    hidden: !!(x && x.hidden),
+  })).filter((x) => x.name && x.grams > 0);
+}
+function calExtra(e) {
+  try {
+    const out = {};
+    if (typeof e.t === 'string' && /^\d{2}:\d{2}$/.test(e.t)) out.t = e.t;
+    if (e.photo === true) out.photo = true;
+    const items = calItems(e.items);
+    if (items.length) out.items = items;
+    return out;
+  } catch (err) {
+    return {};
+  }
+}
 export function addCalorieEntry(iso, entry) {
   const list = state.calories[iso] || (state.calories[iso] = []);
+  const id = safeId(entry.id) || uid();
   list.push({
-    id: uid(),
+    id,
     name: String(entry.name || '').slice(0, 120),
     kcal: Math.max(0, Math.round(Number(entry.kcal) || 0)),
     prot: Math.max(0, Math.round(Number(entry.prot) || 0)),
     fat: Math.max(0, Math.round(Number(entry.fat) || 0)),
     carb: Math.max(0, Math.round(Number(entry.carb) || 0)),
     ...(Number(entry.g) > 0 ? { g: Math.round(Number(entry.g)) } : {}),
+    ...calExtra(entry),
   });
   save();
+  return id;
+}
+// Змінити запис (редактор у списку калорій): name / kcal / prot / fat / carb / g / items. t і photo лишаються.
+export function updateCalorieEntry(iso, id, patch) {
+  const e = (state.calories[iso] || []).find((x) => x.id === id);
+  if (!e) return false;
+  const n = (v) => Math.max(0, Math.round(Number(v) || 0));
+  if (patch.name != null) e.name = String(patch.name).slice(0, 120);
+  for (const k of ['kcal', 'prot', 'fat', 'carb']) if (patch[k] != null) e[k] = n(patch[k]);
+  if (patch.g != null) { if (Number(patch.g) > 0) e.g = Math.round(Number(patch.g)); else delete e.g; }
+  if (patch.items !== undefined) {
+    const items = calItems(patch.items);
+    if (items.length) e.items = items; else delete e.items;
+  }
+  save();
+  return true;
 }
 export function deleteCalorieEntry(iso, id) {
   const list = state.calories[iso];

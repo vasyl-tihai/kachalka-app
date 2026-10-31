@@ -18,6 +18,7 @@ import * as BE from './backend.js';
 import { APP_VERSION } from './version.js';
 import { startIcons } from './icons.js';
 import * as CAL from './calories.js';
+import * as KJ from './kcal-jobs.js';
 import * as BC from './barcode.js';
 import * as GD from './guides.js';
 import * as RCP from './receipt.js';
@@ -6654,34 +6655,8 @@ async function renderRecipeEdit(idEnc) {
 }
 
 // =====================================================================
-//  ЕКРАН: КАЛОРІЇ ПО ФОТО
+//  ЕКРАН: КАЛОРІЇ
 // =====================================================================
-// Картка стану на вкладці калорій: скільки фото лишилось і що з підпискою.
-function kcalStatusCard() {
-  const q = BILL.photoQuota();
-  const own = !!(S.getSettings().geminiKey || '').trim();
-  if (own) {
-    return `<section class="card kcal-status">
-      <div class="ks-main">🔑 ${T('Працює на твоєму ключі')}</div>
-      <div class="ks-sub">${T('Ліміти застосунку не діють — запити оплачуєш ти сам')}</div>
-    </section>`;
-  }
-  if (BILL.status() === 'active') {
-    return `<section class="card kcal-status pro">
-      <div class="ks-main">${proIcon(18)} ${T('Підписка активна')}</div>
-      <div class="ks-sub">${T('Фото без обмежень')}</div>
-    </section>`;
-  }
-  const left = q.left === Infinity ? '∞' : q.left;
-  const out = q.left <= 0;
-  return `<section class="card kcal-status ${out ? 'out' : ''}">
-    <div class="ks-main">📷 ${T('Безкоштовно сьогодні')}: <b>${left}</b> ${T('з')} ${BILL.FREE_PHOTOS}</div>
-    <div class="ks-sub">${out
-      ? T('Ліміт на сьогодні вичерпано — далі потрібна підписка')
-      : T('Наступні фото — завтра або за підпискою')}</div>
-  </section>`;
-}
-
 // «1 день / 2 дні / 5 днів» — щоб підпис читався як речення
 function dayWord(n) {
   const d = n % 10, dd = n % 100;
@@ -6690,126 +6665,335 @@ function dayWord(n) {
   return `${n} ${T('днів')}`;
 }
 
-async function renderCalories() {
-  const iso = selectedISO;
-  const st = S.getSettings();
-  const key = (st.geminiKey || '').trim();
-  const list = S.caloriesForDay(iso);
-  const tot = S.calorieDayTotal(iso);
-  // сервер власника (ключ-секрет на Supabase) — тоді користувачу ключ не потрібен
-  const proxyOk = key ? false : await CAL.proxyAvailable();
-  if (proxyOk) await BILL.syncServerPremium(); // підписка з сервера (тестова / з іншого пристрою) → ліміт фото як у підписника
-  if (location.hash !== '#/calories') return; // за час перевірки пішли з екрана
-  const quota = BILL.photoQuota();
-  // ключ користувача — обхід наших лімітів: він платить за запити сам
-  const ownKey = !!key;
+// ---------------------------------------------------------------------
+//  Екран «Калорії» (31.10, переробка за відгуком тестувальників: простіше, не лякає, фото не губиться).
+//  Розпізнавання фото живе у фоні — js/kcal-jobs.js; результат лягає записом у журнал дня й зʼявляється в списку.
+// ---------------------------------------------------------------------
+let kcalHintText = '';   // опис до фото — живе між перемалюваннями екрана, після відправки фото стирається
+let kcalHintOpen = false;
+let kcalOpenRc = false;  // відкрити вікно «Чек → меню» одразу при вході (повернення з #/mealplan)
+let kcalOpenId = '';     // відкрити редактор цього запису (тап по банеру «Калорії готові»)
 
-  const rows = list
-    .map(
-      (e) => `<div class="kcal-row"><span class="kcal-nm">${esc(e.name)}${e.g ? ` <span class="muted">· ${e.g} ${T('г')}</span>` : ''}</span>
-        <b>${e.kcal} ${T('ккал')}</b>
-        <button class="icon-btn kcal-del" data-id="${e.id}">✕</button></div>`
-    )
-    .join('');
+const nowHHMM = () => {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+function addDaysISO(iso, n) {
+  const d = S.isoToDate(iso);
+  d.setDate(d.getDate() + n);
+  return S.dateToISO(d);
+}
+// пн–нд тижня, у якому лежить iso
+function kcalWeekISOs(iso) {
+  const d = S.isoToDate(iso);
+  const mon = addDaysISO(iso, -((d.getDay() + 6) % 7));
+  return [0, 1, 2, 3, 4, 5, 6].map((i) => addDaysISO(mon, i));
+}
+function kcalDayLabel(iso) {
+  if (iso === S.todayISO()) return T('Сьогодні');
+  const d = S.isoToDate(iso);
+  return `${d.getDate()} ${dateNames().monthsShort[d.getMonth()]}`;
+}
+
+// один приглушений рядок замість великої картки стану: ключ / підписка / безкоштовні фото
+function kcalQuotaText() {
+  if ((S.getSettings().geminiKey || '').trim()) return `🔑 ${T('Працює на твоєму ключі')}`;
+  if (BILL.status() === 'active') return `${T('Підписка активна')} · ${T('Фото без обмежень')}`;
+  const q = BILL.photoQuota();
+  if (q.left <= 0) return T('Ліміт на сьогодні вичерпано — далі потрібна підписка');
+  return `${T('Безкоштовно сьогодні')}: ${q.left === Infinity ? '∞' : q.left} ${T('з')} ${BILL.FREE_PHOTOS}`;
+}
+
+// тиждень (ккал по днях) + підсумок вибраного дня
+function kcalDayHTML(iso) {
+  const names = dateNames();
+  const today = S.todayISO();
+  const cells = kcalWeekISOs(iso).map((d) => {
+    const dt = S.isoToDate(d);
+    const k = S.calorieDayTotal(d).kcal;
+    return `<button class="kc-wd${d === iso ? ' on' : ''}${d === today ? ' today' : ''}" data-d="${d}"${d > today ? ' disabled' : ''}>
+      <span class="kc-wd-n">${names.dows[dt.getDay()]}</span><b>${dt.getDate()}</b><span class="kc-wd-k">${k || '·'}</span></button>`;
+  }).join('');
+  const tot = S.calorieDayTotal(iso);
+  return `<div class="kc-week">${cells}</div>
+    <section class="card kc-sum">
+      <div class="kc-sum-k"><b>${tot.kcal}</b> <span>${T('ккал')}</span></div>
+      <div class="kc-sum-m"><span>${T('Б')} <b>${tot.prot}</b></span><span>${T('Ж')} <b>${tot.fat}</b></span><span>${T('В')} <b>${tot.carb}</b></span><small>${T('г')}</small></div>
+    </section>`;
+}
+
+// історія дня: спершу роботи в обробці й з помилкою, далі записи (нові зверху)
+function kcalListHTML(iso) {
+  const jobs = KJ.jobsFor(iso);
+  const ents = S.caloriesForDay(iso).slice().reverse();
+  if (!jobs.length && !ents.length) {
+    return `<p class="kc-empty">${T('Поки порожньо — сфотографуй першу страву, і вона зʼявиться тут')}</p>`;
+  }
+  const th = (id, ico) => `<span class="kc-th" data-th="${esc(id)}">${ico}</span>`;
+  const jobRows = jobs.map((j) => (j.status === 'pending'
+    ? `<div class="kc-row kc-pend">${th(j.id, '📷')}
+        <span class="kc-mid"><span class="kc-nm">⏳ ${T('Обробляється…')}</span>
+        <span class="kc-sub">${T('Можна піти на інший екран — повідомимо, коли буде готово')}</span></span></div>`
+    : `<div class="kc-row kc-err">${th(j.id, '📷')}
+        <span class="kc-mid"><span class="kc-nm">⚠️ ${esc(T(j.err))}</span></span>
+        <button class="icon-btn kc-x" data-dismiss="${esc(j.id)}" aria-label="✕">✕</button></div>`));
+  const entRows = ents.map((e) => {
+    const sub = [e.t, e.g ? `${e.g} ${T('г')}` : ''].filter(Boolean).map(esc).join(' · ');
+    return `<button class="kc-row kc-ent" data-eid="${esc(e.id)}">
+      ${e.photo ? th(e.id, '🍽') : '<span class="kc-th">🍽</span>'}
+      <span class="kc-mid"><span class="kc-nm">${esc(e.name || T('Страва'))}</span>
+        ${sub ? `<span class="kc-sub">${sub}</span>` : ''}
+        <span class="kc-mac">${T('Б')} ${e.prot} · ${T('Ж')} ${e.fat} · ${T('В')} ${e.carb}</span></span>
+      <span class="kc-kc"><b>${e.kcal}</b><small>${T('ккал')}</small></span></button>`;
+  });
+  return jobRows.concat(entRows).join('');
+}
+// мініатюри з IndexedDB підставляємо після малювання
+function kcalFillThumbs(root) {
+  root.querySelectorAll('[data-th]').forEach((el) => {
+    KJ.thumbURL(el.dataset.th).then((u) => {
+      if (u && el.isConnected) { el.innerHTML = `<img src="${u}" alt=""/>`; el.classList.add('has'); }
+    });
+  });
+}
+// оновити тиждень, підсумок і список, не чіпаючи решти екрана (поле опису, відкриті вікна)
+function refreshKcal() {
+  if (location.hash !== '#/calories') return;
+  const day = screenEl.querySelector('#kcalDay');
+  const list = screenEl.querySelector('#kcalList');
+  if (!day || !list) return;
+  day.innerHTML = kcalDayHTML(selectedISO);
+  list.innerHTML = kcalListHTML(selectedISO);
+  kcalFillThumbs(list);
+  const q = screenEl.querySelector('#kcalQuota');
+  if (q) q.textContent = kcalQuotaText();
+}
+window.addEventListener('kcal-jobs', refreshKcal);
+window.addEventListener('kcal-done', (e) => showKcalBanner(e.detail));
+// памʼять виправлень ваги застосовуємо й до фонового результату (раніше — лише при показі)
+KJ.setItemsAdjuster((r) => memoScaledItems(r.name, r.items).items);
+
+// банер «Калорії готові» на будь-якому екрані; тап — до запису
+let kcBannerTimer;
+function showKcalBanner(d) {
+  let el = document.getElementById('kcBanner');
+  if (!el) { el = document.createElement('button'); el.id = 'kcBanner'; el.type = 'button'; document.body.appendChild(el); }
+  el.className = 'kc-banner' + (d.ok ? '' : ' err');
+  el.innerHTML = d.ok
+    ? `✅ <span><b>${T('Калорії готові')}</b><br/>${esc(d.name)} — ${d.kcal} ${T('ккал')}</span>`
+    : `⚠️ <span><b>${T('Не вдалося розпізнати страву')}</b><br/>${esc(T(d.err))}</span>`;
+  el.onclick = () => {
+    el.classList.remove('show');
+    selectedISO = d.iso;
+    kcalOpenId = d.ok ? d.id : '';
+    closeModal();
+    if (location.hash === '#/calories') renderCalories(); else go('#/calories');
+  };
+  requestAnimationFrame(() => el.classList.add('show'));
+  clearTimeout(kcBannerTimer);
+  kcBannerTimer = setTimeout(() => el.classList.remove('show'), 8000);
+}
+
+async function sendKcalPhoto(file) {
+  if (!file) return;
+  const res = await KJ.startJob(file, { iso: selectedISO, hint: kcalHintText });
+  if (!res.ok) {
+    toast(res.reason === 'limit'
+      ? `📷 ${T('Ліміт на сьогодні вичерпано — далі потрібна підписка')}`
+      : `⚠️ ${T('Розпізнавання тимчасово недоступне — спробуй трохи пізніше')}`);
+    return;
+  }
+  kcalHintText = '';
+  const h = screenEl.querySelector('#kcalHint');
+  if (h) h.value = '';
+  toast(`⏳ ${T('Фото надіслано — калорії зʼявляться в списку')}`);
+}
+
+function renderCalories() {
+  const iso = selectedISO;
+  const today = S.todayISO();
+  const key = (S.getSettings().geminiKey || '').trim();
 
   screenEl.innerHTML = `
-    <header class="appbar">
+    <header class="appbar kc-bar">
       <button class="icon-btn" id="backKcal">‹</button>
-      <div class="appbar-titles"><div class="appbar-kicker">🍎 ${T('Калорії')}</div>
-        <div class="appbar-title">${S.prettyDate(iso)}</div></div>
+      <div class="appbar-titles"><div class="appbar-title">${T('Калорії')}</div></div>
+      <div class="kc-dnav">
+        <button class="icon-btn" id="kcPrev" aria-label="‹">‹</button>
+        <span class="kc-dlbl">${kcalDayLabel(iso)}</span>
+        <button class="icon-btn" id="kcNext" aria-label="›"${iso >= today ? ' disabled' : ''}>›</button>
+      </div>
     </header>
 
-    ${kcalStatusCard()}
+    <div id="kcalDay">${kcalDayHTML(iso)}</div>
 
-    <section class="card">
-          <div class="card-label">📷 ${T('Нова страва')}</div>
-          <p class="muted hint">${T('Сфотографуй страву — ШІ оцінить калорійність і БЖВ')}</p>
-          <input id="kcalHint" class="kp-hint" maxlength="200" autocomplete="off" placeholder="${T('Що на фото? Необовʼязково, але точніше: «гречка з куркою, ложка олії»')}"/>
-          <div class="btn-row">
-            <button class="btn ghost" id="snapBtn">📷 ${T('Сфотографувати страву')}</button>
-            <button class="btn ghost" id="galBtn">🖼 ${T('З галереї')}</button>
-          </div>
-          <input type="file" id="foodCam" accept="image/*" capture="environment" hidden/>
-          <input type="file" id="foodGal" accept="image/*" hidden/>
-          <div id="analyzeBox"></div>
-        </section>
-
-    <section class="card">
-      <div class="cseg kseg">
-        <button class="${kcalPane === 'bc' ? 'on' : ''}" data-kp="bc">🏷 ${T('Штрихкод')}</button>
-        <button class="${kcalPane === 'rc' ? 'on' : ''}" data-kp="rc">🧾 ${T('Чек → меню')}</button>
+    <section class="kc-act">
+      <button class="btn primary kc-snap" id="snapBtn">📷 ${T('Сфотографувати страву')}</button>
+      <div class="kc-tools">
+        <button class="kc-tool" id="galBtn"><span class="kc-tool-i">🖼</span>${T('Галерея')}</button>
+        <button class="kc-tool" id="bcBtn"><span class="kc-tool-i">🏷</span>${T('Штрихкод')}</button>
+        <button class="kc-tool" id="rcBtn"><span class="kc-tool-i">🧾</span>${T('Чек → меню')}</button>
+        <button class="kc-tool" id="manBtn"><span class="kc-tool-i">✏️</span>${T('Вручну')}</button>
       </div>
-      <div id="paneBc" ${kcalPane === 'bc' ? '' : 'hidden'}>
-      <p class="muted hint">${T('Відскануй штрихкод на упаковці — калорії й БЖВ підтягнуться з бази продуктів')}</p>
-      <div class="btn-row bc-btns">
-        <button class="btn ghost" id="bcPhoto">📷 ${T('Сфотографувати штрихкод')}</button>
-        ${BC.scanSupported() ? `<button class="btn ghost" id="bcScan">▥ ${T('Сканувати камерою')}</button>` : ''}
-      </div>
-      <input type="file" id="bcFile" accept="image/*" capture="environment" hidden/>
-      <div class="bc-manual">
-        <input id="bcCode" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="${T('Цифри штрихкоду')}"/>
-        <button class="btn ghost" id="bcFind">${T('Знайти')}</button>
-      </div>
-      <div id="bcBox"></div>
-      </div>
-      ${receiptPaneHTML()}
+      <button class="link-btn kc-hint-tgl" id="kcalHintTgl"${kcalHintOpen ? ' hidden' : ''}>＋ ${T('Опис до фото')}</button>
+      <input id="kcalHint" class="kp-hint" maxlength="200" autocomplete="off" value="${esc(kcalHintText)}"${kcalHintOpen ? '' : ' hidden'}
+        placeholder="${T('Що на фото? Необовʼязково, але точніше: «гречка з куркою, ложка олії»')}"/>
+      <p class="muted kc-quota" id="kcalQuota"></p>
+      <input type="file" id="foodCam" accept="image/*" capture="environment" hidden/>
+      <input type="file" id="foodGal" accept="image/*" hidden/>
     </section>
 
-    <section class="card">
+    <section class="card kc-hist">
       <div class="card-label">${T('Зʼїдено за день')}</div>
-      ${list.length ? rows : `<p class="muted">${T('Записів ще немає')}</p>`}
-      <div class="card-div"></div>
-      <div class="kcal-total"><b>${T('Разом')}: ${tot.kcal} ${T('ккал')}</b>
-        <span class="muted">${T('Б')} ${tot.prot} · ${T('Ж')} ${tot.fat} · ${T('В')} ${tot.carb} г</span></div>
+      <div id="kcalList">${kcalListHTML(iso)}</div>
     </section>`;
 
-  screenEl.querySelector('#backKcal').onclick = () => history.back();
+  const $ = (s) => screenEl.querySelector(s);
+  $('#backKcal').onclick = () => history.back();
+  const goDay = (d) => { if (d > today) return; selectedISO = d; renderCalories(); };
+  $('#kcPrev').onclick = () => goDay(addDaysISO(iso, -1));
+  $('#kcNext').onclick = () => goDay(addDaysISO(iso, 1));
+  $('#kcalDay').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-d]');
+    if (b && !b.disabled) goDay(b.dataset.d);
+  });
 
-  screenEl.querySelectorAll('.kcal-del').forEach((b) =>
-    b.addEventListener('click', () => { S.deleteCalorieEntry(iso, b.dataset.id); renderCalories(); })
-  );
-
-  const box = () => screenEl.querySelector('#analyzeBox');
-  const analyze = async (file) => {
-    if (!file || !box()) return;
-    if (!ownKey && !proxyOk) {
-      box().innerHTML = `<p class="muted center">⚠️ ${T('Розпізнавання тимчасово недоступне — спробуй трохи пізніше')}</p>`;
-      return;
-    }
-    if (!ownKey && !BILL.canAnalyzePhoto()) {
-      toast(`📷 ${T('Ліміт на сьогодні вичерпано — далі потрібна підписка')}`);
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    box().innerHTML = `<img class="food-prev" src="${url}" alt=""/><p class="muted center">🔎 ${T('Аналізую…')}</p>`;
-    try {
-      const hintEl = screenEl.querySelector('#kcalHint');
-      const r = await CAL.analyzeFoodPhoto(file, key, S.getSettings().lang, hintEl ? hintEl.value : '');
-      if (!ownKey) BILL.usePhoto(); // запит пішов через наш сервер — рахуємо
-      if (!box()) return; // користувач уже пішов з екрана
-      if (!r.isFood) {
-        box().innerHTML = `<img class="food-prev" src="${url}" alt=""/>
-          <p class="muted center">${T('Не схоже на їжу — спробуй інше фото')}</p>`;
-        return;
-      }
-      // складники з грамами — людина виправляє вагу порції або окремий складник (29.10)
-      box().innerHTML = `<img class="food-prev" src="${url}" alt=""/><div class="kp-res"></div>`;
-      bindPhotoResult(box().querySelector('.kp-res'), r, (v) => {
-        S.addCalorieEntry(iso, v);
-        toast(T('Збережено'));
-        renderCalories();
-      }, () => {
-        const b = screenEl.querySelector('[data-kp="bc"]');
-        if (b) b.click();
-        const pane = screenEl.querySelector('#paneBc');
-        if (pane) pane.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      });
-    } catch (e) {
-      if (box()) box().innerHTML = `<p class="muted center">⚠️ ${esc(T(CAL.errorMessage(e)))}</p>`;
-    }
+  // опис до фото
+  const hintEl = $('#kcalHint');
+  hintEl.oninput = () => { kcalHintText = hintEl.value; };
+  $('#kcalHintTgl').onclick = () => {
+    kcalHintOpen = true;
+    $('#kcalHintTgl').hidden = true;
+    hintEl.hidden = false;
+    hintEl.focus();
   };
-  // ---------- штрихкод ----------
-  const bcBox = () => screenEl.querySelector('#bcBox');
+
+  // фото → фонова робота (результат зʼявиться в списку, навіть якщо піти з екрана)
+  const cam = $('#foodCam');
+  const gal = $('#foodGal');
+  $('#snapBtn').onclick = () => cam.click();
+  $('#galBtn').onclick = () => gal.click();
+  [cam, gal].forEach((inp) => (inp.onchange = () => { const f = inp.files[0]; inp.value = ''; sendKcalPhoto(f); }));
+
+  $('#bcBtn').onclick = () => openBarcodeModal(iso);
+  $('#rcBtn').onclick = openReceiptModal;
+  $('#manBtn').onclick = () => openManualModal(iso);
+
+  const list = $('#kcalList');
+  list.addEventListener('click', (e) => {
+    const x = e.target.closest('[data-dismiss]');
+    if (x) { KJ.dismissJob(x.dataset.dismiss); return; }
+    const r = e.target.closest('[data-eid]');
+    if (!r) return;
+    const ent = S.caloriesForDay(iso).find((v) => v.id === r.dataset.eid);
+    if (ent) openKcalEditor(iso, ent);
+  });
+  kcalFillThumbs(list);
+
+  // рядок про ліміт: одразу з того, що відомо; сервер власника може додати підписку — тоді уточнюємо
+  $('#kcalQuota').textContent = kcalQuotaText();
+  if (!key) {
+    CAL.proxyAvailable().then((ok) => (ok ? BILL.syncServerPremium() : null)).then(() => {
+      const q = screenEl.querySelector('#kcalQuota');
+      if (q) q.textContent = kcalQuotaText();
+    }).catch(() => {});
+  }
+
+  if (kcalOpenRc) { kcalOpenRc = false; openReceiptModal(); }
+  if (kcalOpenId) {
+    const id = kcalOpenId;
+    kcalOpenId = '';
+    const ent = S.caloriesForDay(iso).find((v) => v.id === id);
+    if (ent) openKcalEditor(iso, ent);
+  }
+}
+
+// поля «назва, ккал, вага, Б/Ж/В» — для ручного запису й простого редактора
+function kcalFieldsHTML(e) {
+  const v = (x) => (x ? x : '');
+  const num = (id, label, val, max) => `<div class="field"><label>${label}</label>
+    <input id="${id}" type="number" inputmode="numeric" min="0" max="${max}" value="${v(val)}"/></div>`;
+  return `<div class="field"><label>${T('Назва')}</label>
+      <input id="kfName" maxlength="120" autocomplete="off" value="${esc(e.name || '')}"/></div>
+    <div class="field-row">${num('kfKcal', T('ккал'), e.kcal, 9999)}${num('kfG', T('Вага, г'), e.g, 5000)}</div>
+    <div class="field-row">${num('kfP', `${T('Б')}, ${T('г')}`, e.prot, 999)}${num('kfF', `${T('Ж')}, ${T('г')}`, e.fat, 999)}${num('kfC', `${T('В')}, ${T('г')}`, e.carb, 999)}</div>`;
+}
+function readKcalFields(root) {
+  const q = (id) => root.querySelector(id).value;
+  const n = (id) => Math.max(0, Math.round(Number(q(id)) || 0));
+  return { name: q('#kfName').trim(), kcal: n('#kfKcal'), g: n('#kfG'), prot: n('#kfP'), fat: n('#kfF'), carb: n('#kfC') };
+}
+const modalRoot = () => document.querySelector('.modal-overlay .modal');
+
+// ✏️ Вручну
+function openManualModal(iso) {
+  openModal(T('Додати вручну'), kcalFieldsHTML({}), [
+    { label: T('Скасувати'), onClick: closeModal },
+    {
+      label: T('Додати в день'), class: 'primary',
+      onClick: (root) => {
+        const v = readKcalFields(root);
+        if (!(v.kcal > 0)) { toast(T('Вкажи калорії')); return; }
+        S.addCalorieEntry(iso, { ...v, name: v.name || T('Страва'), t: nowHHMM() });
+        closeModal();
+        toast(T('Збережено'));
+        refreshKcal();
+      },
+    },
+  ]);
+}
+
+// тап по запису: редактор. Зі складниками (з фото) — той самий екран, що й після розпізнавання; інакше прості поля
+function openKcalEditor(iso, e) {
+  const photo = e.photo ? `<div class="kc-ed-ph" data-th="${esc(e.id)}"></div>` : '';
+  const del = {
+    label: T('Видалити'), class: 'danger',
+    onClick: () => { S.deleteCalorieEntry(iso, e.id); KJ.delThumb(e.id); closeModal(); refreshKcal(); },
+  };
+  if (Array.isArray(e.items) && e.items.length) {
+    openModal(e.name || T('Страва'), `${photo}
+      <div class="field"><label>${T('Назва')}</label><input id="kfName" maxlength="120" autocomplete="off" value="${esc(e.name || '')}"/></div>
+      <div class="kp-res"></div>`, [del, { label: T('Закрити'), onClick: closeModal }]);
+    const root = modalRoot();
+    kcalFillThumbs(root);
+    bindPhotoResult(root.querySelector('.kp-res'), { name: e.name, items: e.items, packaged: false }, (v) => {
+      S.updateCalorieEntry(iso, e.id, { ...v, name: root.querySelector('#kfName').value.trim() || e.name });
+      closeModal();
+      toast(T('Збережено'));
+      refreshKcal();
+    }, null, { editing: true, addLabel: T('Зберегти') });
+    return;
+  }
+  openModal(e.name || T('Страва'), photo + kcalFieldsHTML(e), [del, {
+    label: T('Зберегти'), class: 'primary',
+    onClick: (root) => {
+      const v = readKcalFields(root);
+      S.updateCalorieEntry(iso, e.id, { ...v, name: v.name || e.name });
+      closeModal();
+      toast(T('Збережено'));
+      refreshKcal();
+    },
+  }]);
+  kcalFillThumbs(modalRoot());
+}
+
+// 🏷 Штрихкод — у вікні (раніше — постійна картка з перемикачем)
+function openBarcodeModal(iso) {
+  openModal(T('Штрихкод'), `
+    <p class="muted hint kc-p0">${T('Відскануй штрихкод на упаковці — калорії й БЖВ підтягнуться з бази продуктів')}</p>
+    <div class="btn-row bc-btns kc-p0">
+      <button class="btn ghost" id="bcPhoto">📷 ${T('Сфотографувати штрихкод')}</button>
+      ${BC.scanSupported() ? `<button class="btn ghost" id="bcScan">▥ ${T('Сканувати камерою')}</button>` : ''}
+    </div>
+    <input type="file" id="bcFile" accept="image/*" capture="environment" hidden/>
+    <div class="bc-manual kc-p0">
+      <input id="bcCode" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="${T('Цифри штрихкоду')}"/>
+      <button class="btn ghost" id="bcFind">${T('Знайти')}</button>
+    </div>
+    <div id="bcBox"></div>`);
+  const root = modalRoot();
+  const $ = (s) => root.querySelector(s);
+  const bcBox = () => (root.isConnected ? $('#bcBox') : null); // вікно закрили — відповідь уже нікому
   const findProduct = async (raw) => {
     const code = BC.cleanCode(raw);
     if (!code) { toast(T('Штрихкод — від 8 до 14 цифр')); return; }
@@ -6833,20 +7017,21 @@ async function renderCalories() {
         <p class="muted hint">${T('На 100 г')}: ${Math.round(p.per100.kcal)} ${T('ккал')} · ${T('Б')} ${Math.round(p.per100.prot)} · ${T('Ж')} ${Math.round(p.per100.fat)} · ${T('В')} ${Math.round(p.per100.carb)} ${T('г')}
           <br/><span class="bc-src">${T('Дані: Open Food Facts')}</span></p>`;
       bindKcalResult(bcBox(), p.per100, (v, grams) => {
-        S.addCalorieEntry(iso, { name: title, ...v, g: grams });
+        S.addCalorieEntry(iso, { name: title, ...v, g: grams, t: nowHHMM() });
+        closeModal();
         toast(T('Збережено'));
-        renderCalories();
+        refreshKcal();
       });
     } catch (e) {
       if (bcBox()) bcBox().innerHTML = `<p class="muted center">⚠️ ${T('Не вдалося перевірити штрихкод — потрібен інтернет')}</p>`;
     }
   };
-  const codeIn = screenEl.querySelector('#bcCode');
-  screenEl.querySelector('#bcFind').onclick = () => findProduct(codeIn.value);
+  const codeIn = $('#bcCode');
+  $('#bcFind').onclick = () => findProduct(codeIn.value);
   codeIn.onkeydown = (e) => { if (e.key === 'Enter') findProduct(codeIn.value); };
   // фото штрихкоду — працює на будь-якому телефоні (ZXing), живий сканер — лише де є BarcodeDetector
-  const bcFile = screenEl.querySelector('#bcFile');
-  screenEl.querySelector('#bcPhoto').onclick = () => bcFile.click();
+  const bcFile = $('#bcFile');
+  $('#bcPhoto').onclick = () => bcFile.click();
   bcFile.onchange = async () => {
     const f = bcFile.files[0];
     bcFile.value = ''; // щоб те саме фото можна було вибрати ще раз
@@ -6862,36 +7047,24 @@ async function renderCalories() {
     codeIn.value = code;
     findProduct(code);
   };
-  const scanBtn = screenEl.querySelector('#bcScan');
-  if (scanBtn) scanBtn.onclick = () => openBarcodeScanner((code) => { codeIn.value = code; findProduct(code); });
-  // перемикач «Штрихкод · Чек» — без перемальовування екрана
-  screenEl.querySelectorAll('[data-kp]').forEach((b) => (b.onclick = () => {
-    kcalPane = b.dataset.kp;
-    screenEl.querySelectorAll('[data-kp]').forEach((x) => x.classList.toggle('on', x === b));
-    screenEl.querySelector('#paneBc').hidden = kcalPane !== 'bc';
-    screenEl.querySelector('#paneRc').hidden = kcalPane !== 'rc';
-  }));
-  bindReceiptPane();
+  const scanBtn = $('#bcScan');
+  if (scanBtn) scanBtn.onclick = () => openBarcodeScanner((code) => { if (root.isConnected) { codeIn.value = code; findProduct(code); } });
+}
 
-  const cam = screenEl.querySelector('#foodCam');
-  const gal = screenEl.querySelector('#foodGal');
-  if (cam) {
-    screenEl.querySelector('#snapBtn').onclick = () => cam.click();
-    screenEl.querySelector('#galBtn').onclick = () => gal.click();
-    cam.onchange = () => analyze(cam.files[0]);
-    gal.onchange = () => analyze(gal.files[0]);
-  }
+// 🧾 Чек → меню — у вікні
+function openReceiptModal() {
+  openModal(T('Чек → меню'), receiptPaneHTML());
+  bindReceiptPane(modalRoot());
 }
 
 // =====================================================================
 //  «ЧЕК → МЕНЮ» (js/receipt.js): фото чека → продукти → меню на 3/5/7 днів
 // =====================================================================
-let kcalPane = 'bc'; // відкрита вкладка картки на екрані калорій: bc — штрихкод, rc — чек
 const MEAL_LABEL = { breakfast: 'Сніданок', lunch: 'Обід', dinner: 'Вечеря', snack: 'Перекус' };
 
 function receiptPaneHTML() {
   const mp = S.getMealPlan();
-  return `<div id="paneRc" ${kcalPane === 'rc' ? '' : 'hidden'}>
+  return `<div id="paneRc">
     <p class="muted hint">${T('Сфотографуй чек — складемо меню на кілька днів лише з того, що ти купив')}</p>
     <div class="btn-row">
       <button class="btn ghost" id="rcSnap">📷 ${T('Сфотографувати чек')}</button>
@@ -6923,11 +7096,10 @@ function receiptPaneHTML() {
   </div>`;
 }
 
-function bindReceiptPane() {
-  const root = screenEl.querySelector('#paneRc');
+function bindReceiptPane(root) {
   if (!root) return;
   const $ = (sel) => root.querySelector(sel);
-  const status = (html) => { const el = screenEl.querySelector('#rcStatus'); if (el) el.innerHTML = html; };
+  const status = (html) => { const el = root.querySelector('#rcStatus'); if (el) el.innerHTML = html; };
   const lang = () => S.getSettings().lang;
   const update = (patch) => S.setMealPlan({ ...S.getMealPlan(), ...patch });
 
@@ -7045,16 +7217,17 @@ function bindReceiptPane() {
       return;
     }
     update({ plan });
+    closeModal();
     go('#/mealplan');
   };
   const openBtn = $('#rcOpen');
-  if (openBtn) openBtn.onclick = () => go('#/mealplan');
+  if (openBtn) openBtn.onclick = () => { closeModal(); go('#/mealplan'); };
 }
 
 function renderMealPlan() {
   const mp = S.getMealPlan();
   const pl = mp.plan;
-  if (!pl) { kcalPane = 'rc'; go('#/calories'); return; }
+  if (!pl) { kcalOpenRc = true; go('#/calories'); return; }
   const macro = (x) => `${x.kcal} ${T('ккал')} · ${T('Б')} ${x.p} · ${T('Ж')} ${x.f} · ${T('В')} ${x.c}`;
   const days = pl.days.map((d, i) => {
     const tot = d.meals.reduce((a, m) => ({ kcal: a.kcal + m.kcal, p: a.p + m.p, f: a.f + m.f, c: a.c + m.c }), { kcal: 0, p: 0, f: 0, c: 0 });
@@ -7086,11 +7259,11 @@ function renderMealPlan() {
       <button class="btn ghost" id="mpDel">🗑 ${T('Видалити меню')}</button>
     </div>`;
   screenEl.querySelector('#backMp').onclick = () => history.back();
-  screenEl.querySelector('#mpAgain').onclick = () => { kcalPane = 'rc'; go('#/calories'); };
+  screenEl.querySelector('#mpAgain').onclick = () => { kcalOpenRc = true; go('#/calories'); };
   screenEl.querySelector('#mpDel').onclick = () => {
     if (!confirm(T('Видалити меню? Список продуктів залишиться.'))) return;
     S.setMealPlan({ ...S.getMealPlan(), plan: null });
-    kcalPane = 'rc';
+    kcalOpenRc = true;
     go('#/calories');
   };
 }
@@ -7998,8 +8171,22 @@ function setKcalMemo(name, g) {
   while (keys.length > 200) delete m[keys.shift()];
   try { localStorage.setItem(KCAL_MEMO, JSON.stringify(m)); } catch (e) { /* приватний режим — без пам'яті */ }
 }
+// складники з вагою, виправленою за памʼяттю (минулого разу людина поставила іншу вагу цієї страви)
+function memoScaledItems(name, src) {
+  const items = src.map((x) => ({ ...x }));
+  const aiG = items.reduce((a, x) => a + x.grams, 0);
+  const memo = Number(kcalMemoAll()[kcalMemoKey(name)]) || 0;
+  if (memo > 0 && aiG && Math.abs(memo - aiG) / aiG > 0.1) {
+    const k = memo / aiG;
+    items.forEach((x) => { x.grams = Math.max(1, Math.round(x.grams * k)); });
+    return { items, used: true };
+  }
+  return { items, used: false };
+}
 // r — з CAL.analyzeFoodPhoto: { name, packaged, items: [{ name, grams, kcal100, p100, f100, c100, hidden }] }
-function bindPhotoResult(root, r, onAdd, onBarcode) {
+// opts.editing — редактор готового запису (31.10): без памʼяті ваги, без назви зверху (вона в полі вікна), кнопка opts.addLabel
+function bindPhotoResult(root, r, onAdd, onBarcode, opts) {
+  const editing = !!(opts && opts.editing);
   const ai = r.items.map((x) => ({ ...x }));
   const aiG = ai.reduce((a, x) => a + x.grams, 0);
   let items = ai.map((x) => ({ ...x }));
@@ -8010,7 +8197,7 @@ function bindPhotoResult(root, r, onAdd, onBarcode) {
     items.forEach((x) => { x.grams = Math.max(1, Math.round(x.grams * k)); });
   };
   // минулого разу людина поставила іншу вагу цієї страви — одразу її (кнопкою можна повернути оцінку ШІ)
-  const memo = Number(kcalMemoAll()[kcalMemoKey(r.name)]) || 0;
+  const memo = editing ? 0 : Number(kcalMemoAll()[kcalMemoKey(r.name)]) || 0;
   let memoUsed = false;
   if (memo > 0 && aiG && Math.abs(memo - aiG) / aiG > 0.1) { scaleTo(memo); memoUsed = true; }
   const ik = (x) => Math.round((x.kcal100 * x.grams) / 100);
@@ -8034,7 +8221,7 @@ function bindPhotoResult(root, r, onAdd, onBarcode) {
     const t = CAL.itemsTotal(items);
     root.innerHTML = `
       <div class="kcal-res">
-        <div class="kcal-name">${esc(r.name)}</div>
+        ${editing ? '' : `<div class="kcal-name">${esc(r.name)}</div>`}
         <div class="kcal-big"><span class="kr-kcal">${t.kcal}</span> ${T('ккал')}</div>
         <div class="muted">${T('Б')} <span class="kr-p">${t.prot}</span> ${T('г')} · ${T('Ж')} <span class="kr-f">${t.fat}</span> ${T('г')} · ${T('В')} <span class="kr-c">${t.carb}</span> ${T('г')}</div>
       </div>
@@ -8058,7 +8245,7 @@ function bindPhotoResult(root, r, onAdd, onBarcode) {
       </div>
       ${r.packaged ? `<div class="hint-box kp-pack"><span>🏷 ${T('Схоже на упаковку — штрихкод дасть точні цифри')}</span><button class="btn ghost sm" id="kpBc">${T('Штрихкод')}</button></div>` : ''}
       <div class="btn-col" style="margin-top:10px">
-        <button class="btn primary kr-add">➕ ${T('Додати в день')}</button>
+        <button class="btn primary kr-add">${editing ? esc(opts.addLabel || T('Зберегти')) : `➕ ${T('Додати в день')}`}</button>
       </div>`;
     const w = root.querySelector('.kp-g');
     w.oninput = () => { scaleTo(Math.min(5000, Number(w.value) || 0)); refresh(w); };
@@ -8080,8 +8267,8 @@ function bindPhotoResult(root, r, onAdd, onBarcode) {
       const t = CAL.itemsTotal(items.filter((x) => x.grams > 0));
       if (!t.g) { toast(T('Вкажи вагу в грамах')); return; }
       // запам'ятати виправлену вагу; погодився з ШІ — пам'ять цієї страви стерти
-      setKcalMemo(r.name, aiG && Math.abs(t.g - aiG) / aiG > 0.1 ? t.g : 0);
-      onAdd({ name: r.name, kcal: t.kcal, prot: t.prot, fat: t.fat, carb: t.carb, g: t.g });
+      if (!editing) setKcalMemo(r.name, aiG && Math.abs(t.g - aiG) / aiG > 0.1 ? t.g : 0);
+      onAdd({ name: r.name, kcal: t.kcal, prot: t.prot, fat: t.fat, carb: t.carb, g: t.g, items: items.filter((x) => x.grams > 0) });
     };
   };
   draw();
@@ -8331,6 +8518,11 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./service-worker.js').catch(() => {});
   });
+  // тап по сповіщенню «Калорії готові» (service-worker.js → notificationclick) — відкрити журнал калорій
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    const d = e.data;
+    if (d && d.type === 'goto' && typeof d.hash === 'string' && d.hash.startsWith('#/')) go(d.hash);
+  });
 }
 
 // Android тримає застосунок згорнутим у пам'яті — при поверненні він показував би стару версію.
@@ -8347,7 +8539,7 @@ document.addEventListener('visibilitychange', async () => {
     // не перезавантажуємо посеред введення: поле пошти відкриває вікно паролів Android, застосунок «ховається»
     // й повертається — і людину викидало з форми входу
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement && document.activeElement.tagName) || '');
-    const busy = typing || location.hash.startsWith('#/set/') || location.hash.startsWith('#/camera/');
+    const busy = typing || KJ.pendingCount() > 0 || location.hash.startsWith('#/set/') || location.hash.startsWith('#/camera/'); // pending — фото калорій ще розпізнається
     if (m && m[1] !== APP_VERSION && !busy) location.reload();
   } catch (e) { /* немає мережі — спробуємо наступного разу */ }
 });

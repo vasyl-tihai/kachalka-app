@@ -2081,3 +2081,69 @@ input[type="date"], input[type="time"] { cursor: pointer; }
   .pg-hm.l2 { background: color-mix(in srgb, var(--green) 60%, transparent); opacity: 1; }
   .pg-hm.l3 { background: color-mix(in srgb, var(--green) 82%, transparent); opacity: 1; }
 }
+
+/* ===================================================================
+   КАЛОРІЇ (31.10): простий екран — тиждень, підсумок дня, одна велика кнопка, історія зі стравами
+   Клас-префікс kc- (не плутати з kcal-: той — старі результат/рядки). Кольори лише зі змінних теми.
+=================================================================== */
+.kc-bar .appbar-title { font-size: 1.3rem; }
+.kc-dnav { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.kc-dnav .icon-btn { width: 36px; height: 36px; font-size: 1.15rem; border-radius: 12px; }
+.kc-dnav .icon-btn:disabled { opacity: .3; }
+.kc-dlbl { min-width: 62px; text-align: center; font-weight: 700; font-size: .92rem; }
+
+.kc-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 10px; }
+.kc-wd { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 0; min-width: 0; border-radius: 12px; border: 1px solid var(--line); background: var(--bg-card2); color: var(--txt); font: inherit; }
+.kc-wd b { font-size: 1rem; line-height: 1.2; }
+.kc-wd-n { font-size: .64rem; color: var(--muted); font-weight: 700; text-transform: uppercase; }
+.kc-wd-k { font-size: .62rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.kc-wd.today .kc-wd-n { color: var(--blue-soft); }
+.kc-wd.on { border-color: var(--blue); background: rgba(91, 155, 255, .12); }
+.kc-wd.on .kc-wd-k { color: var(--blue-soft); }
+.kc-wd:disabled { opacity: .35; }
+
+.kc-sum { display: flex; align-items: baseline; justify-content: space-between; gap: 6px 12px; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 12px; }
+.kc-sum-k b { font-size: 2.1rem; font-weight: 800; line-height: 1; color: var(--gold); font-variant-numeric: tabular-nums; }
+.kc-sum-k span { color: var(--muted); font-weight: 700; }
+.kc-sum-m { display: flex; align-items: baseline; gap: 12px; font-size: .88rem; color: var(--muted); }
+.kc-sum-m b { color: var(--txt); font-size: 1rem; }
+
+.kc-act { margin-bottom: 14px; }
+.kc-snap { padding: 16px; font-size: 1.1rem; }
+.kc-tools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+.kc-tool { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; padding: 9px 2px; border-radius: 14px; border: 1px solid var(--line); background: var(--bg-card2); color: var(--txt); font: inherit; font-size: .72rem; font-weight: 700; line-height: 1.15; text-align: center; overflow-wrap: anywhere; }
+.kc-tool-i { font-size: 1.25rem; line-height: 1; }
+.kc-hint-tgl { display: block; margin: 8px auto 0; }
+.kc-act .kp-hint { display: block; margin: 8px 0 0; font: inherit; color: var(--txt); background: var(--bg-card2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.kc-act .kp-hint[hidden] { display: none; }
+.kc-quota { margin: 8px 0 0; text-align: center; font-size: .8rem; }
+
+.kc-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; color: var(--txt); font: inherit; text-align: left; }
+.kc-row:last-child { border-bottom: 0; }
+button.kc-row { cursor: pointer; }
+.kc-th { flex: 0 0 auto; display: grid; place-items: center; width: 52px; height: 52px; overflow: hidden; border-radius: 12px; border: 1px solid var(--line); background: var(--bg-card2); color: var(--muted); font-size: 1.3rem; }
+.kc-th img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.kc-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.kc-nm { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kc-sub, .kc-mac { font-size: .74rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kc-kc { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.05; }
+.kc-kc b { font-size: 1.15rem; font-weight: 800; color: var(--gold); font-variant-numeric: tabular-nums; }
+.kc-kc small { font-size: .68rem; color: var(--muted); }
+.kc-pend .kc-sub { white-space: normal; }
+.kc-pend .kc-th { animation: kcPulse 1.4s ease-in-out infinite; }
+.kc-err .kc-nm { white-space: normal; color: var(--orange); }
+.kc-x { width: 34px; height: 34px; font-size: 1rem; color: var(--muted); border-radius: 10px; }
+.kc-empty { margin: 8px 0 2px; text-align: center; color: var(--muted); font-size: .92rem; }
+@keyframes kcPulse { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .kc-pend .kc-th { animation: none; } }
+
+.kc-ed-ph { display: none; overflow: hidden; border-radius: 14px; max-height: 180px; }
+.kc-ed-ph.has { display: block; }
+.kc-ed-ph img { display: block; width: 100%; max-height: 180px; object-fit: cover; }
+.kc-p0, .btn-row.kc-p0 { margin: 0; }
+
+/* банер «Калорії готові» — над таб-баром на будь-якому екрані */
+.kc-banner { position: fixed; z-index: 55; left: 50%; bottom: calc(var(--tabbar-h) + var(--safe-b) + 12px); width: calc(100% - 28px); max-width: 452px; transform: translate(-50%, 24px); display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; border: 1px solid var(--blue); background: var(--bg-card); color: var(--txt); font: inherit; text-align: left; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; }
+.kc-banner.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.kc-banner.err { border-color: var(--orange); }
+.kc-banner > span { min-width: 0; overflow-wrap: anywhere; font-size: .9rem; }
