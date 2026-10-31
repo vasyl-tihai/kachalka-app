@@ -67,9 +67,23 @@ export function trialLeft() {
 
 /** Чи підписка зараз дійсна (перевіряється й датою закінчення). */
 export function subActive() {
-  const sub = data().sub;
+  const b = data();
+  // сервер підтвердив підписку (зокрема тестову, видану SQL) — вірити до 3 днів без нової перевірки
+  if (b.srvPro && b.srvPro.on && daysSince(b.srvPro.at) <= 3) return true;
+  const sub = b.sub;
   if (!sub || !sub.until) return false;
   return sub.until >= todayISO();
+}
+
+/** Звірити підписку з сервером (has_premium) — щоб тестова чи куплена на іншому пристрої підписка діяла й тут. Не довше ~2.5 с. */
+export async function syncServerPremium() {
+  try {
+    const BE = await import('./backend.js');
+    if (!BE.configured) return;
+    const on = await Promise.race([BE.hasPremium(), new Promise((r) => setTimeout(() => r(null), 2500))]);
+    if (on === null) return; // без входу / мережі — лишаємо як було
+    save({ srvPro: { on, at: todayISO() } });
+  } catch (e) { /* офлайн — не страшно */ }
 }
 
 /** 'active' — підписка, 'trial' — пробний період, 'expired' — все вийшло. */

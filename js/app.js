@@ -6698,6 +6698,7 @@ async function renderCalories() {
   const tot = S.calorieDayTotal(iso);
   // сервер власника (ключ-секрет на Supabase) — тоді користувачу ключ не потрібен
   const proxyOk = key ? false : await CAL.proxyAvailable();
+  if (proxyOk) await BILL.syncServerPremium(); // підписка з сервера (тестова / з іншого пристрою) → ліміт фото як у підписника
   if (location.hash !== '#/calories') return; // за час перевірки пішли з екрана
   const quota = BILL.photoQuota();
   // ключ користувача — обхід наших лімітів: він платить за запити сам

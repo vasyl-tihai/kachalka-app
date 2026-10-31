@@ -41,6 +41,14 @@ export async function functionHeaders() {
   return h;
 }
 
+/** Чи є підписка за даними сервера (покупка в Play або тестова підписка, видана SQL): true / false; null — без входу чи сервера. */
+export async function hasPremium() {
+  const sb = await client();
+  if (!sb || !(await getSession())) return null;
+  const { data, error } = await sb.rpc('has_premium');
+  return error ? null : data === true;
+}
+
 export async function signUp(email, password, name) {
   const sb = await client();
   const { data, error } = await sb.auth.signUp({
