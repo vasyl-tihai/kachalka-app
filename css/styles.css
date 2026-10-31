@@ -1713,13 +1713,16 @@ button { transition: transform .12s ease, box-shadow .2s ease, filter .2s ease; 
 /* ФІНАЛ ДНЯ: останній підхід зроблено, наступної вправи немає —
    замість таймера відпочинку показуємо коротке «виконано» + вихід */
 .fin-card {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 12px;
   background: linear-gradient(135deg, rgba(52, 211, 153, .14), rgba(52, 211, 153, .05));
   border: 1px solid rgba(52, 211, 153, .38);
 }
 .fin-txt { font-weight: 800; font-size: 1.05rem; color: #a7f3d0; }
 .fin-sub { font-size: .82rem; font-weight: 700; color: var(--muted); margin-top: 4px; }
 .fin-card .btn { width: auto; padding: 10px 16px; margin: 0; flex: 0 0 auto; }
+/* з «Поділитися» три елементи не влазять в один рядок (31.10): текст — окремим рядком, кнопки — порівну під ним */
+.fin-card:has([data-share-day]) .fin-txt { flex: 1 1 100%; }
+.fin-card:has([data-share-day]) .btn { flex: 1 1 auto; }
 
 /* ЯСКРАВИЙ КІНЧИК ЛІНІЇ ТАЙМЕРА: на кінці дуги колір плавно переходить у жовтий —
    чотири шари різної довжини й прозорості дають мʼякий градієнт.
