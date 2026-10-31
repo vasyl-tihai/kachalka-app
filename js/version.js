@@ -1,2 +1,2 @@
 // згенеровано deploy.sh
-export const APP_VERSION = '2026-10-31 18:48';
+export const APP_VERSION = '2026-10-31 23:34';

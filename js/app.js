@@ -2087,11 +2087,12 @@ function bindMyWorkouts() {
 
 // «Нагадати за» — однаково для тренувань і вітамінів (у .ics; Android бере нагадування свого календаря)
 const REMIND_OPTS = [0, 10, 15, 30, 60, 120];
-const remindSelectHTML = () => `<div class="field" style="margin-top:12px"><label>${T('Нагадати за')}</label>
+const remindSelectHTML = () => !RM.isAndroid && !RM.isIOS ? '' : `<div class="field" style="margin-top:12px"><label>${T('Нагадати за')}</label>
   <select id="remindMin">${REMIND_OPTS.map((m) => `<option value="${m}" ${S.getSettings().remindMin === m ? 'selected' : ''}>${m ? `${m} ${T('хв')}` : T('у момент початку')}</option>`).join('')}</select></div>`;
 const remindNoteHTML = () => `<p class="muted">${RM.isAndroid
   ? T('Відкриється календар телефону — натисни «Зберегти». Нагадування календар ставить своє (зазвичай за 30 хв), його можна змінити в тому ж вікні.')
-  : T('Завантажиться файл календаря (.ics) — відкрий його, і подія з нагадуванням додасться в календар.')}</p>`;
+  : RM.isIOS ? T('Завантажиться файл календаря (.ics) — відкрий його, і подія з нагадуванням додасться в календар.')
+  : T('Відкриється Google Календар з готовою подією — натисни «Зберегти». Нагадування Google ставить своє, його можна змінити там же.')}</p>`;
 function bindRemindSelect(root) {
   const sel = root.querySelector('#remindMin');
   if (sel) sel.onchange = () => S.updateSettings({ remindMin: Number(sel.value) });

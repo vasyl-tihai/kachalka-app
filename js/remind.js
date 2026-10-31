@@ -105,8 +105,29 @@ export function downloadICS(events, name) {
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
-/** Додати одну подію: Android — вікно календаря, інакше — файл .ics. */
+// Google Календар у браузері з готовою подією (комп'ютер): людина лише натискає «Зберегти».
+// Час нагадування посиланням не задається — Google ставить своє стандартне.
+function googleURL(ev) {
+  const b = startDate(ev);
+  const e = new Date(b.getTime() + (ev.minutes || 60) * 60000);
+  const p = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: ev.title,
+    details: ev.desc || '',
+    dates: `${icsStamp(b)}/${icsStamp(e)}`,
+    recur: 'RRULE:' + ev.rrule,
+  });
+  try { p.set('ctz', Intl.DateTimeFormat().resolvedOptions().timeZone); } catch (err) { /* без поясу — час браузера */ }
+  return 'https://calendar.google.com/calendar/render?' + p.toString();
+}
+
+export const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent || '') ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+/** Додати одну подію: Android — вікно календаря, iPhone — файл .ics (Safari сам пропонує «Додати в Календар»),
+ *  комп'ютер — Google Календар у новій вкладці (файл .ics там лише плутав). */
 export function addToCalendar(ev, name) {
   if (isAndroid) location.href = intentURL(ev);
-  else downloadICS([ev], name);
+  else if (isIOS) downloadICS([ev], name);
+  else window.open(googleURL(ev), '_blank', 'noopener');
 }
