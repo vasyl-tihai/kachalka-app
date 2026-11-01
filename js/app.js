@@ -176,6 +176,7 @@ function router() {
       r.render(...m.slice(1));
       updateTabbar(hash);
       window.scrollTo(0, 0);
+      TIPS.scheduleTips(); // підказка екрана — лише при першому відкритті
       return;
     }
   }
@@ -3788,7 +3789,7 @@ function renderSettings() {
     <section class="card">
       <div class="card-label">💬 ${T('Підтримка')}</div>
       <div class="btn-col">
-        <button class="btn ghost" id="tourBtn">📖 ${T('Як користуватися')}</button>
+        <button class="btn ghost" id="tipsBtn">💡 ${T('Показати підказки ще раз')}</button>
         <button class="btn ghost" id="supportBtn">✉️ ${T('Написати нам')}</button>
         ${BE.configured ? `<button class="btn ghost" id="blockedBtn">🚫 ${T('Заблоковані')}</button>` : ''}
       </div>
@@ -3811,7 +3812,7 @@ function renderSettings() {
   screenEl.querySelector('#coachBtn').onclick = () => go('#/community');
   screenEl.querySelector('#actsBtn').onclick = () => go('#/acts');
   screenEl.querySelector('#supportBtn').onclick = () => go('#/support');
-  screenEl.querySelector('#tourBtn').onclick = openTour;
+  screenEl.querySelector('#tipsBtn').onclick = () => { TIPS.resetTips(); toast(`💡 ${T('Підказки зʼявляться знову на кожному екрані')}`); go('#/today'); };
   const blockedBtn = screenEl.querySelector('#blockedBtn');
   if (blockedBtn) blockedBtn.onclick = () => go('#/blocked');
 
@@ -4432,7 +4433,10 @@ async function renderCommunity() {
     </div>`;
   bindCommSeg(screenEl);
   const feed = screenEl.querySelector('#cfeed');
-  screenEl.querySelector('#cMe').onclick = () => go('#/coach');
+  screenEl.querySelector('#cMe').onclick = async () => {
+    const s = BE.configured ? await BE.getSession().catch(() => null) : null;
+    go(s ? '#/user/' + s.user.id : '#/coach'); // без входу — форма входу в кабінеті
+  };
   screenEl.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => { setCommChip(b.dataset.c); renderCommunity(); }));
   const alive = () => location.hash === '#/community' && commSeg === 'feed' && commChip === chip;
 
@@ -4836,32 +4840,78 @@ document.addEventListener('click', (e) => {
   if (b) openShareWorkout(b.dataset.shareDay);
 });
 
-// ---- профіль людини = «картка атлета» ----
-function athleteHeadHTML(p, { tr = (x) => x, btns = '' } = {}) {
+// ---- профіль людини: шапка як у соцмережі (аватар + лічильники в ряд), кнопки, вкладки ▦ 🍽 🏋️ ----
+// лічильники — лише ті, що справді є: дописи (з відповіді сервера), друзі (бачимо лише свої), тренування й серія (stats картки)
+function profileCounts(p, posts, nFriends) {
+  const c = [[posts.filter((x) => x.kind !== 'recipe').length, 'Дописи']];
+  const st = !p.official && p.role !== 'kitchen' && p.stats && typeof p.stats === 'object' ? p.stats : null;
+  if (nFriends != null) c.push([nFriends, 'Друзі']);
+  if (st) {
+    c.push([st.total, 'Тренування']);
+    if (nFriends == null) c.push([st.streak, 'днів поспіль']);
+  }
+  return c;
+}
+function athleteHeadHTML(p, { tr = (x) => x, btns = '', counts = [] } = {}) {
   const place = placeLine(p, tr);
+  const n = (v) => Math.max(0, Math.min(99999, Math.round(Number(v) || 0)));
   return `<section class="card profile-card ath-card">
-    <div class="profile-head">
+    <div class="upf-top">
       ${avatarHtml(p, true)}
-      <div class="profile-id">
-        <div class="profile-name">${esc(p.name ? tr(p.name) : T('Без імені'))}${personBadge(p)}</div>
-        <div class="profile-role">${roleLabel(p)}</div>
-        ${place ? `<div class="ath-place">${place}</div>` : ''}
-      </div>
+      <div class="upf-counts">${counts.map(([v, l]) => `<div><b>${n(v)}</b><small>${T(l)}</small></div>`).join('')}</div>
     </div>
-    ${hasStats(p) ? statsHTML(p.stats) : ''}
+    <div class="upf-name"><span class="upf-nm">${esc(p.name ? tr(p.name) : T('Без імені'))}</span>${personBadge(p)}</div>
+    <div class="profile-role">${roleLabel(p)}</div>
+    ${place ? `<div class="ath-place">${place}</div>` : ''}
     ${p.bio ? `<p class="profile-bio">${esc(tr(p.bio))}</p>` : ''}
     ${p.role === 'trainer' && p.contact ? `<p class="profile-contact">📞 ${esc(p.contact)}</p>` : ''}
     ${btns ? `<div class="ath-btns">${btns}</div>` : ''}
   </section>`;
 }
-// плитки дописів у профілі: фото або міні-картка тренування; натискання — допис цілком
-function postsGridHTML(posts) {
-  if (!posts.length) return '';
-  return `<div class="card-label side-label">📸 ${T('Дописи')}</div>
-    <div class="pgrid">${posts.map((p, i) => postImgs(p).length
+// «Поділитися профілем»: системне меню, інакше — копіюємо посилання
+async function shareProfile(p) {
+  const url = location.origin + location.pathname + '#/user/' + p.id;
+  try {
+    if (navigator.share) { await navigator.share({ title: (p.name || 'Gym Log') + ' · Gym Log', url }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(url); toast('✅ ' + T('Посилання на профіль скопійовано')); }
+  catch (e) { window.prompt(T('Посилання на профіль'), url); }
+}
+// плитки: фото допису/рецепта або міні-картка (рецепт без фото — 🍽 і назва; тренування — 🏋️ і обʼєм); тап — допис цілком
+function postsGridHTML(posts, emptyText, ico = '📸') {
+  if (!posts.length) return profileEmptyHTML(ico, emptyText || T('Поки немає дописів'));
+  return `<div class="pgrid">${posts.map((p, i) => postImgs(p).length
       ? `<button class="pg-tile" data-pi="${i}"><img src="${esc(postImgs(p)[0])}" alt="" loading="lazy"${p.fallback ? ` data-fb="${esc(p.fallback)}"` : ''}/>${postImgs(p).length > 1 ? `<span class="pg-multi" aria-label="${T('Кілька фото')}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="8" y="3" width="13" height="13" rx="2.5"/><path d="M16 20H6.5A2.5 2.5 0 0 1 4 17.5V8"/></svg>${postImgs(p).length}</span>` : ''}</button>`
       : p.kind === 'recipe' ? `<button class="pg-tile pg-w" data-pi="${i}"><span>🍽</span><small>${esc(String((p.meta && p.meta.title) || T('Рецепт')).slice(0, 40))}</small></button>`
       :`<button class="pg-tile pg-w" data-pi="${i}"><span>🏋️</span><b>${Math.round(Number(p.meta && p.meta.vol) || 0) || ''}</b><small>${p.meta && p.meta.vol ? T('кг') : ''}</small></button>`).join('')}</div>`;
+}
+function profileEmptyHTML(ico, text) {
+  return `<div class="upf-empty"><span>${ico}</span><p>${text}</p></div>`;
+}
+const PROFILE_TABS = [
+  ['posts', 'Дописи', '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.2"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.2"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.2"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.2"/></svg>'],
+  ['recipes', 'Рецепти', '🍽'],
+  ['train', 'Тренування', '🏋️'],
+];
+// вкладки під шапкою; box — порожній контейнер у розмітці сторінки
+function mountProfileTabs(box, { p, posts, tr, sharedTr, emptyHint = {} }) {
+  const lists = { posts: posts.filter((x) => x.kind !== 'recipe'), recipes: posts.filter((x) => x.kind === 'recipe') };
+  let cur = 'posts';
+  const paneHTML = () => {
+    if (cur === 'train') {
+      const html = (hasStats(p) ? statsHTML(p.stats) : '') + trainHistHTML(sharedTr, tr);
+      return html || profileEmptyHTML('🏋️', emptyHint.train || T('Поки немає тренувань'));
+    }
+    return cur === 'recipes' ? postsGridHTML(lists.recipes, emptyHint.recipes || T('Поки немає рецептів'), '🍽') : postsGridHTML(lists.posts, emptyHint.posts);
+  };
+  const draw = () => {
+    box.innerHTML = `<div class="upf-tabs" role="tablist">${PROFILE_TABS.map(([id, l, ico]) =>
+      `<button class="upf-tab${cur === id ? ' on' : ''}" role="tab" aria-selected="${cur === id}" data-ptab="${id}" aria-label="${T(l)}" title="${T(l)}">${ico}</button>`).join('')}</div>
+      <div class="upf-pane">${paneHTML()}</div>`;
+    box.querySelectorAll('[data-ptab]').forEach((b) => (b.onclick = () => { cur = b.dataset.ptab; draw(); }));
+    if (cur !== 'train') bindPostsGrid(box, lists[cur], tr);
+  };
+  draw();
 }
 function bindPostsGrid(root, posts, tr) {
   root.querySelectorAll('[data-pi]').forEach((b) => (b.onclick = () => {
@@ -4910,14 +4960,13 @@ async function renderDemoUser(userId) {
     : `${prof.official ? '' : `<button class="btn ghost demo-act">＋ ${T('В друзі')}</button>`}<button class="btn ghost demo-act">💬 ${T('Написати')}</button>`;
   uBody.innerHTML = `
     ${prof.sample ? `<div class="demo-banner">👀 ${T('Приклад профілю — так виглядатиме сторінка справжньої людини')}</div>` : ''}
-    ${athleteHeadHTML(prof, { tr: T, btns })}
+    ${athleteHeadHTML(prof, { tr: T, btns, counts: profileCounts(prof, posts, null) })}
     ${slots.length ? `<section class="card">
       <div class="card-label">📅 ${T('Записатися на тренування')}</div>
       <div class="slot-list">${slots.map((s) => slotRowHTML(s, 'demo-act')).join('')}</div>
     </section>` : ''}
-    ${trainHistHTML(D.shared[userId], T)}
-    ${postsGridHTML(posts)}`;
-  bindPostsGrid(uBody, posts, T);
+    <div id="upfBox"></div>`;
+  mountProfileTabs(uBody.querySelector('#upfBox'), { p: prof, posts, tr: T, sharedTr: D.shared[userId] });
   const toR = uBody.querySelector('#toRecipes');
   if (toR) toR.onclick = () => { setCommSeg('recipes'); go('#/community'); };
   uBody.querySelectorAll('.demo-act').forEach((b) =>
@@ -4976,23 +5025,29 @@ async function renderUserProfile(userId) {
   if (titleEl) titleEl.textContent = prof.name || T('Без імені');
   if (blocked) { sharedTr = null; posts = []; }
   const freeSlots = (slots || []).filter((s) => s.status === 'free').slice(0, 8);
-  const btns = isMe ? `<button class="btn primary" id="editMe">✏️ ${T('Редагувати профіль')}</button>`
+  if (isMe) prof.stats = myStatsNow(); // свої лічильники беремо з пристрою — вони точніші за збережені на сервері
+  const nFriends = isMe ? [...fr.values()].filter((v) => v === 'friends').length : null; // друзів чужої людини сервер не віддає
+  const btns = isMe ? `<button class="btn ghost" id="editMe">${T('Редагувати профіль')}</button>
+       <button class="btn ghost" id="shareMe">${T('Поділитися профілем')}</button>
+       <button class="btn ghost ath-more" id="cabinetBtn" aria-label="${T('Кабінет')}">⋯</button>`
     : `${blocked ? '' : friendBtnHTML(prof, fr, meId)}
        ${blocked ? '' : `<button class="btn ghost" id="chatBtn">💬 ${T('Написати')}</button>`}
        <button class="btn ghost ath-more" id="moreUser" aria-label="${T('Ще')}">⋯</button>`;
 
   uBody.innerHTML = `
-    ${athleteHeadHTML(prof, { btns })}
+    ${athleteHeadHTML(prof, { btns, counts: profileCounts(prof, posts, nFriends) })}
     ${blocked ? `<p class="muted small">🚫 ${T('Ти заблокував цю людину: її дописи й повідомлення приховано.')}</p>` : ''}
     ${prof.role === 'trainer' && !blocked ? `<section class="card">
       <div class="card-label">📅 ${T('Записатися на тренування')}</div>
       ${freeSlots.length ? `<div class="slot-list">${freeSlots.map((s) => slotRowHTML(s, 'book-slot')).join('')}</div>`
         : `<p class="muted">${T('Немає вільних слотів — напиши тренеру в чат.')}</p>`}
     </section>` : ''}
-    ${trainHistHTML(sharedTr, (x) => x)}
-    ${postsGridHTML(posts)}`;
-  bindPostsGrid(uBody, posts, (x) => x);
+    <div id="upfBox"></div>`;
+  mountProfileTabs(uBody.querySelector('#upfBox'), { p: prof, posts, tr: (x) => x, sharedTr,
+    emptyHint: isMe ? { posts: T('Опублікуй свій перший допис у Спільноті') } : {} });
   uBody.querySelector('#editMe')?.addEventListener('click', () => { coachEdit = true; go('#/coach'); });
+  uBody.querySelector('#shareMe')?.addEventListener('click', () => shareProfile(prof));
+  uBody.querySelector('#cabinetBtn')?.addEventListener('click', () => go('#/coach')); // кабінет: роль, клієнти, вихід з акаунта
   uBody.querySelector('#chatBtn')?.addEventListener('click', () => go('#/chat/' + userId));
   uBody.querySelector('[data-friend]')?.addEventListener('click', (e) =>
     friendAction(userId, e.currentTarget.dataset.st, () => renderUserProfile(userId)));
@@ -7365,65 +7420,11 @@ const SUPP_UNITS = ['мг', 'мкг', 'МО', 'г', 'мл', 'шт', 'крап.',
 const SUPP_FOOD = { '': 'Будь-коли', before: 'До їжі', with: 'Під час їжі', after: 'Після їжі' };
 const SUPP_ROUTE = { im: 'У мʼяз', sc: 'Під шкіру' };
 // =====================================================================
-//  КОРОТКА ІНСТРУКЦІЯ (28.10): один раз при першому запуску, повтор — Налаштування → «Як користуватися»
+//  ПІДКАЗКИ НА ЕКРАНАХ (31.10; до того — загальна інструкція 28.10)
 // =====================================================================
-const TOUR = [
-  ['💪', 'Вітаю в Gym Log!', 'Щоденник тренувань у телефоні. Усе зберігається на цьому пристрої — акаунт не потрібен. Ось коротко, що де лежить.'],
-  ['🏋️', 'Сьогодні', 'Тренування дня. Натисни вправу, вибери повтори й вагу і тисни «✓ Виконав підхід» — таймер відпочинку запуститься сам.'],
-  ['🗓', 'Календар', 'Зал, вітаміни й інші види тренувань (велосипед, біг…) — разом або окремо. Тут же твої тренування й тижневий план.'],
-  ['📋', 'Тренування', 'Готові програми для залу й дому, свої шаблони і «Як виконувати» — техніка вправ з ілюстраціями.'],
-  ['🤖', 'ШІ', 'Калорії за фото страви чи штрихкодом, розумний тренер, меню з чека, вітаміни й БАДи. Це не медична порада.'],
-  ['📈', 'Прогрес', 'Рекорди й графіки, вага тіла, заміри з 3D-фігурою і фото «було / стало».'],
-  ['👥', 'Спільнота', 'Рецепти, дописи, тренери й друзі поруч. Для стрічки й людей потрібен вхід.'],
-];
-const TOUR_KEY = 'kachalka-tour';
-function openTour() {
-  document.querySelectorAll('.tour').forEach((x) => x.remove());
-  let i = 0;
-  const ov = document.createElement('div');
-  ov.className = 'tour';
-  const key = (e) => { if (e.key === 'Escape') done(); };
-  const done = () => {
-    try { localStorage.setItem(TOUR_KEY, '1'); } catch (e) { /* приватний режим — покажеться ще раз */ }
-    ov.remove();
-    document.removeEventListener('keydown', key);
-  };
-  const step = (d) => { const n = i + d; if (n < 0) return; if (n >= TOUR.length) { done(); return; } i = n; draw(); };
-  const draw = () => {
-    const [ic, title, text] = TOUR[i];
-    const last = i === TOUR.length - 1;
-    ov.innerHTML = `<div class="tour-card" role="dialog" aria-modal="true">
-      <button class="tour-skip">${T('Пропустити')}</button>
-      <div class="tour-ico">${ic}</div>
-      <h2>${T(title)}</h2>
-      <p>${T(text)}</p>
-      <div class="tour-dots">${TOUR.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</div>
-      <div class="tour-btns">
-        ${i ? `<button class="btn ghost" data-t="-1">‹ ${T('Назад')}</button>` : ''}
-        <button class="btn primary" data-t="1">${last ? T('Почати') : `${T('Далі')} ›`}</button>
-      </div>
-    </div>`;
-    ov.querySelector('.tour-skip').onclick = done;
-    ov.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => step(Number(b.dataset.t))));
-  };
-  // гортання пальцем
-  let x0 = null;
-  ov.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
-  ov.addEventListener('touchend', (e) => {
-    if (x0 == null) return;
-    const dx = e.changedTouches[0].clientX - x0;
-    x0 = null;
-    if (Math.abs(dx) > 50) step(dx < 0 ? 1 : -1);
-  });
-  document.addEventListener('keydown', key);
-  draw();
-  document.body.appendChild(ov);
-}
-function maybeTour() {
-  let seen = '1';
-  try { seen = localStorage.getItem(TOUR_KEY); } catch (e) { /* немає сховища — не набридати */ }
-  if (!seen) openTour();
-}
+// Підказки під кожен екран (31.10) замість загальної інструкції — js/tips.js; кличе router() після рендеру,
+// Налаштування → «Показати підказки ще раз» скидає прапорець. Стара інструкція (openTour) прибрана.
+import * as TIPS from './tips.js';
 
 // =====================================================================
 //  СВОЇ ВИДИ ТРЕНУВАНЬ (28.10): велосипед, біг… — свій календар і відмітка дня
@@ -8550,7 +8551,6 @@ let pendingShare = '';
 }
 startIcons(); // емодзі в розмітці → власні іконки (js/icons.js)
 router();
-setTimeout(maybeTour, 500); // коротка інструкція — лише першого разу
 if (supQueue().length) setTimeout(() => flushSupport().catch(() => {}), 5000); // звернення, що чекали на звʼязок
 
 // повернення після входу через Google: в URL є ?code=... — обміняти на сесію
