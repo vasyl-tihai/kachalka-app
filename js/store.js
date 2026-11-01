@@ -427,6 +427,8 @@ function persist() {
   } catch (e) {
     console.error('Помилка збереження', e);
   }
+  // js/push.js слухає цю подію й (з паузою) пересилає розклад нагадувань на сервер
+  try { if (typeof window !== 'undefined') window.dispatchEvent(new Event('kachalka-saved')); } catch (e) { /* без вікна */ }
 }
 let saveTimer = null;
 function save() {

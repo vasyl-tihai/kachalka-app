@@ -26,6 +26,7 @@ import { RECIPES } from './recipes-data.js';
 import { SUPP_TEMPLATES, SUPP_PRESETS } from './supp-templates.js';
 import { GYM_PROGRAMS, exIcon } from './gym-programs.js';
 import * as RM from './remind.js';
+import * as PUSH from './push.js';
 
 // мова інтерфейсу — із налаштувань (до першого рендеру)
 setLang(S.getSettings().lang);
@@ -2085,9 +2086,43 @@ function bindMyWorkouts() {
   screenEl.querySelector('#planRemind')?.addEventListener('click', openWorkoutReminders);
 }
 
+// «🔔 Сповіщення від Gym Log» (js/push.js, backend/PUSH.md): головний спосіб нагадування; календар — запасний.
+// head=false — без заголовка (картка в Налаштуваннях). Якщо пристрій не вміє Web Push — блоку немає.
+function pushBoxInner(head) {
+  const on = PUSH.pushEnabled();
+  return `${head ? `<div><b>🔔 ${T('Сповіщення від Gym Log')}</b></div>` : ''}
+    <p class="muted small">${T('Прийдуть на цей пристрій у потрібний час. Застосунок треба відкривати хоч раз на 2 тижні.')}</p>
+    <button class="btn ${on ? 'ghost' : 'primary'} sm" id="pushToggle">${on ? `${T('Увімкнено')} ✓ · ${T('Вимкнути')}` : T('Увімкнути')}</button>`;
+}
+const pushBoxHTML = (head = true, orCal = true) => !PUSH.pushSupported() ? ''
+  : `<div class="push-box ${PUSH.pushEnabled() ? 'on' : ''}" id="pushBox" data-head="${head ? 1 : 0}">${pushBoxInner(head)}</div>${orCal ? `<p class="muted push-or">${T('або в календар телефону')}</p>` : ''}`;
+function bindPushBox(root) {
+  const box = root.querySelector('#pushBox');
+  if (!box) return;
+  const draw = () => {
+    box.classList.toggle('on', PUSH.pushEnabled());
+    box.innerHTML = pushBoxInner(box.dataset.head === '1');
+    box.querySelector('#pushToggle').onclick = click;
+  };
+  const click = async (e) => {
+    e.currentTarget.disabled = true;
+    if (PUSH.pushEnabled()) {
+      await PUSH.disablePush();
+      toast(T('Сповіщення вимкнено'));
+    } else {
+      const r = await PUSH.enablePush();
+      if (r.ok) toast(T('Сповіщення увімкнено'));
+      else if (r.reason === 'denied') toast(T('Сповіщення заборонено. Дозволь їх для Gym Log у налаштуваннях браузера або телефона.'), 'long');
+      else toast(T('Не вдалося увімкнути сповіщення. Спробуй пізніше.'), 'long');
+    }
+    draw();
+  };
+  draw();
+}
+
 // «Нагадати за» — однаково для тренувань і вітамінів (у .ics; Android бере нагадування свого календаря)
 const REMIND_OPTS = [0, 10, 15, 30, 60, 120];
-const remindSelectHTML = () => !RM.isAndroid && !RM.isIOS ? '' : `<div class="field" style="margin-top:12px"><label>${T('Нагадати за')}</label>
+const remindSelectHTML = () => !RM.isAndroid && !RM.isIOS && !PUSH.pushSupported() ? '' : `<div class="field" style="margin-top:12px"><label>${T('Нагадати за')}</label>
   <select id="remindMin">${REMIND_OPTS.map((m) => `<option value="${m}" ${S.getSettings().remindMin === m ? 'selected' : ''}>${m ? `${m} ${T('хв')}` : T('у момент початку')}</option>`).join('')}</select></div>`;
 const remindNoteHTML = () => `<p class="muted">${RM.isAndroid
   ? T('Відкриється календар телефону — натисни «Зберегти». Нагадування календар ставить своє (зазвичай за 30 хв), його можна змінити в тому ж вікні.')
@@ -2119,10 +2154,12 @@ function openWorkoutReminders() {
       <button class="btn primary sm" data-rem="${tm}">📅 ${T('Додати')}</button>
     </div>`).join('');
   openModal(`⏰ ${T('Нагадування про тренування')}`, `
+    ${rows ? pushBoxHTML() : ''}
     ${rows || `<p>${T('Спершу постав час тренування: натисни день у тижневому плані.')}</p>`}
     ${noTime.length ? `<p class="muted">${T('Без часу')}: ${noTime.map(dayName).join(', ')} — ${T('натисни день у тижневому плані, щоб поставити час')}</p>` : ''}
     ${rows ? remindSelectHTML() + remindNoteHTML() : ''}`);
   const root = document.querySelector('.modal');
+  bindPushBox(root);
   bindRemindSelect(root);
   root.querySelectorAll('[data-rem]').forEach((b) =>
     b.addEventListener('click', () => {
@@ -3699,6 +3736,12 @@ function renderSettings() {
         ${T('Дні з тижневого плану у вкладці «Тренування» враховуються автоматично.')}</p>
     </section>
 
+    ${PUSH.pushSupported() ? `<section class="card">
+      <div class="card-label">🔔 ${T('Сповіщення-нагадування')}</div>
+      ${pushBoxHTML(false, false)}
+      <p class="muted side" style="margin:0 4px">${T('Нагадування про тренування й прийом вітамінів. Час — у тижневому плані та в самих вітамінах.')}</p>
+    </section>` : ''}
+
     <section class="card">
       <div class="card-label">${T('Сигнал у кінці відпочинку')}</div>
       <div class="pick-list">
@@ -3803,6 +3846,7 @@ function renderSettings() {
   screenEl.querySelector('#step').onchange = saveTimer;
 
   // --- сигнал: звук/мелодія/свій файл/вібрація/спалах ---
+  bindPushBox(screenEl);
   screenEl.querySelector('#soundOn').onchange = (e) => S.updateSettings({ soundOn: e.target.checked });
   screenEl.querySelector('#vibrOn').onchange = (e) => S.updateSettings({ vibrateOn: e.target.checked });
   screenEl.querySelector('#flashOn').onchange = (e) => S.updateSettings({ flashOn: e.target.checked });
@@ -7756,10 +7800,12 @@ function openSuppReminders() {
       <button class="btn primary sm" data-rem="${n}">📅 ${T('Додати')}</button>
     </div>`).join('');
   openModal(`⏰ ${T('Нагадування про прийом')}`, `
+    ${rows ? pushBoxHTML() : ''}
     ${rows || `<p>${T('Немає чинних прийомів.')}</p>`}
     ${rows ? remindSelectHTML() + remindNoteHTML() : ''}
     <p class="muted small">${T('Не медична порада')}</p>`);
   const root = document.querySelector('.modal');
+  bindPushBox(root);
   bindRemindSelect(root);
   root.querySelectorAll('[data-rem]').forEach((b) =>
     b.addEventListener('click', () => {
@@ -7779,7 +7825,7 @@ ${T('Що саме сьогодні — у Gym Log → Вітаміни.')}`,
   );
 }
 
-// після нового запису: запропонувати нагадування календарем телефону (свого пуша поки немає — рішення 17.10)
+// після нового запису: запропонувати нагадування — сповіщенням Gym Log (js/push.js) або календарем телефону
 function offerSuppReminder(it) {
   const today = S.todayISO();
   const end = S.suppEnd(it);
@@ -7797,13 +7843,15 @@ function offerSuppReminder(it) {
   const rule = it.stages.length || sc.type === 'daily' ? 'FREQ=DAILY'
     : sc.type === 'every' ? `FREQ=DAILY;INTERVAL=${sc.n}` : RM.weeklyRule(sc.days);
   openModal(`⏰ ${T('Нагадувати про прийом?')}`, `
+    ${pushBoxHTML()}
     <p>${T('Gym Log додасть подію в календар телефону — нагадування прийде від календаря.')}</p>
     ${it.times.map((tm) => `<div class="rem-row"><span class="rem-txt"><b>${tm}</b> · ${esc(it.name)}</span>
       <button class="btn primary sm" data-rt="${tm}">📅 ${T('Додати')}</button></div>`).join('')}
     ${remindSelectHTML()}${remindNoteHTML()}
-    <p class="muted small">${T('Сповіщення від самого Gym Log додамо згодом.')} ${T('Не медична порада')}</p>`,
+    <p class="muted small">${T('Не медична порада')}</p>`,
   [{ label: T('Не треба'), class: 'ghost', onClick: closeModal }]);
   const root = document.querySelector('.modal');
+  bindPushBox(root);
   bindRemindSelect(root);
   root.querySelectorAll('[data-rt]').forEach((b) => b.addEventListener('click', () => {
     const tm = b.dataset.rt;
@@ -8466,7 +8514,7 @@ function toast(msg, variant) {
   t.innerHTML = msg; // динамічні частини екрануються в місці виклику
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), variant === 'pr' ? 2800 : 1600);
+  toastTimer = setTimeout(() => t.classList.remove('show'), variant === 'pr' ? 2800 : variant === 'long' ? 5500 : 1600);
 }
 
 // світлова сигналізація в кінці відпочинку (~2.6с); колір — з налаштувань

@@ -3,7 +3,7 @@
 //   • код застосунку (навігація, *.js, *.css) — network-first: свіжа версія підтягується
 //     при кожному онлайн-запуску, а офлайн працює з кешу;
 //   • іконки/шрифти/маніфест — cache-first (рідко змінюються), із докешуванням у рантаймі.
-const CACHE = 'kachalka-v107';
+const CACHE = 'kachalka-v108';
 // фото рецептів: окремий кеш, який не стирається при кожному оновленні версії
 const IMG_CACHE = 'kachalka-recipe-img-v1';
 const ASSETS = [
@@ -28,6 +28,7 @@ const ASSETS = [
   './js/guides.js',
   './js/receipt.js',
   './js/remind.js',
+  './js/push.js',
   './js/recipes-i18n/en.js',
   './js/recipes-i18n/pl.js',
   './js/recipes-i18n/de.js',
@@ -122,8 +123,24 @@ async function cacheFirst(req, name = CACHE) {
   }
 }
 
-// тап по сповіщенню «Калорії готові» (js/kcal-jobs.js): сфокусувати відкрите вікно застосунку й повести на data.hash,
-// а якщо застосунок закрито — відкрити його одразу на цьому екрані
+// пуш-нагадування від сервера (backend/edge-push, js/push.js): payload JSON { title, body, url: '#/…' }
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { title: e.data ? e.data.text() : '' }; }
+  const title = d.title || 'Gym Log';
+  e.waitUntil(
+    self.registration.showNotification(title, {
+      body: d.body || '',
+      icon: './icons/icon-192.png',
+      badge: './icons/icon-192.png',
+      tag: 'gymlog-push-' + title, // однакове нагадування не множиться
+      data: { hash: typeof d.url === 'string' && d.url.startsWith('#/') ? d.url : '#/today' },
+    })
+  );
+});
+
+// тап по сповіщенню («Калорії готові» з js/kcal-jobs.js і пуш-нагадування): сфокусувати відкрите вікно застосунку
+// й повести на data.hash, а якщо застосунок закрито — відкрити його одразу на цьому екрані
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   const hash = (e.notification.data && e.notification.data.hash) || '#/calories';
