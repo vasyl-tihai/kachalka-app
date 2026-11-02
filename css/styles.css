@@ -646,6 +646,8 @@ input, select { font-family: inherit; }
 
 /* ---------- налаштування: свотчі кольору, ряд кнопок, селект ---------- */
 #screen > .card { margin-bottom: 12px; }
+/* «Сьогодні»: картки дня (вітаміни, заняття, фото) окремо від списку вправ, а не впритул */
+.list + .card, .day-volume + .card { margin-top: 22px; }
 .card .hint { margin: 10px 0 0; font-size: .82rem; }
 .btn-col { display: flex; flex-direction: column; gap: 8px; }
 .card-div { height: 1px; background: var(--line); margin: 14px 0; }
