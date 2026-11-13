@@ -7762,6 +7762,7 @@ function renderSupps() {
     <div class="btn-col sp-actions">
       <button class="btn primary" id="spAdd">＋ ${T('Додати')}</button>
       ${all.length ? `<button class="btn ghost" id="spRemind">⏰ ${T('Нагадування в календар')}</button>` : ''}
+      ${BE.configured ? `<button class="btn ghost" id="spPhoto">📸 ${T('Фото вітамінів у профіль')}</button>` : ''}
     </div>`;
   const $ = (s) => screenEl.querySelector(s);
   $('#backSp').onclick = () => history.back();
@@ -7770,6 +7771,12 @@ function renderSupps() {
     [{ label: T('Зрозуміло'), class: 'primary', onClick: closeModal }]);
   $('#spAdd').onclick = openSuppAdd;
   $('#spRemind')?.addEventListener('click', openSuppReminders);
+  // фото вітамінів → вкладка 💊 профілю (відгук 12.11); без входу — пояснення
+  $('#spPhoto')?.addEventListener('click', async () => {
+    const session = await withTimeout(BE.getSession(), 3000).catch(() => null);
+    if (!session) { toast(T('Увійди в акаунт (вкладка «Спільнота»), щоб користуватись цим')); return; }
+    openPhotoPost(true);
+  });
   $('#spCal')?.addEventListener('click', () => { setCalView('supp'); go('#/calendar'); });
   screenEl.querySelectorAll('.sp-item').forEach((b) => (b.onclick = () => go('#/supp/' + b.dataset.id)));
   screenEl.querySelectorAll('.sp-group-h').forEach((b) => (b.onclick = () => go('#/course/' + b.dataset.cid)));
