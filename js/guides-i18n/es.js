@@ -240,4 +240,132 @@ export default {
     ],
     tip: 'Empieza con la versión sin flexión y sin salto.',
   },
+  catcow: {
+    muscles: 'Extensores de la espalda, músculos del core, movilidad de la columna',
+    steps: [
+      'Ponte a cuatro patas: palmas bajo los hombros, rodillas bajo las caderas.',
+      'Al inspirar, deja caer suavemente el abdomen, levanta la mirada y el coxis: es la «vaca».',
+      'Al espirar, redondea la espalda hacia arriba, acerca la barbilla al pecho y el abdomen a la columna: es el «gato».',
+      'Muévete con fluidez al ritmo de la respiración, vértebra a vértebra.',
+      'Haz de 8 a 10 repeticiones a un ritmo tranquilo.',
+    ],
+    mistakes: [
+      'Movimientos bruscos: el movimiento es lento, al ritmo de la respiración.',
+      'Solo trabajan los hombros y el cuello: el movimiento nace en la pelvis y recorre toda la espalda.',
+      'Los brazos se doblan en los codos: mantenlos estirados.',
+    ],
+    tip: 'Va muy bien como calentamiento matutino y antes de entrenar la espalda.',
+  },
+  downdog: {
+    muscles: 'Parte posterior del muslo, gemelos, hombros, estiramiento de la espalda',
+    steps: [
+      'Empieza a cuatro patas y apoya los dedos de los pies.',
+      'Al espirar, eleva las caderas hacia arriba y atrás estirando las piernas: el cuerpo forma una V invertida.',
+      'Empuja el suelo con las palmas y alarga la espalda desde las manos hasta la pelvis.',
+      'Los talones buscan el suelo, aunque no hace falta que lo toquen.',
+      'La cabeza cuelga relajada entre los hombros. Mantén de 5 a 8 respiraciones tranquilas.',
+    ],
+    mistakes: [
+      'Espalda redondeada: mejor flexiona las rodillas, pero mantén la columna larga.',
+      'Peso sobre las manos: llévalo hacia atrás, a las piernas.',
+      'Hombros pegados a las orejas: aléjalos de las orejas.',
+    ],
+    tip: 'Si tiras detrás de las rodillas, flexiónalas por turnos: «camina en el sitio».',
+  },
+  cobra: {
+    muscles: 'Extensores de la espalda, glúteos, estiramiento de pecho y abdomen',
+    steps: [
+      'Túmbate boca abajo con las piernas juntas y el empeine de los pies en el suelo.',
+      'Coloca las palmas bajo los hombros y pega los codos al cuerpo.',
+      'Al inspirar, levanta el pecho despacio, apoyándote más en la espalda que en los brazos.',
+      'Los codos quedan ligeramente flexionados, los hombros bajos y la mirada al frente.',
+      'Mantén de 3 a 5 respiraciones y baja con suavidad al espirar.',
+    ],
+    mistakes: [
+      'Brazos totalmente estirados y lumbar hundida: sube solo hasta una altura cómoda.',
+      'Cabeza echada hacia atrás: el cuello prolonga la línea de la columna.',
+      'La pelvis se despega del suelo: mantenla abajo.',
+    ],
+    tip: 'Si te duele la zona lumbar, baja más o apóyate en los antebrazos («esfinge»).',
+  },
+  child: {
+    muscles: 'Relajación de la espalda, estiramiento de caderas y hombros',
+    steps: [
+      'Ponte de rodillas con los dedos gordos de los pies juntos y las rodillas algo separadas.',
+      'Siéntate con la pelvis sobre los talones.',
+      'Al espirar, inclínate hacia delante y apoya el abdomen entre los muslos y la frente en el suelo.',
+      'Estira los brazos hacia delante o déjalos a lo largo del cuerpo.',
+      'Respira con calma y profundidad durante 30–60 segundos.',
+    ],
+    mistakes: [
+      'Hombros tensos: déjalos caer con libertad.',
+      'La pelvis no llega a los talones: coloca un cojín debajo.',
+      'Contener la respiración: es una postura de descanso, respira con libertad.',
+    ],
+    tip: 'Vuelve a esta postura entre ejercicios exigentes para recuperar el aliento.',
+  },
+  warrior2: {
+    muscles: 'Cuádriceps, glúteos, cara interna del muslo, hombros',
+    steps: [
+      'Separa las piernas, aproximadamente la longitud de una pierna.',
+      'Gira el pie derecho 90° hacia fuera y el izquierdo ligeramente hacia dentro.',
+      'Eleva los brazos a los lados a la altura de los hombros, con las palmas hacia abajo.',
+      'Al espirar, flexiona la rodilla derecha hasta situarla sobre el tobillo, con el muslo casi paralelo al suelo.',
+      'Mira por encima de la mano derecha. Mantén 5 respiraciones y repite hacia el otro lado.',
+    ],
+    mistakes: [
+      'La rodilla se hunde hacia dentro: llévala sobre el dedo medio del pie.',
+      'El torso se inclina hacia delante: mantenlo recto sobre la pelvis.',
+      'Hombros elevados: brazos largos y hombros bajos.',
+    ],
+    tip: 'Si se cansan las piernas, reduce la amplitud del paso y la profundidad de la flexión.',
+  },
+  tree: {
+    muscles: 'Músculos del pie y la pierna, glúteos, core, equilibrio',
+    steps: [
+      'Ponte de pie, erguido, y pasa el peso a la pierna izquierda.',
+      'Apoya el pie derecho en la cara interna de la pantorrilla o del muslo izquierdo (no en la rodilla).',
+      'Presiona el pie y la pierna entre sí, con la pelvis nivelada.',
+      'Junta las palmas frente al pecho o eleva los brazos sobre la cabeza.',
+      'Mira un punto fijo frente a ti. Mantén de 20 a 30 segundos y cambia de pierna.',
+    ],
+    mistakes: [
+      'Pie sobre la rodilla: esto carga la articulación.',
+      'La pelvis se desplaza hacia un lado: mantenla nivelada.',
+      'La mirada se mueve: fija un punto, así es más fácil mantener el equilibrio.',
+    ],
+    tip: 'Para empezar, puedes tocar la pared con una mano o apoyar el pie abajo, en el tobillo.',
+  },
+  bridge: {
+    muscles: 'Glúteos, parte posterior del muslo, extensores de la espalda',
+    steps: [
+      'Túmbate boca arriba, flexiona las rodillas y coloca los pies a la anchura de la cadera, cerca de los glúteos.',
+      'Brazos a lo largo del cuerpo, con las palmas hacia abajo.',
+      'Al espirar, empuja con los pies y eleva la pelvis.',
+      'Arriba, el cuerpo forma una línea recta desde los hombros hasta las rodillas, con los glúteos contraídos.',
+      'Mantén 2–3 respiraciones y baja la pelvis despacio. Repite de 8 a 12 veces.',
+    ],
+    mistakes: [
+      'Arquear la zona lumbar en lugar de trabajar los glúteos: retrovierte la pelvis.',
+      'Las rodillas se abren o se juntan: mantenlas a la anchura de la cadera.',
+      'Apoyarse en el cuello: el peso va sobre los hombros y los pies.',
+    ],
+    tip: 'Para dificultarlo, levanta una pierna y haz el puente con la otra.',
+  },
+  fold: {
+    muscles: 'Estiramiento de la parte posterior del muslo, los gemelos y la espalda',
+    steps: [
+      'Siéntate en el suelo con las piernas estiradas al frente y los dedos de los pies hacia ti.',
+      'Al inspirar, alarga la espalda y eleva los brazos.',
+      'Al espirar, inclínate hacia delante desde la cadera, no desde la espalda.',
+      'Agarra las espinillas, los tobillos o los pies: hasta donde llegues sin dolor.',
+      'Mantén de 30 a 60 segundos, bajando un poco más con cada espiración.',
+    ],
+    mistakes: [
+      'Espalda redondeada y cabeza hacia las rodillas: lleva el pecho hacia delante.',
+      'Rebotes: el estiramiento debe ser siempre suave.',
+      'Dolor fuerte detrás de la rodilla: flexiona ligeramente las rodillas.',
+    ],
+    tip: 'Coloca una toalla doblada bajo los glúteos: la flexión será más fácil.',
+  },
 };

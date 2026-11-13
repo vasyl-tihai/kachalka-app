@@ -240,4 +240,132 @@ export default {
     ],
     tip: 'Inizia con la versione senza piegamento e senza salto.',
   },
+  catcow: {
+    muscles: 'Estensori della schiena, muscoli del core, mobilità della colonna vertebrale',
+    steps: [
+      'Mettiti a quattro zampe: palmi sotto le spalle, ginocchia sotto le anche.',
+      'Inspirando, lascia scendere dolcemente l’addome, alza lo sguardo e il coccige: è la «mucca».',
+      'Espirando, arrotonda la schiena verso l’alto, avvicina il mento al petto e l’addome alla colonna: è il «gatto».',
+      'Muoviti con fluidità seguendo il respiro, vertebra dopo vertebra.',
+      'Esegui 8–10 ripetizioni a ritmo tranquillo.',
+    ],
+    mistakes: [
+      'Movimenti bruschi — il movimento è lento, al ritmo del respiro.',
+      'Lavorano solo spalle e collo — il movimento parte dal bacino e attraversa tutta la schiena.',
+      'Le braccia si piegano ai gomiti — tienile tese.',
+    ],
+    tip: 'Ottima come riscaldamento mattutino e prima di allenare la schiena.',
+  },
+  downdog: {
+    muscles: 'Parte posteriore delle cosce, polpacci, spalle, allungamento della schiena',
+    steps: [
+      'Parti dalla posizione a quattro zampe e appoggia le dita dei piedi.',
+      'Espirando, solleva il bacino verso l’alto e indietro, stendendo le gambe: il corpo forma una V rovesciata.',
+      'Spingi il pavimento con i palmi e allunga la schiena dalle mani al bacino.',
+      'I talloni tendono verso il pavimento, ma non serve che lo tocchino.',
+      'La testa pende libera tra le spalle. Mantieni 5–8 respiri tranquilli.',
+    ],
+    mistakes: [
+      'Schiena curva — meglio piegare le ginocchia, ma mantieni la colonna allungata.',
+      'Peso sulle mani — spostalo indietro, sulle gambe.',
+      'Spalle vicino alle orecchie — allontanale dalle orecchie.',
+    ],
+    tip: 'Se senti tirare dietro le ginocchia, piegale a turno: «cammina sul posto».',
+  },
+  cobra: {
+    muscles: 'Estensori della schiena, glutei, allungamento di petto e addominali',
+    steps: [
+      'Sdraiati a pancia in giù, gambe unite, dorso dei piedi sul pavimento.',
+      'Posiziona i palmi sotto le spalle e tieni i gomiti stretti al corpo.',
+      'Inspirando, solleva lentamente il petto, appoggiandoti più sulla schiena che sulle braccia.',
+      'I gomiti restano leggermente piegati, le spalle basse, lo sguardo in avanti.',
+      'Mantieni 3–5 respiri e scendi con dolcezza espirando.',
+    ],
+    mistakes: [
+      'Braccia completamente tese e zona lombare schiacciata — sali solo fino a un’altezza comoda.',
+      'Testa gettata all’indietro — il collo prolunga la linea della colonna.',
+      'Il bacino si stacca dal pavimento — tienilo giù.',
+    ],
+    tip: 'Se ti fa male la zona lombare, scendi più in basso o appoggiati sugli avambracci («sfinge»).',
+  },
+  child: {
+    muscles: 'Rilassamento della schiena, allungamento di anche e spalle',
+    steps: [
+      'Inginocchiati con gli alluci uniti e le ginocchia leggermente divaricate.',
+      'Siediti con il bacino sui talloni.',
+      'Espirando, piegati in avanti appoggiando l’addome tra le cosce e la fronte sul pavimento.',
+      'Allunga le braccia in avanti oppure appoggiale lungo il corpo.',
+      'Respira con calma e profondità per 30–60 secondi.',
+    ],
+    mistakes: [
+      'Spalle tese — lasciale scendere liberamente.',
+      'Il bacino non arriva ai talloni — metti un cuscino sotto.',
+      'Trattenere il respiro — è una posizione di riposo, respira liberamente.',
+    ],
+    tip: 'Torna in questa posizione tra un esercizio impegnativo e l’altro per recuperare il fiato.',
+  },
+  warrior2: {
+    muscles: 'Quadricipiti, glutei, parte interna delle cosce, spalle',
+    steps: [
+      'Divarica molto le gambe, circa la lunghezza di una gamba.',
+      'Ruota il piede destro di 90° verso l’esterno e il sinistro leggermente verso l’interno.',
+      'Solleva le braccia ai lati all’altezza delle spalle, palmi verso il basso.',
+      'Espirando, piega il ginocchio destro portandolo sopra la caviglia, con la coscia quasi parallela al pavimento.',
+      'Guarda oltre la mano destra. Mantieni 5 respiri e ripeti dall’altro lato.',
+    ],
+    mistakes: [
+      'Il ginocchio cede verso l’interno — guidalo sopra il dito medio del piede.',
+      'Il busto si inclina in avanti — tienilo dritto sopra il bacino.',
+      'Spalle sollevate — braccia lunghe, spalle basse.',
+    ],
+    tip: 'Se le gambe si affaticano, riduci l’ampiezza del passo e la profondità della flessione.',
+  },
+  tree: {
+    muscles: 'Muscoli del piede e della gamba, glutei, muscoli del core, equilibrio',
+    steps: [
+      'Mettiti in piedi, ben eretto, e sposta il peso sulla gamba sinistra.',
+      'Appoggia il piede destro sul lato interno del polpaccio o della coscia sinistra (non sul ginocchio).',
+      'Premi il piede e la gamba l’uno contro l’altra, con il bacino in asse.',
+      'Unisci i palmi davanti al petto oppure solleva le braccia sopra la testa.',
+      'Fissa un punto davanti a te. Mantieni 20–30 secondi e cambia gamba.',
+    ],
+    mistakes: [
+      'Piede sul ginocchio — sovraccarica l’articolazione.',
+      'Il bacino scivola di lato — tienilo dritto.',
+      'Lo sguardo vaga — fissa un punto, così è più facile mantenere l’equilibrio.',
+    ],
+    tip: 'All’inizio puoi toccare il muro con una mano o appoggiare il piede in basso, sulla caviglia.',
+  },
+  bridge: {
+    muscles: 'Glutei, parte posteriore delle cosce, estensori della schiena',
+    steps: [
+      'Sdraiati sulla schiena, piega le ginocchia, piedi alla larghezza del bacino e vicini ai glutei.',
+      'Braccia lungo il corpo, palmi verso il basso.',
+      'Espirando, spingi con i piedi e solleva il bacino.',
+      'In alto il corpo forma una linea retta dalle spalle alle ginocchia, glutei contratti.',
+      'Mantieni 2–3 respiri e abbassa lentamente il bacino. Ripeti 8–12 volte.',
+    ],
+    mistakes: [
+      'Inarcare la zona lombare invece di lavorare con i glutei — retroverti il bacino.',
+      'Le ginocchia si aprono o si chiudono — tienile alla larghezza del bacino.',
+      'Appoggiarsi sul collo — il peso sta su spalle e piedi.',
+    ],
+    tip: 'Per renderlo più difficile, solleva una gamba ed esegui il ponte sull’altra.',
+  },
+  fold: {
+    muscles: 'Allungamento della parte posteriore delle cosce, dei polpacci e della schiena',
+    steps: [
+      'Siediti sul pavimento con le gambe tese in avanti e le punte dei piedi verso di te.',
+      'Inspirando, allunga la schiena e solleva le braccia verso l’alto.',
+      'Espirando, piegati in avanti partendo dal bacino, non dalla schiena.',
+      'Afferra gli stinchi, le caviglie o i piedi — fin dove arrivi senza dolore.',
+      'Mantieni 30–60 secondi, scendendo un po’ di più a ogni espirazione.',
+    ],
+    mistakes: [
+      'Schiena curva e testa verso le ginocchia — porta avanti il petto.',
+      'Molleggi — l’allungamento deve essere sempre fluido.',
+      'Forte dolore dietro il ginocchio — piega leggermente le ginocchia.',
+    ],
+    tip: 'Metti un asciugamano piegato sotto i glutei: la flessione sarà più facile.',
+  },
 };

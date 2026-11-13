@@ -4345,7 +4345,8 @@ function feedPostHTML(p, meId, liked) {
     ? `<div class="cc-slides">${imgs.map((u) => `<img class="cc-sl" src="${esc(u)}" alt="" loading="lazy"${fb}/>`).join('')}</div>`
     : photo ? `<img class="rc-photo" src="${photo}" alt="" loading="lazy"${fb}/>` : '';
   const tag = isRecordPost(p) ? `<span>🏆 ${T('Рекорд')}</span>`
-    : kind === 'progress' ? `<span>↔️ ${T('До/після')}</span>` : kind === 'workout' ? `<span>🏋️ ${T('Тренування')}</span>` : '';
+    : kind === 'progress' ? `<span>↔️ ${T('До/після')}</span>` : kind === 'workout' ? `<span>🏋️ ${T('Тренування')}</span>`
+      : isSuppPost(p) ? `<span>💊 ${T('Вітаміни')}</span>` : '';
   const place = placeLine(a, tr);
   return `<article class="rcard ccard k-${esc(kind)}" data-id="${esc(p.id)}">
     <div class="rc-bg${photo ? '' : ' cc-plain'}">
@@ -4687,6 +4688,7 @@ function openNewPost() {
     <div class="np-kinds">
       <button class="np-kind" data-k="photo"><span>📸</span>${T('Фото')}</button>
       <button class="np-kind" data-k="progress"><span>↔️</span>${T('До/після')}</button>
+      <button class="np-kind" data-k="supp"><span>💊</span>${T('Вітаміни')}</button>
       <button class="np-kind" data-k="workout" ${last ? '' : 'disabled'}><span>🏋️</span>${T('Тренування')}${last ? `<small>${esc(S.prettyDate(last))}</small>` : `<small>${T('ще немає')}</small>`}</button>
     </div>`);
   document.querySelectorAll('.np-kind').forEach((b) => (b.onclick = () => {
@@ -4694,20 +4696,22 @@ function openNewPost() {
     closeModal();
     if (k === 'workout') openShareWorkout(last);
     else if (k === 'progress') openProgressPost();
-    else openPhotoPost();
+    else openPhotoPost(k === 'supp');
   }));
 }
-function openPhotoPost() {
+// supp — фото вітамінів: звичайний фото-допис з meta.tag = 'supp' (серверного патча не треба), у профілі — окрема вкладка 💊
+function openPhotoPost(supp = false) {
   const MAX = BE.MAX_POST_PHOTOS || 4;
   let items = []; // [{ file, url }] — обрані фото в порядку показу, перше — головне
   let busy = false;
-  openModal(T('Додати фото'), `
+  openModal(supp ? `💊 ${T('Фото вітамінів')}` : T('Додати фото'), `
     <div class="field"><label>${T('Фото (до 4)')}</label>
       <div class="pp-grid" id="ppGrid"></div>
       <input type="file" id="postFile" accept="image/*" multiple hidden/>
       <p class="muted small pp-hint">${T('Перше фото — головне. Стрілками змінюй порядок.')}</p></div>
     <div class="field"><label>${T('Підпис (необовʼязково)')}</label>
-      <input type="text" id="postCap" maxlength="200" placeholder="${T('Як пройшло тренування?')}"/></div>`, [
+      <input type="text" id="postCap" maxlength="200" placeholder="${supp ? T('Що п’єш і навіщо?') : T('Як пройшло тренування?')}"/></div>
+    ${supp ? `<p class="muted small">${T('Фото зʼявиться у вкладці 💊 твого профілю. Не медична порада.')}</p>` : ''}`, [
     { label: T('Опублікувати'), class: 'primary', onClick: async (root) => {
       if (busy) return;
       if (!items.length) { toast(T('Спершу обери фото')); return; }
@@ -4718,7 +4722,7 @@ function openPhotoPost() {
           toast(T('Завантажую фото…') + (items.length > 1 ? ` ${i + 1}/${items.length}` : ''));
           blobs.push(await downscalePhoto(items[i].file));
         }
-        const r = await BE.addPost(blobs, root.querySelector('#postCap').value.trim());
+        const r = await BE.addPost(blobs, root.querySelector('#postCap').value.trim(), supp ? { kind: 'photo', meta: { tag: 'supp' } } : undefined);
         items.forEach((it) => URL.revokeObjectURL(it.url));
         closeModal();
         toast(r && r.saved < blobs.length ? '⚠️ ' + T('Опубліковано лише перше фото — сервер ще оновлюється') : '📸 ' + T('Опубліковано!'));
@@ -4891,17 +4895,21 @@ function profileEmptyHTML(ico, text) {
 const PROFILE_TABS = [
   ['posts', 'Дописи', '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.2"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.2"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.2"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.2"/></svg>'],
   ['recipes', 'Рецепти', '🍽'],
+  ['supps', 'Вітаміни', '💊'],
   ['train', 'Тренування', '🏋️'],
 ];
+const isSuppPost = (p) => !!(p && p.meta && p.meta.tag === 'supp');
 // вкладки під шапкою; box — порожній контейнер у розмітці сторінки
 function mountProfileTabs(box, { p, posts, tr, sharedTr, emptyHint = {} }) {
-  const lists = { posts: posts.filter((x) => x.kind !== 'recipe'), recipes: posts.filter((x) => x.kind === 'recipe') };
+  const lists = { posts: posts.filter((x) => x.kind !== 'recipe' && !isSuppPost(x)), recipes: posts.filter((x) => x.kind === 'recipe'),
+    supps: posts.filter(isSuppPost) };
   let cur = 'posts';
   const paneHTML = () => {
     if (cur === 'train') {
       const html = (hasStats(p) ? statsHTML(p.stats) : '') + trainHistHTML(sharedTr, tr);
       return html || profileEmptyHTML('🏋️', emptyHint.train || T('Поки немає тренувань'));
     }
+    if (cur === 'supps') return postsGridHTML(lists.supps, emptyHint.supps || T('Поки немає фото вітамінів'), '💊');
     return cur === 'recipes' ? postsGridHTML(lists.recipes, emptyHint.recipes || T('Поки немає рецептів'), '🍽') : postsGridHTML(lists.posts, emptyHint.posts);
   };
   const draw = () => {
@@ -5934,6 +5942,8 @@ const GUIDE_TITLES = {
   bench_db: 'Жим гантелей лежачи', row_bb: 'Тяга штанги в нахилі', row_db: 'Тяга гантелей у нахилі',
   deadlift: 'Станова тяга', curl: 'Згинання на біцепс', crunch: 'Скручування', pushup: 'Віджимання',
   pullup: 'Підтягування', plank: 'Планка', lunge: 'Випади', ohp: 'Жим стоячи', burpee: 'Берпі',
+  catcow: 'Кішка-корова', downdog: 'Собака мордою вниз', cobra: 'Кобра', child: 'Поза дитини',
+  warrior2: 'Воїн II', tree: 'Поза дерева', bridge: 'Місток', fold: 'Нахил уперед сидячи',
 };
 const guideTexts = {}; // мова → переклад (вантажиться за потреби)
 async function guideText(id) {
@@ -5949,6 +5959,8 @@ async function guideText(id) {
 }
 const EX_IMG_V = 6; // підняти після перерендеру img/exercises — SW віддає їх із кешу (cache-first)
 function guideMediaHTML(id, cls = '') {
+  const gd = GD.GUIDES[id] || {};
+  if (gd.noimg) return cls === 'mini' ? `<div class="guide-media mini gm-ico">${gd.ico || '🧘'}</div>` : ''; // йога: ілюстрацій поки немає
   // мініатюра — перший кадр; велика — смужка з 9 кадрів (tools/exercise3d/anim.py), рух туди-назад робить CSS
   // (@keyframes exRun). Немає файлу — блок ховається
   if (cls === 'mini') {
@@ -6008,19 +6020,23 @@ async function renderGuides() {
   const ids = Object.keys(GD.GUIDES);
   const texts = await Promise.all(ids.map(guideText));
   if (location.hash !== '#/guides') return;
-  const rows = ids.map((id, i) => `
+  const row = (id, i) => `
     <button class="pick-row aih-row guide-row" data-g="${id}">
       ${guideMediaHTML(id, 'mini')}
       <span class="aih-txt"><b>${T(GUIDE_TITLES[id])}</b><span class="muted">${esc(texts[i].muscles)}</span></span>
       <span class="fc-pat">›</span>
-    </button>`).join('');
+    </button>`;
+  // два розділи: силові вправи й йога/гімнастика (відгук 12.11)
+  const part = (yoga) => ids.map((id, i) => (!GD.GUIDES[id].yoga === !yoga ? row(id, i) : '')).join('');
+  const rows = `<p class="muted side guide-sec">🏋️ ${T('Силові вправи')}</p><div class="pick-list">${part(false)}</div>
+    <p class="muted side guide-sec">🧘 ${T('Йога й гімнастика')}</p><div class="pick-list">${part(true)}</div>`;
   screenEl.innerHTML = `
     <header class="appbar">
       <button class="icon-btn" id="backG">‹</button>
       <div class="appbar-titles"><div class="appbar-kicker">📘 ${T('Як виконувати')}</div>
         <div class="appbar-title">${T('Техніка вправ')}</div></div>
     </header>
-    <div class="pick-list">${rows}</div>`;
+    ${rows}`;
   screenEl.querySelector('#backG').onclick = () => history.back();
   screenEl.querySelectorAll('.guide-row').forEach((b) => b.addEventListener('click', () => go('#/guide/' + b.dataset.g)));
 }
@@ -6544,7 +6560,8 @@ function openRecipeSheet(r) {
   ov.className = 'rsheet-ov';
   ov.innerHTML = `
     <div class="rsheet">
-      <div class="rsheet-grip"></div>
+      <div class="rsheet-top"><div class="rsheet-grip"></div>
+        <button class="rsheet-x" type="button" aria-label="${T('Закрити')}" title="${T('Закрити')}">✕</button></div>
       <h3>${esc(r.name)}</h3>
       ${r.post ? `<p class="muted rs-by">${T('Автор')}: <b>${esc((r.post.author || {}).name || T('Без імені'))}</b>${(r.post.author || {}).role === 'trainer' ? ` · <span class="rp-coach">🧑‍🏫 ${T('Тренер')}</span>` : ''}</p>
         ${r.post.caption ? `<p class="rs-cap">${esc(r.post.caption)}</p>` : ''}` : ''}
@@ -6572,6 +6589,7 @@ function openRecipeSheet(r) {
   requestAnimationFrame(() => ov.classList.add('open'));
   const close = () => { ov.classList.remove('open'); setTimeout(() => ov.remove(), 250); };
   ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+  ov.querySelector('.rsheet-x').onclick = close;
   ov.querySelectorAll('[data-act]').forEach((b) => (b.onclick = () => recipeAction(b.dataset.act, r, null)));
   const ed = ov.querySelector('#rsEdit');
   if (ed) ed.onclick = () => { ov.remove(); go('#/recipe-edit/' + encodeURIComponent(r.id)); };
@@ -6653,6 +6671,11 @@ async function renderRecipeEdit(idEnc) {
         <textarea id="reSteps" rows="5">${esc(v.steps.join('\n'))}</textarea></div>
       <div class="field"><label>${T('Посилання на відео')} <span class="muted">YouTube / TikTok / Instagram</span></label>
         <input type="url" id="reVideo" value="${esc(v.video)}" placeholder="https://youtube.com/shorts/…"/></div>
+      ${BE.configured ? `<div class="field"><label>${T('Хто бачить рецепт')}</label>
+        <div class="re-vis">
+          <label><input type="radio" name="reVis" value="me" checked/> <span>🔒 ${T('Лише я')}</span></label>
+          <label><input type="radio" name="reVis" value="pub"/> <span>📣 ${T('Опублікувати в Спільноті')}</span></label>
+        </div></div>` : ''}
       <button class="btn primary" id="reSave">${T('Зберегти рецепт')}</button>
     </section>`;
 
@@ -6750,7 +6773,10 @@ async function renderRecipeEdit(idEnc) {
     recipeTab = 'mine';
     recipeFilter = 'all';
     recipeAt = saved.id;
+    const pub = screenEl.querySelector('input[name="reVis"]:checked');
     go('#/recipes');
+    // «Опублікувати в Спільноті» (відгук 13.11): рецепт уже в «Мої», далі — те саме вікно, що й кнопка в шторці
+    if (pub && pub.value === 'pub') setTimeout(() => shareRecipeToCommunity(saved), 300);
   };
 }
 

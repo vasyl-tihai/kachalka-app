@@ -240,4 +240,132 @@ export default {
     ],
     tip: 'Zacznij od wersji bez pompki i bez wyskoku.',
   },
+  catcow: {
+    muscles: 'Prostowniki grzbietu, mięśnie głębokie tułowia, ruchomość kręgosłupa',
+    steps: [
+      'Przyjmij pozycję na czworakach: dłonie pod barkami, kolana pod biodrami.',
+      'Na wdechu delikatnie opuść brzuch w dół, unieś wzrok i kość ogonową — to „krowa”.',
+      'Na wydechu zaokrąglij plecy do góry, przyciągnij brodę do klatki piersiowej, a brzuch do kręgosłupa — to „kot”.',
+      'Poruszaj się płynnie w rytmie oddechu, kręg po kręgu.',
+      'Zrób 8–10 powtórzeń w spokojnym tempie.',
+    ],
+    mistakes: [
+      'Gwałtowne ruchy — ruch ma być powolny, zgodny z oddechem.',
+      'Pracują tylko barki i szyja — ruch zaczyna się w miednicy i przechodzi przez cały grzbiet.',
+      'Zginanie rąk w łokciach — trzymaj je proste.',
+    ],
+    tip: 'Świetnie sprawdza się jako poranna rozgrzewka i przed treningiem pleców.',
+  },
+  downdog: {
+    muscles: 'Tylna strona ud, łydki, barki, rozciągnięcie pleców',
+    steps: [
+      'Zacznij na czworakach i podwiń palce stóp.',
+      'Na wydechu unieś biodra w górę i do tyłu, prostując nogi — ciało tworzy odwróconą literę V.',
+      'Odpychaj się dłońmi od podłogi i wydłużaj plecy od rąk do bioder.',
+      'Pięty sięgają ku podłodze, ale nie muszą jej dotykać.',
+      'Głowa swobodnie między ramionami. Zostań na 5–8 spokojnych oddechów.',
+    ],
+    mistakes: [
+      'Zaokrąglone plecy — lepiej ugnij kolana, ale wydłuż kręgosłup.',
+      'Ciężar na rękach — przenieś go do tyłu, na nogi.',
+      'Barki przy uszach — odsuwaj je od uszu.',
+    ],
+    tip: 'Jeśli ciągnie za kolanami, naprzemiennie uginaj kolana — „chodź w miejscu”.',
+  },
+  cobra: {
+    muscles: 'Prostowniki grzbietu, pośladki, rozciągnięcie klatki piersiowej i brzucha',
+    steps: [
+      'Połóż się na brzuchu, nogi razem, grzbiety stóp na podłodze.',
+      'Ustaw dłonie pod barkami, łokcie przyciśnij do ciała.',
+      'Na wdechu powoli unieś klatkę piersiową, opierając się bardziej na plecach niż na rękach.',
+      'Łokcie pozostają lekko ugięte, barki opuszczone, wzrok skierowany przed siebie.',
+      'Zostań na 3–5 oddechów i na wydechu delikatnie opuść się.',
+    ],
+    mistakes: [
+      'Całkowicie wyprostowane ręce i załamane lędźwie — unoś się tylko na wygodną wysokość.',
+      'Głowa odchylona do tyłu — szyja jest przedłużeniem linii kręgosłupa.',
+      'Miednica odrywa się od podłogi — trzymaj ją nisko.',
+    ],
+    tip: 'Jeśli bolą lędźwie, opuść się niżej lub oprzyj się na przedramionach („sfinks”).',
+  },
+  child: {
+    muscles: 'Rozluźnienie pleców, rozciągnięcie bioder i barków',
+    steps: [
+      'Uklęknij, duże palce stóp razem, kolana lekko rozsunięte.',
+      'Usiądź miednicą na piętach.',
+      'Na wydechu pochyl się do przodu i połóż brzuch między udami, a czoło na podłodze.',
+      'Wyciągnij ręce do przodu lub połóż je wzdłuż ciała.',
+      'Oddychaj spokojnie i głęboko przez 30–60 sekund.',
+    ],
+    mistakes: [
+      'Napięte barki — pozwól im swobodnie opaść.',
+      'Miednica nie sięga pięt — podłóż pod nią poduszkę.',
+      'Wstrzymywanie oddechu — to pozycja odpoczynku, oddychaj swobodnie.',
+    ],
+    tip: 'Wracaj do tej pozycji między trudniejszymi ćwiczeniami, aby uspokoić oddech.',
+  },
+  warrior2: {
+    muscles: 'Czworogłowe uda, pośladki, wewnętrzna strona ud, barki',
+    steps: [
+      'Rozstaw nogi szeroko, mniej więcej na długość jednej nogi.',
+      'Obróć prawą stopę o 90° na zewnątrz, lewą lekko do wewnątrz.',
+      'Unieś ręce na boki na wysokość barków, dłońmi w dół.',
+      'Na wydechu ugnij prawe kolano tak, by znalazło się nad kostką, a udo było blisko poziomu.',
+      'Patrz ponad prawą dłonią. Zostań na 5 oddechów i powtórz na drugą stronę.',
+    ],
+    mistakes: [
+      'Kolano zapada się do środka — prowadź je nad środkowym palcem stopy.',
+      'Tułów pochyla się do przodu — trzymaj go prosto nad miednicą.',
+      'Uniesione barki — ręce długie, barki opuszczone.',
+    ],
+    tip: 'Jeśli nogi się męczą, zmniejsz rozkrok i głębokość ugięcia.',
+  },
+  tree: {
+    muscles: 'Mięśnie stopy i podudzia, pośladki, mięśnie głębokie tułowia, równowaga',
+    steps: [
+      'Stań prosto i przenieś ciężar na lewą nogę.',
+      'Ustaw prawą stopę po wewnętrznej stronie lewej łydki lub uda (nie na kolanie).',
+      'Dociśnij stopę i nogę do siebie, miednica pozostaje równo.',
+      'Złóż dłonie przed klatką piersiową lub unieś ręce nad głowę.',
+      'Patrz w jeden punkt przed sobą. Zostań na 20–30 sekund i zmień nogę.',
+    ],
+    mistakes: [
+      'Stopa na kolanie — obciąża to staw.',
+      'Miednica ucieka na bok — trzymaj ją prosto.',
+      'Błądzący wzrok — zatrzymaj go na jednym punkcie, łatwiej utrzymać równowagę.',
+    ],
+    tip: 'Na początek możesz dotknąć ściany ręką lub oprzeć stopę nisko, na kostce.',
+  },
+  bridge: {
+    muscles: 'Pośladki, tylna strona ud, prostowniki grzbietu',
+    steps: [
+      'Połóż się na plecach, ugnij kolana, stopy na szerokość bioder blisko pośladków.',
+      'Ręce wzdłuż ciała, dłońmi w dół.',
+      'Na wydechu odepchnij się stopami i unieś biodra w górę.',
+      'Na górze ciało od barków do kolan tworzy prostą linię, pośladki są napięte.',
+      'Zostań na 2–3 oddechy i powoli opuść biodra. Powtórz 8–12 razy.',
+    ],
+    mistakes: [
+      'Wygięcie w lędźwiach zamiast pracy pośladków — podwiń miednicę.',
+      'Kolana rozjeżdżają się lub schodzą do siebie — trzymaj je na szerokość bioder.',
+      'Opieranie się na szyi — ciężar na barkach i stopach.',
+    ],
+    tip: 'Utrudnienie — unieś jedną nogę i wykonuj mostek na drugiej.',
+  },
+  fold: {
+    muscles: 'Rozciągnięcie tylnej strony ud, łydek i pleców',
+    steps: [
+      'Usiądź na podłodze, nogi wyprostowane do przodu, palce stóp skierowane do siebie.',
+      'Na wdechu wydłuż plecy i unieś ręce w górę.',
+      'Na wydechu pochyl się do przodu z bioder, a nie z pleców.',
+      'Chwyć łydki, kostki lub stopy — tam, gdzie dosięgniesz bez bólu.',
+      'Zostań na 30–60 sekund, z każdym wydechem odrobinę głębiej.',
+    ],
+    mistakes: [
+      'Zaokrąglone plecy i sięganie głową do kolan — prowadź do przodu klatkę piersiową.',
+      'Szarpanie — rozciąganie tylko płynne.',
+      'Silny ból za kolanem — lekko ugnij kolana.',
+    ],
+    tip: 'Podłóż pod pośladki złożony ręcznik — pochylenie będzie łatwiejsze.',
+  },
 };

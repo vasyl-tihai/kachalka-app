@@ -240,4 +240,132 @@ export default {
     ],
     tip: 'Start with the version without the push-up and without the jump.',
   },
+  catcow: {
+    muscles: 'Back extensors, core muscles, spinal mobility',
+    steps: [
+      'Get on all fours: palms under your shoulders, knees under your hips.',
+      'On an inhale, gently let your belly sink, lift your gaze and tailbone — this is “cow”.',
+      'On an exhale, round your back up, tuck your chin toward your chest and draw your belly to your spine — this is “cat”.',
+      'Move smoothly with your breath, one vertebra at a time.',
+      'Do 8–10 repetitions at a calm pace.',
+    ],
+    mistakes: [
+      'Jerky movements — keep it slow, in rhythm with your breath.',
+      'Only the shoulders and neck work — the movement starts at the pelvis and runs through the whole back.',
+      'Elbows bending — keep your arms straight.',
+    ],
+    tip: 'Works well as a morning warm-up and before a back workout.',
+  },
+  downdog: {
+    muscles: 'Hamstrings, calves, shoulders, back stretch',
+    steps: [
+      'Start on all fours and tuck your toes under.',
+      'On an exhale, lift your hips up and back, straightening your legs — your body forms an inverted V.',
+      'Press the floor away with your palms and lengthen your back from hands to hips.',
+      'Your heels reach toward the floor, but they don’t have to touch it.',
+      'Let your head hang freely between your shoulders. Hold for 5–8 calm breaths.',
+    ],
+    mistakes: [
+      'Rounded back — bend your knees instead, but keep your spine long.',
+      'Weight on the hands — shift it back toward the legs.',
+      'Shoulders near the ears — draw them away from your ears.',
+    ],
+    tip: 'If you feel a pull behind the knees, bend them one at a time — “walk the dog”.',
+  },
+  cobra: {
+    muscles: 'Back extensors, glutes, stretch for the chest and abs',
+    steps: [
+      'Lie on your stomach with your legs together and the tops of your feet on the floor.',
+      'Place your palms under your shoulders and hug your elbows to your body.',
+      'On an inhale, slowly lift your chest, using your back more than your arms.',
+      'Keep your elbows slightly bent, shoulders down, gaze forward.',
+      'Hold for 3–5 breaths and gently lower on an exhale.',
+    ],
+    mistakes: [
+      'Fully straight arms and a collapsed lower back — lift only to a comfortable height.',
+      'Head thrown back — your neck continues the line of your spine.',
+      'Hips lifting off the floor — keep them down.',
+    ],
+    tip: 'If your lower back hurts, go lower or rest on your forearms (“sphinx”).',
+  },
+  child: {
+    muscles: 'Back relaxation, stretch for the hips and shoulders',
+    steps: [
+      'Kneel with your big toes together and your knees slightly apart.',
+      'Sit your hips back onto your heels.',
+      'On an exhale, fold forward, resting your belly between your thighs and your forehead on the floor.',
+      'Stretch your arms forward or place them alongside your body.',
+      'Breathe calmly and deeply for 30–60 seconds.',
+    ],
+    mistakes: [
+      'Tense shoulders — let them drop freely.',
+      'Hips don’t reach the heels — place a cushion under them.',
+      'Holding your breath — this is a resting pose, breathe freely.',
+    ],
+    tip: 'Come back to this pose between harder exercises to recover your breath.',
+  },
+  warrior2: {
+    muscles: 'Quadriceps, glutes, inner thighs, shoulders',
+    steps: [
+      'Step your feet wide apart, about one leg’s length.',
+      'Turn your right foot out 90° and your left foot slightly in.',
+      'Raise your arms out to the sides at shoulder height, palms down.',
+      'On an exhale, bend your right knee so it is over your ankle, with your thigh close to parallel to the floor.',
+      'Gaze over your right hand. Hold for 5 breaths and repeat on the other side.',
+    ],
+    mistakes: [
+      'Knee caving inward — guide it over the middle toe.',
+      'Torso leaning forward — keep it upright over your hips.',
+      'Raised shoulders — keep your arms long and your shoulders down.',
+    ],
+    tip: 'If your legs tire, shorten your stance and bend less deeply.',
+  },
+  tree: {
+    muscles: 'Foot and lower leg muscles, glutes, core, balance',
+    steps: [
+      'Stand tall and shift your weight onto your left leg.',
+      'Place your right foot on the inner side of your left calf or thigh (not on the knee).',
+      'Press your foot and leg into each other, keeping your hips level.',
+      'Bring your palms together in front of your chest or raise your arms overhead.',
+      'Focus on one point in front of you. Hold for 20–30 seconds and switch legs.',
+    ],
+    mistakes: [
+      'Foot on the knee — this puts stress on the joint.',
+      'Hip drifting sideways — keep your pelvis level.',
+      'Wandering gaze — fix on one point, it makes balance easier.',
+    ],
+    tip: 'To start, touch a wall with one hand or place your foot low, on the ankle.',
+  },
+  bridge: {
+    muscles: 'Glutes, hamstrings, back extensors',
+    steps: [
+      'Lie on your back with your knees bent, feet hip-width apart and close to your glutes.',
+      'Rest your arms alongside your body, palms down.',
+      'On an exhale, press through your feet and lift your hips.',
+      'At the top, your body forms a straight line from shoulders to knees, glutes engaged.',
+      'Hold for 2–3 breaths and slowly lower your hips. Repeat 8–12 times.',
+    ],
+    mistakes: [
+      'Arching the lower back instead of using the glutes — tuck your pelvis.',
+      'Knees falling apart or together — keep them hip-width apart.',
+      'Resting weight on the neck — keep the weight on your shoulders and feet.',
+    ],
+    tip: 'To make it harder, lift one leg and do the bridge on the other.',
+  },
+  fold: {
+    muscles: 'Stretch for the hamstrings, calves and back',
+    steps: [
+      'Sit on the floor with your legs extended forward and your toes pulled toward you.',
+      'On an inhale, lengthen your spine and raise your arms overhead.',
+      'On an exhale, fold forward from the hips, not from the back.',
+      'Hold your shins, ankles or feet — wherever you can reach without pain.',
+      'Hold for 30–60 seconds, going a little deeper with each exhale.',
+    ],
+    mistakes: [
+      'Rounded back and reaching with the head toward the knees — lead forward with your chest.',
+      'Bouncing — the stretch should be smooth only.',
+      'Sharp pain behind the knee — bend your knees slightly.',
+    ],
+    tip: 'Place a folded towel under your hips — the fold becomes easier.',
+  },
 };

@@ -240,4 +240,132 @@ export default {
     ],
     tip: 'Commence par la version sans pompe et sans saut.',
   },
+  catcow: {
+    muscles: 'Extenseurs du dos, muscles du tronc, mobilité de la colonne vertébrale',
+    steps: [
+      'Mets-toi à quatre pattes : paumes sous les épaules, genoux sous les hanches.',
+      'À l’inspiration, laisse doucement le ventre descendre, lève le regard et le coccyx : c’est la « vache ».',
+      'À l’expiration, arrondis le dos vers le haut, rapproche le menton de la poitrine et le ventre de la colonne : c’est le « chat ».',
+      'Bouge en douceur au rythme de la respiration, vertèbre après vertèbre.',
+      'Fais 8 à 10 répétitions à un rythme calme.',
+    ],
+    mistakes: [
+      'Mouvements brusques — le mouvement est lent, au rythme de la respiration.',
+      'Seuls les épaules et le cou travaillent — le mouvement part du bassin et traverse tout le dos.',
+      'Les bras se plient aux coudes — garde-les tendus.',
+    ],
+    tip: 'Convient très bien comme échauffement du matin et avant une séance de dos.',
+  },
+  downdog: {
+    muscles: 'Arrière des cuisses, mollets, épaules, étirement du dos',
+    steps: [
+      'Pars de la position à quatre pattes et enroule les orteils sous les pieds.',
+      'À l’expiration, monte le bassin vers le haut et l’arrière en tendant les jambes : le corps forme un V inversé.',
+      'Repousse le sol avec les paumes et allonge le dos des mains jusqu’au bassin.',
+      'Les talons s’étirent vers le sol, sans nécessairement le toucher.',
+      'La tête pend librement entre les épaules. Tiens 5 à 8 respirations calmes.',
+    ],
+    mistakes: [
+      'Dos rond — plie plutôt les genoux, mais garde la colonne allongée.',
+      'Poids sur les mains — ramène-le vers l’arrière, sur les jambes.',
+      'Épaules près des oreilles — éloigne-les des oreilles.',
+    ],
+    tip: 'Si ça tire derrière les genoux, plie-les en alternance : « marche sur place ».',
+  },
+  cobra: {
+    muscles: 'Extenseurs du dos, fessiers, étirement de la poitrine et des abdominaux',
+    steps: [
+      'Allonge-toi sur le ventre, jambes jointes, le dessus des pieds au sol.',
+      'Place les paumes sous les épaules et colle les coudes au corps.',
+      'À l’inspiration, soulève lentement la poitrine en t’appuyant plus sur le dos que sur les bras.',
+      'Les coudes restent légèrement fléchis, les épaules basses, le regard devant toi.',
+      'Tiens 3 à 5 respirations et redescends doucement à l’expiration.',
+    ],
+    mistakes: [
+      'Bras complètement tendus et bas du dos cassé — monte seulement à une hauteur confortable.',
+      'Tête rejetée en arrière — la nuque prolonge la ligne de la colonne.',
+      'Le bassin décolle du sol — garde-le au sol.',
+    ],
+    tip: 'Si le bas du dos fait mal, descends plus bas ou appuie-toi sur les avant-bras (« sphinx »).',
+  },
+  child: {
+    muscles: 'Relâchement du dos, étirement des hanches et des épaules',
+    steps: [
+      'Mets-toi à genoux, gros orteils joints, genoux légèrement écartés.',
+      'Assieds-toi avec le bassin sur les talons.',
+      'À l’expiration, penche-toi en avant : ventre entre les cuisses, front au sol.',
+      'Étire les bras devant toi ou pose-les le long du corps.',
+      'Respire calmement et profondément pendant 30 à 60 secondes.',
+    ],
+    mistakes: [
+      'Épaules crispées — laisse-les descendre librement.',
+      'Le bassin n’atteint pas les talons — place un coussin dessous.',
+      'Retenir sa respiration — c’est une posture de repos, respire librement.',
+    ],
+    tip: 'Reviens dans cette posture entre deux exercices difficiles pour reprendre ton souffle.',
+  },
+  warrior2: {
+    muscles: 'Quadriceps, fessiers, intérieur des cuisses, épaules',
+    steps: [
+      'Écarte largement les jambes, d’environ la longueur d’une jambe.',
+      'Tourne le pied droit de 90° vers l’extérieur et le pied gauche légèrement vers l’intérieur.',
+      'Lève les bras sur les côtés à hauteur des épaules, paumes vers le bas.',
+      'À l’expiration, plie le genou droit au-dessus de la cheville, la cuisse presque parallèle au sol.',
+      'Regarde au-dessus de la main droite. Tiens 5 respirations et recommence de l’autre côté.',
+    ],
+    mistakes: [
+      'Le genou s’affaisse vers l’intérieur — dirige-le au-dessus du deuxième orteil.',
+      'Le buste penche en avant — garde-le droit au-dessus du bassin.',
+      'Épaules haussées — bras longs, épaules basses.',
+    ],
+    tip: 'Si les jambes fatiguent, réduis l’écartement et la profondeur de la flexion.',
+  },
+  tree: {
+    muscles: 'Muscles du pied et de la jambe, fessiers, muscles du tronc, équilibre',
+    steps: [
+      'Tiens-toi droit et reporte le poids sur la jambe gauche.',
+      'Pose le pied droit sur l’intérieur du mollet ou de la cuisse gauche (pas sur le genou).',
+      'Appuie le pied et la jambe l’un contre l’autre, le bassin bien droit.',
+      'Joins les paumes devant la poitrine ou lève les bras au-dessus de la tête.',
+      'Fixe un point devant toi. Tiens 20 à 30 secondes, puis change de jambe.',
+    ],
+    mistakes: [
+      'Pied sur le genou — cela surcharge l’articulation.',
+      'Le bassin part sur le côté — garde-le droit.',
+      'Le regard vagabonde — fixe un point, l’équilibre sera plus facile.',
+    ],
+    tip: 'Pour commencer, touche le mur d’une main ou pose le pied bas, sur la cheville.',
+  },
+  bridge: {
+    muscles: 'Fessiers, arrière des cuisses, extenseurs du dos',
+    steps: [
+      'Allonge-toi sur le dos, genoux fléchis, pieds écartés à la largeur du bassin et proches des fessiers.',
+      'Bras le long du corps, paumes vers le bas.',
+      'À l’expiration, pousse sur les pieds et soulève le bassin.',
+      'En haut, le corps forme une ligne droite des épaules aux genoux, fessiers contractés.',
+      'Tiens 2 à 3 respirations et redescends lentement le bassin. Répète 8 à 12 fois.',
+    ],
+    mistakes: [
+      'Creuser le bas du dos au lieu de faire travailler les fessiers — rentre le bassin.',
+      'Les genoux s’écartent ou se rapprochent — garde-les à la largeur du bassin.',
+      'Prendre appui sur la nuque — le poids reste sur les épaules et les pieds.',
+    ],
+    tip: 'Pour corser l’exercice, lève une jambe et fais le pont sur l’autre.',
+  },
+  fold: {
+    muscles: 'Étirement de l’arrière des cuisses, des mollets et du dos',
+    steps: [
+      'Assieds-toi au sol, jambes tendues devant toi, orteils tirés vers toi.',
+      'À l’inspiration, allonge le dos et lève les bras vers le haut.',
+      'À l’expiration, penche-toi en avant depuis les hanches, et non depuis le dos.',
+      'Attrape les tibias, les chevilles ou les pieds, selon ce que tu atteins sans douleur.',
+      'Tiens 30 à 60 secondes, en descendant un peu plus à chaque expiration.',
+    ],
+    mistakes: [
+      'Dos rond et tête vers les genoux — fais avancer la poitrine.',
+      'À-coups — l’étirement doit rester progressif.',
+      'Forte douleur derrière le genou — plie légèrement les genoux.',
+    ],
+    tip: 'Place une serviette pliée sous les fessiers : la flexion sera plus facile.',
+  },
 };

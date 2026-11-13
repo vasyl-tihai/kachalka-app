@@ -240,4 +240,132 @@ export default {
     ],
     tip: 'Fang mit der Variante ohne Liegestütz und ohne Sprung an.',
   },
+  catcow: {
+    muscles: 'Rückenstrecker, Rumpfmuskulatur, Beweglichkeit der Wirbelsäule',
+    steps: [
+      'Geh in den Vierfüßlerstand: Hände unter den Schultern, Knie unter den Hüften.',
+      'Beim Einatmen senke den Bauch sanft ab, hebe Blick und Steißbein — das ist die „Kuh“.',
+      'Beim Ausatmen runde den Rücken nach oben, zieh das Kinn zur Brust und den Bauch zur Wirbelsäule — das ist die „Katze“.',
+      'Bewege dich fließend mit dem Atem, Wirbel für Wirbel.',
+      'Mach 8–10 Wiederholungen in ruhigem Tempo.',
+    ],
+    mistakes: [
+      'Ruckartige Bewegungen — die Bewegung ist langsam, im Rhythmus des Atems.',
+      'Nur Schultern und Nacken arbeiten — die Bewegung geht vom Becken durch den ganzen Rücken.',
+      'Die Arme beugen sich in den Ellbogen — halte sie gestreckt.',
+    ],
+    tip: 'Eignet sich gut als Morgengymnastik und vor dem Rückentraining.',
+  },
+  downdog: {
+    muscles: 'Beinrückseite, Waden, Schultern, Dehnung des Rückens',
+    steps: [
+      'Beginne im Vierfüßlerstand und stelle die Zehen auf.',
+      'Hebe beim Ausatmen das Becken nach oben und hinten und strecke die Beine — der Körper bildet ein umgekehrtes V.',
+      'Drücke dich mit den Handflächen vom Boden weg und strecke den Rücken von den Händen bis zum Becken.',
+      'Die Fersen streben zum Boden, müssen ihn aber nicht berühren.',
+      'Der Kopf hängt locker zwischen den Schultern. Halte 5–8 ruhige Atemzüge.',
+    ],
+    mistakes: [
+      'Runder Rücken — beuge lieber die Knie, aber halte die Wirbelsäule lang.',
+      'Gewicht auf den Händen — verlagere es nach hinten auf die Beine.',
+      'Schultern an den Ohren — ziehe sie von den Ohren weg.',
+    ],
+    tip: 'Wenn es hinter den Knien zieht, beuge die Knie abwechselnd — „geh auf der Stelle“.',
+  },
+  cobra: {
+    muscles: 'Rückenstrecker, Gesäß, Dehnung von Brust und Bauch',
+    steps: [
+      'Lege dich auf den Bauch, die Beine zusammen, die Fußrücken am Boden.',
+      'Setze die Hände unter die Schultern und presse die Ellbogen an den Körper.',
+      'Hebe beim Einatmen langsam die Brust und stütze dich mehr auf den Rücken als auf die Arme.',
+      'Die Ellbogen bleiben leicht gebeugt, die Schultern unten, der Blick geradeaus.',
+      'Halte 3–5 Atemzüge und senke dich beim Ausatmen sanft ab.',
+    ],
+    mistakes: [
+      'Völlig gestreckte Arme und abgeknickter unterer Rücken — komm nur so hoch, wie es angenehm ist.',
+      'Kopf in den Nacken geworfen — der Nacken verlängert die Linie der Wirbelsäule.',
+      'Becken löst sich vom Boden — halte es unten.',
+    ],
+    tip: 'Wenn der untere Rücken schmerzt, geh tiefer oder stütze dich auf die Unterarme („Sphinx“).',
+  },
+  child: {
+    muscles: 'Entspannung des Rückens, Dehnung von Hüften und Schultern',
+    steps: [
+      'Knie dich hin, die großen Zehen berühren sich, die Knie sind leicht geöffnet.',
+      'Setze das Gesäß auf die Fersen.',
+      'Beuge dich beim Ausatmen nach vorn und lege den Bauch zwischen die Oberschenkel, die Stirn auf den Boden.',
+      'Strecke die Arme nach vorn oder lege sie neben den Körper.',
+      'Atme 30–60 Sekunden ruhig und tief.',
+    ],
+    mistakes: [
+      'Verspannte Schultern — lass sie locker sinken.',
+      'Das Gesäß erreicht die Fersen nicht — lege ein Kissen darunter.',
+      'Atem anhalten — es ist eine Ruhehaltung, atme frei.',
+    ],
+    tip: 'Kehre zwischen schwierigeren Übungen in diese Haltung zurück, um zu Atem zu kommen.',
+  },
+  warrior2: {
+    muscles: 'Oberschenkelvorderseite, Gesäß, Oberschenkelinnenseite, Schultern',
+    steps: [
+      'Stelle die Beine weit auseinander, etwa eine Beinlänge.',
+      'Drehe den rechten Fuß um 90° nach außen, den linken leicht nach innen.',
+      'Hebe die Arme seitlich auf Schulterhöhe, die Handflächen zeigen nach unten.',
+      'Beuge beim Ausatmen das rechte Knie, sodass es über dem Knöchel steht und der Oberschenkel fast parallel zum Boden ist.',
+      'Blick über die rechte Hand. Halte 5 Atemzüge und wiederhole zur anderen Seite.',
+    ],
+    mistakes: [
+      'Das Knie kippt nach innen — führe es über den Mittelzeh.',
+      'Der Oberkörper neigt sich nach vorn — halte ihn aufrecht über dem Becken.',
+      'Hochgezogene Schultern — Arme lang, Schultern unten.',
+    ],
+    tip: 'Wenn die Beine ermüden, verkürze den Stand und beuge weniger tief.',
+  },
+  tree: {
+    muscles: 'Fuß- und Unterschenkelmuskulatur, Gesäß, Rumpfmuskulatur, Gleichgewicht',
+    steps: [
+      'Stelle dich aufrecht hin und verlagere das Gewicht auf das linke Bein.',
+      'Setze den rechten Fuß an die Innenseite der linken Wade oder des Oberschenkels (nicht auf das Knie).',
+      'Drücke Fuß und Bein gegeneinander, das Becken bleibt gerade.',
+      'Lege die Handflächen vor der Brust zusammen oder strecke die Arme nach oben.',
+      'Fixiere einen Punkt vor dir. Halte 20–30 Sekunden und wechsle das Bein.',
+    ],
+    mistakes: [
+      'Fuß auf dem Knie — das belastet das Gelenk.',
+      'Das Becken weicht zur Seite aus — halte es gerade.',
+      'Der Blick wandert — fixiere einen Punkt, so hältst du das Gleichgewicht leichter.',
+    ],
+    tip: 'Zum Einstieg kannst du mit einer Hand die Wand berühren oder den Fuß tief an den Knöchel setzen.',
+  },
+  bridge: {
+    muscles: 'Gesäß, Beinrückseite, Rückenstrecker',
+    steps: [
+      'Lege dich auf den Rücken, beuge die Knie, die Füße hüftbreit nahe am Gesäß.',
+      'Die Arme liegen neben dem Körper, die Handflächen zeigen nach unten.',
+      'Drücke dich beim Ausatmen mit den Füßen ab und hebe das Becken.',
+      'Oben bildet der Körper von den Schultern bis zu den Knien eine gerade Linie, das Gesäß ist angespannt.',
+      'Halte 2–3 Atemzüge und senke das Becken langsam ab. Wiederhole 8–12 Mal.',
+    ],
+    mistakes: [
+      'Hohlkreuz statt Arbeit des Gesäßes — kippe das Becken auf.',
+      'Die Knie fallen auseinander oder zusammen — halte sie hüftbreit.',
+      'Abstützen auf dem Nacken — das Gewicht liegt auf Schultern und Füßen.',
+    ],
+    tip: 'Zur Steigerung hebe ein Bein an und mache die Brücke auf dem anderen.',
+  },
+  fold: {
+    muscles: 'Dehnung der Beinrückseite, der Waden und des Rückens',
+    steps: [
+      'Setze dich auf den Boden, die Beine nach vorn gestreckt, die Zehen zu dir gezogen.',
+      'Strecke beim Einatmen den Rücken und hebe die Arme nach oben.',
+      'Beuge dich beim Ausatmen aus der Hüfte nach vorn, nicht aus dem Rücken.',
+      'Halte die Schienbeine, Knöchel oder Füße — so weit du schmerzfrei kommst.',
+      'Halte 30–60 Sekunden und gehe mit jedem Ausatmen etwas tiefer.',
+    ],
+    mistakes: [
+      'Runder Rücken und Kopf in Richtung Knie — führe mit der Brust nach vorn.',
+      'Wippen — die Dehnung nur gleichmäßig.',
+      'Starker Schmerz hinter dem Knie — beuge die Knie leicht.',
+    ],
+    tip: 'Lege ein gefaltetes Handtuch unter das Gesäß — die Vorbeuge wird leichter.',
+  },
 };
