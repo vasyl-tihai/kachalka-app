@@ -5,7 +5,7 @@
 // Рух — як CSS exRun у картинок: пауза на старті → до фіналу → пауза → назад, 2,6 с.
 // Тап — пауза / далі. Three.js вантажиться лише тут; без WebGL mountEx3D кидає помилку — лишається картинка.
 
-export const EX3D_V = 1; // підняти після перевивантаження models/ex3d (SW віддає їх із кешу)
+export const EX3D_V = 2; // підняти після перевивантаження models/ex3d (SW віддає їх із кешу)
 const BASE = 'models/ex3d/';
 let THREE = null;
 let charP = null;

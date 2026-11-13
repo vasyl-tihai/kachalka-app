@@ -5957,7 +5957,7 @@ async function guideText(id) {
     return base; // перекладу немає — українською
   }
 }
-const EX_IMG_V = 6; // підняти після перерендеру img/exercises — SW віддає їх із кешу (cache-first)
+const EX_IMG_V = 7; // підняти після перерендеру img/exercises — SW віддає їх із кешу (cache-first)
 function guideMediaHTML(id, cls = '') {
   const gd = GD.GUIDES[id] || {};
   if (gd.noimg) return cls === 'mini' ? `<div class="guide-media mini gm-ico">${gd.ico || '🧘'}</div>` : ''; // йога: ілюстрацій поки немає
