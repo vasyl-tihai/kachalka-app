@@ -188,6 +188,13 @@ input, select { font-family: inherit; }
   flex: 0 0 auto;
 }
 .set-ico .ai { width: 32px; height: 32px; }
+/* жива міні-анімація вправи в куті: тап — техніка вікном */
+.set-ico-anim { position: relative; width: 54px; height: 54px; padding: 0; overflow: hidden; cursor: pointer; }
+.set-ico-anim .gm-anim { position: absolute; inset: 0; background: no-repeat 0 0 / 900% 100%; animation: exRun 2.6s steps(9, jump-none) infinite; }
+.sia-play { position: absolute; right: 2px; bottom: 2px; width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center;
+  font-size: .5rem; background: var(--blue); color: var(--on-accent, #fff); }
+@media (prefers-reduced-motion: reduce) { .set-ico-anim .gm-anim { animation: none; } }
+.gs-media { max-width: 260px; margin: 0 auto 4px; }
 .set-titles { flex: 1; min-width: 0; }
 /* довга назва переноситься на 2 рядки (не обрізається трьома крапками) */
 .set-name {
@@ -972,12 +979,22 @@ a.btn { display: block; text-align: center; text-decoration: none; box-sizing: b
 }
 .hint-chip b { color: var(--gold); }
 /* підказка з ✕ «закрити до кінця дня» */
+/* ✓ зліва — застосувати, ✕ справа — закрити (14.11); сам текст не натискається */
 .hint-box { position: relative; margin-top: 14px; }
 .hint-box[hidden] { display: none; }
-.hint-box .hint-chip { margin-top: 0; padding-right: 40px; }
+.hint-box .hint-chip { margin-top: 0; padding-left: 50px; padding-right: 44px; }
+.hint-box.no-ok .hint-chip { padding-left: 12px; }
+.hint-ok {
+  position: absolute; top: 50%; left: 6px; transform: translateY(-50%);
+  width: 36px; height: 36px; border-radius: 50%; border: 1px solid currentColor;
+  background: transparent; color: var(--gold); font-size: 1.05rem; font-weight: 800; line-height: 1;
+}
+.hint-ok[hidden] { display: none; }
+.hint-box:has(.smart) .hint-ok { color: var(--blue); }
+.hint-ok:active { transform: translateY(-50%) scale(.92); }
 .hint-x {
-  position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
-  width: 30px; height: 30px; border-radius: 50%; border: 0;
+  position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+  width: 38px; height: 38px; border-radius: 50%; border: 0;
   background: transparent; color: var(--muted); font-size: .95rem; line-height: 1;
 }
 .hint-x:active { background: var(--surface-2, rgba(127, 127, 127, .15)); }

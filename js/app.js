@@ -768,15 +768,17 @@ function renderSet(exerciseId) {
     if (sv) sv.classList.toggle('w-up', entry.weightType !== 'bodyweight' && entry.weight > plannedW);
   };
 
+  const guideId = GD.guideFor(ex);
   screenEl.innerHTML = `
     <div class="set-screen">
       <header class="set-top">
         <button class="icon-btn" id="backBtn">‹</button>
-        <div class="set-ico">${exIconHTML(ex) || `<span class="glyph big">${ex.icon || '💪'}</span>`}</div>
+        ${guideId ? `<button class="set-ico set-ico-anim" id="howIco" title="${T('Як виконувати')}" aria-label="${T('Як виконувати')}">${guideThumbHTML(guideId)}<span class="sia-play">▶</span></button>`
+          : `<div class="set-ico">${exIconHTML(ex) || `<span class="glyph big">${ex.icon || '💪'}</span>`}</div>`}
         <div class="set-titles">
           <div class="set-name">${esc(exN(ex))}</div>
           <div class="set-date">${dateLine}</div>
-          ${GD.guideFor(ex) ? `<button class="how-link" id="howBtn">ℹ️ ${T('Як виконувати')}</button>` : ''}
+          ${guideId ? `<button class="how-link" id="howBtn">ℹ️ ${T('Як виконувати')}</button>` : ''}
         </div>
         <button class="icon-btn" id="camBtn" title="${T('Камера-тренер')}">📹</button>
         <button class="icon-btn" id="cfgBtn" title="${T('Ціль і налаштування')}">⚙️</button>
@@ -807,7 +809,7 @@ function renderSet(exerciseId) {
         <div class="type-chips" id="typeChips" hidden>
           ${S.WEIGHT_TYPES.map((wt) => `<button class="tchip ${wt.id === entry.weightType ? 'on' : ''}" data-t="${wt.id}">${wt.icon} ${T(wt.label)}</button>`).join('')}
         </div>
-        ${prog && !hintOff('prog:' + exerciseId) ? `<div class="hint-box" id="progBox"><button class="hint-chip" id="progHint">💡 ${T('Час додати вагу — спробуй')} <b>${prog.newWeight} ${T('кг')}</b></button>${hintX('prog:' + exerciseId)}</div>` : ''}
+        ${prog && !hintOff('prog:' + exerciseId) ? `<div class="hint-box" id="progBox">${hintOk('progHint')}<div class="hint-chip">💡 ${T('Час додати вагу — спробуй')} <b>${prog.newWeight} ${T('кг')}</b></div>${hintX('prog:' + exerciseId)}</div>` : ''}
       </section>
 
       <!-- ТАЙМЕР ВІДПОЧИНКУ (після останнього підходу — очікування перед наступною вправою) -->
@@ -840,7 +842,7 @@ function renderSet(exerciseId) {
         <div class="set-progress" id="setProgress"></div>
         <div class="prev-line" id="prevLine" hidden></div>
         <!-- порада аналітика: відпочинок/вага/обсяг за твоєю ж історією -->
-        <div class="hint-box" id="smartBox" hidden><button class="hint-chip smart" id="smartHint"></button>${hintX('smart:' + exerciseId)}</div>
+        <div class="hint-box" id="smartBox" hidden>${hintOk('smartOk')}<div class="hint-chip smart" id="smartHint"></div>${hintX('smart:' + exerciseId)}</div>
         <div id="wheelMount"></div>
         <!-- секундомір роботи: скільки триває сам підхід -->
         <div class="work-row" id="workMount"></div>
@@ -861,8 +863,8 @@ function renderSet(exerciseId) {
   // ----- події -----
   screenEl.querySelector('#backBtn').onclick = () => go('#/today');
   screenEl.querySelector('#camBtn').onclick = () => go('#/camera/' + exerciseId);
-  const howBtn = screenEl.querySelector('#howBtn');
-  if (howBtn) howBtn.onclick = () => go('#/guide/' + GD.guideFor(ex));
+  // техніка — вікном поверх екрана підходу (таймер і стан не губляться), «Повністю» — окремий екран
+  screenEl.querySelectorAll('#howBtn, #howIco').forEach((b) => { b.onclick = () => openGuideSheet(guideId); });
   screenEl.querySelector('#cfgBtn').onclick = () => openTargetEditor(iso, exerciseId);
   screenEl.querySelector('#goalChip').onclick = () => openTargetEditor(iso, exerciseId);
   // головна дія: обрав повторення на барабані → «Виконав підхід»
@@ -1172,7 +1174,8 @@ function updateRestMode(iso, exerciseId, waiting) {
 function updateSmartHint(iso, exerciseId) {
   const el = screenEl.querySelector('#smartHint');
   const box = screenEl.querySelector('#smartBox');
-  if (!el || !box) return;
+  const ok = screenEl.querySelector('#smartOk');
+  if (!el || !box || !ok) return;
   let adv = null;
   try {
     adv = hintOff('smart:' + exerciseId) ? null
@@ -1182,13 +1185,15 @@ function updateSmartHint(iso, exerciseId) {
   }
   if (!adv) {
     box.hidden = true;
-    el.onclick = null;
+    ok.onclick = null;
     return;
   }
   box.hidden = false;
-  el.innerHTML = `🧠 ${esc(adv.text)}${adv.action ? ` <b>— ${T('застосувати')}</b>` : ''}`;
-  el.classList.toggle('actionable', !!adv.action);
-  el.onclick = !adv.action
+  // ✓ зліва — застосувати, ✕ справа — закрити; сам текст нічого не робить (відгук 14.11: закриття «застосовувалось»)
+  el.innerHTML = `🧠 ${esc(adv.text)}`;
+  ok.hidden = !adv.action;
+  box.classList.toggle('no-ok', !adv.action);
+  ok.onclick = !adv.action
     ? null
     : () => {
         if (adv.action.type === 'rest') {
@@ -1225,9 +1230,11 @@ function setHintOff(key) {
   } catch (e) { /* приватний режим — закриється лише до перезаходу */ }
 }
 const hintX = (key) => `<button class="hint-x" data-hint-off="${key}" title="${T('Закрити')}" aria-label="${T('Закрити')}">✕</button>`;
+const hintOk = (id) => `<button class="hint-ok" id="${id}" title="${T('Застосувати')}" aria-label="${T('Застосувати')}">✓</button>`;
 document.addEventListener('click', (e) => {
   const x = e.target.closest && e.target.closest('[data-hint-off]');
   if (!x) return;
+  e.stopPropagation();
   setHintOff(x.dataset.hintOff);
   const box = x.closest('.hint-box');
   if (box) box.hidden = true;
@@ -5970,6 +5977,28 @@ function guideMediaHTML(id, cls = '') {
   return `<div class="guide-media"><div class="gm-anim" style="background-image:url('${src}')"></div>
     <img src="${src}" alt="" hidden data-err="rmp"/>
     ${hasWebGL() ? `<button class="gm-3d" id="gm3d">🔄 3D</button><div class="gm-hint" hidden>${T('Крути пальцем · тап — пауза')}</div>` : ''}</div>`;
+}
+// маленька жива анімація вправи (кут екрана підходу, 13.11 прохання власника)
+function guideThumbHTML(id) {
+  const gd = GD.GUIDES[id] || {};
+  if (gd.noimg) return `<span class="glyph big">${gd.ico || '🧘'}</span>`;
+  return `<span class="gm-anim" style="background-image:url('img/exercises/${id}_anim.webp?v=${EX_IMG_V}')"></span>`;
+}
+// техніка вправи вікном поверх поточного екрана
+async function openGuideSheet(id) {
+  const g = await guideText(id);
+  if (!g) return;
+  const li = (arr) => arr.map((x) => `<li>${esc(x)}</li>`).join('');
+  const gd = GD.GUIDES[id] || {};
+  const media = gd.noimg ? '' : `<div class="guide-media gs-media"><div class="gm-anim" style="background-image:url('img/exercises/${id}_anim.webp?v=${EX_IMG_V}')"></div></div>`;
+  openModal(T(GUIDE_TITLES[id]), `
+    ${media}
+    <div class="card-label">📋 ${T('Техніка')}</div>
+    <ol class="guide-steps">${li(g.steps)}</ol>
+    <div class="card-label">⚠️ ${T('Часті помилки')}</div>
+    <ul class="guide-mistakes">${li(g.mistakes)}</ul>`,
+  [{ label: `${T('Повністю')} ›`, class: 'ghost', onClick: () => { closeModal(); go('#/guide/' + id); } },
+    { label: T('Закрити'), class: 'primary', onClick: closeModal }]);
 }
 // 3D-перегляд вправи (js/ex3d.js): кнопка в кутку картинки; вибір запам'ятовується (kachalka-ex3d)
 const EX3D_KEY = 'kachalka-ex3d';
